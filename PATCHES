@@ -4,5 +4,4 @@ fsync-attachments
 maildir-optimize-mutt_move_message
 553321-ansi-escape-segfault.patch
 543467-thread-segfault.patch
-531430-imapuser.patch
 228671-pipe-mime.patch 
