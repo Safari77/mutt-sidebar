@@ -352,7 +352,7 @@ AC_CHECK_DECLS([sys_siglist],[],[],[#include <signal.h>
 AC_TYPE_PID_T
 AC_CHECK_TYPE(ssize_t, int)
 
-AC_CHECK_FUNCS(fgetpos memmove setegid srand48 strerror)
+AC_CHECK_FUNCS(fgetpos memmove setegid strerror getrandom)
 
 AC_REPLACE_FUNCS([setenv strcasecmp strdup strsep strtok_r wcscasecmp])
 AC_REPLACE_FUNCS([strcasestr mkdtemp])
