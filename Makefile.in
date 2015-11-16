@@ -83,10 +83,10 @@ DIST_COMMON = $(top_srcdir)/flymake.am $(srcdir)/Makefile.in \
 	$(srcdir)/Makefile.am $(top_srcdir)/configure \
 	$(am__configure_deps) $(srcdir)/config.h.in \
 	$(top_srcdir)/intl/Makefile.in $(srcdir)/hcachever.sh.in \
-	$(srcdir)/muttbug.sh.in strtok_r.c strcasecmp.c regex.c \
-	snprintf.c wcscasecmp.c strcasestr.c setenv.c mkdtemp.c \
-	strsep.c strdup.c depcomp ABOUT-NLS ChangeLog INSTALL NEWS \
-	README TODO compile config.guess config.sub install-sh missing
+	$(srcdir)/muttbug.sh.in snprintf.c strtok_r.c regex.c strdup.c \
+	strcasecmp.c setenv.c strcasestr.c wcscasecmp.c mkdtemp.c \
+	strsep.c depcomp ABOUT-NLS ChangeLog INSTALL NEWS README TODO \
+	compile config.guess config.sub install-sh missing
 EXTRA_PROGRAMS = mutt_dotlock$(EXEEXT) pgpring$(EXEEXT) \
 	pgpewrap$(EXEEXT) mutt_md5$(EXEEXT)
 bin_PROGRAMS = mutt$(EXEEXT) $(DOTLOCK_TARGET) $(PGPAUX_TARGET)
@@ -128,9 +128,10 @@ am_mutt_OBJECTS = addrbook.$(OBJEXT) alias.$(OBJEXT) attach.$(OBJEXT) \
 	score.$(OBJEXT) send.$(OBJEXT) sendlib.$(OBJEXT) \
 	signal.$(OBJEXT) sort.$(OBJEXT) status.$(OBJEXT) \
 	system.$(OBJEXT) thread.$(OBJEXT) charset.$(OBJEXT) \
-	history.$(OBJEXT) lib.$(OBJEXT) muttlib.$(OBJEXT) \
-	editmsg.$(OBJEXT) mbyte.$(OBJEXT) url.$(OBJEXT) \
-	ascii.$(OBJEXT) crypt-mod.$(OBJEXT) safe_asprintf.$(OBJEXT)
+	history.$(OBJEXT) lib.$(OBJEXT) sidebar.$(OBJEXT) \
+	muttlib.$(OBJEXT) editmsg.$(OBJEXT) mbyte.$(OBJEXT) \
+	url.$(OBJEXT) ascii.$(OBJEXT) crypt-mod.$(OBJEXT) \
+	safe_asprintf.$(OBJEXT)
 am__objects_1 =
 am__objects_2 = patchlist.$(OBJEXT) conststrings.$(OBJEXT) \
 	$(am__objects_1)
@@ -474,6 +475,7 @@ mutt_SOURCES = \
 	rfc822.c rfc1524.c rfc2047.c rfc2231.c rfc3676.c \
 	score.c send.c sendlib.c signal.c sort.c \
 	status.c system.c thread.c charset.c history.c lib.c \
+	sidebar.c \
 	muttlib.c editmsg.c mbyte.c \
 	url.c ascii.c crypt-mod.c crypt-mod.h safe_asprintf.c
 
@@ -804,6 +806,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/send.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sendlib.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sha1.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sidebar.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/signal.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/smime.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/smtp.Po@am__quote@
