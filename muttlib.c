@@ -838,21 +838,12 @@ uint64_t mutt_rand64(void)
   return ret;
 }
 
- void _mutt_mktemp (char *s, size_t slen, const char *src, int line)
- {
-  size_t n = snprintf (s, slen, "%s/mutt-%s-%d-%d-%" PRIu64 , NONULL (Tempdir), NONULL (Hostname),
-                      (int) getuid (), (int) getpid (), mutt_rand64());
-   if (n >= slen)
-     dprint (1, (debugfile, "%s:%d: ERROR: insufficient buffer space to hold temporary filename! slen=%zu but need %zu\n",
- 	    src, line, slen, n));
-
 void _mutt_mktemp (char *s, size_t slen, const char *prefix, const char *suffix,
                    const char *src, int line)
 {
-  size_t n = snprintf (s, slen, "%s/%s-%s-%d-%d-%ld%ld%s%s",
+  size_t n = snprintf (s, slen, "%s/%s-%s-%" PRIu64 "%s%s",
       NONULL (Tempdir), NONULL (prefix), NONULL (Hostname),
-      (int) getuid (), (int) getpid (), random (), random (),
-      suffix ? "." : "", NONULL (suffix));
+      mutt_rand64(), suffix ? "." : "", NONULL (suffix));
   if (n >= slen)
     dprint (1, (debugfile, "%s:%d: ERROR: insufficient buffer space to hold temporary filename! slen=%zu but need %zu\n",
 	    src, line, slen, n));

@@ -58,7 +58,12 @@ hcversion.h
 install-sh
 keymap_defs.h
 Makefile
-Makefile.in
+/po/Makefile.in
+/doc/Makefile.in
+/imap/Makefile.in
+/m4/Makefile.in
+/contrib/Makefile.in
+/Makefile.in
 missing
 mutt
 muttbug.sh
