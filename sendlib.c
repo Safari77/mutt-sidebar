@@ -481,7 +481,6 @@ int mutt_write_mime_body (BODY *a, FILE *f)
 void mutt_generate_boundary (PARAMETER **parm)
 {
   char rs[MUTT_RANDTAG_LEN + 1];
-  int i;
 
   mutt_rand_base32(rs, sizeof(rs) - 1);
   rs[MUTT_RANDTAG_LEN] = 0;
