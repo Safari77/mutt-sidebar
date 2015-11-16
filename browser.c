@@ -493,7 +493,7 @@ static int examine_mailboxes (MUTTMENU *menu, struct browser_state *state)
 	s.st_mtime = st2.st_mtime;
     }
     
-    strfcpy (buffer, NONULL(tmp->path), sizeof (buffer));
+    strfcpy (buffer, tmp->path, sizeof (buffer));
     mutt_pretty_mailbox (buffer, sizeof (buffer));
 
     add_folder (menu, state, buffer, &s, tmp->new);
