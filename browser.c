@@ -56,9 +56,9 @@ typedef struct folder_t
   int num;
 } FOLDER;
 
-static char OldLastDir[_POSIX_PATH_MAX] = "";
-static char LastDir[_POSIX_PATH_MAX] = "";
-static char LastDirBackup[_POSIX_PATH_MAX] = "";
+static char OldLastDir[PATH_MAX] = "";
+static char LastDir[PATH_MAX] = "";
+static char LastDirBackup[PATH_MAX] = "";
 
 /* Frees up the memory allocated for the local-global variables.  */
 static void destroy_state (struct browser_state *state)
@@ -132,7 +132,7 @@ static void browser_sort (struct browser_state *state)
 static int link_is_dir (const char *folder, const char *path)
 {
   struct stat st;
-  char fullpath[_POSIX_PATH_MAX];
+  char fullpath[PATH_MAX];
   
   mutt_concat_path (fullpath, folder, path, sizeof (fullpath));
   
@@ -482,7 +482,7 @@ static int examine_mailboxes (MUTTMENU *menu, struct browser_state *state)
     if (mx_is_maildir (tmp->path))
     {
       struct stat st2;
-      char md[_POSIX_PATH_MAX];
+      char md[PATH_MAX];
 
       snprintf (md, sizeof (md), "%s/new", tmp->path);
       if (stat (md, &s) < 0)
@@ -523,7 +523,7 @@ static void folder_entry (char *s, size_t slen, MUTTMENU *menu, int num)
 static void init_menu (struct browser_state *state, MUTTMENU *menu, char *title,
 		       size_t titlelen, int buffy)
 {
-  char path[_POSIX_PATH_MAX];
+  char path[PATH_MAX];
 
   menu->max = state->entrylen;
 
@@ -590,8 +590,8 @@ static int file_tag (MUTTMENU *menu, int n, int m)
 
 void _mutt_select_file (char *f, size_t flen, int flags, char ***files, int *numfiles)
 {
-  char buf[_POSIX_PATH_MAX];
-  char prefix[_POSIX_PATH_MAX] = "";
+  char buf[PATH_MAX];
+  char prefix[PATH_MAX] = "";
   char helpstr[LONG_STRING];
   char title[STRING];
   struct browser_state state;
@@ -802,7 +802,7 @@ void _mutt_select_file (char *f, size_t flen, int flags, char ***files, int *num
 #endif
 	    else
 	    {
-	      char tmp[_POSIX_PATH_MAX];
+	      char tmp[PATH_MAX];
 	      mutt_concat_path (tmp, LastDir, state.entry[menu->current].name, sizeof (tmp));
 	      strfcpy (LastDir, tmp, sizeof (LastDir));
 	    }
@@ -870,7 +870,7 @@ void _mutt_select_file (char *f, size_t flen, int flags, char ***files, int *num
 	    for (i = 0, j = 0; i < state.entrylen; i++)
 	    {
 	      struct folder_file ff = state.entry[i];
-	      char full[_POSIX_PATH_MAX];
+	      char full[PATH_MAX];
 	      if (ff.tagged)
 	      {
 		mutt_concat_path (full, LastDir, ff.name, sizeof (full));
@@ -1045,7 +1045,7 @@ void _mutt_select_file (char *f, size_t flen, int flags, char ***files, int *num
 	    {
 	      /* in case dir is relative, make it relative to LastDir,
 	       * not current working dir */
-	      char tmp[_POSIX_PATH_MAX];
+	      char tmp[PATH_MAX];
 	      mutt_concat_path (tmp, LastDir, buf, sizeof (tmp));
 	      strfcpy (buf, tmp, sizeof (buf));
 	    }
@@ -1260,7 +1260,7 @@ void _mutt_select_file (char *f, size_t flen, int flags, char ***files, int *num
 	else
 	{
 	  BODY *b;
-	  char buf[_POSIX_PATH_MAX];
+	  char buf[PATH_MAX];
 	  
 	  mutt_concat_path (buf, LastDir, state.entry[menu->current].name, sizeof (buf));
 	  b = mutt_make_file_attach (buf);

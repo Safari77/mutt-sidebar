@@ -482,7 +482,7 @@ static int mx_open_mailbox_append (CONTEXT *ctx, int flags)
 
     if (ctx->magic == M_MH || ctx->magic == M_MAILDIR)
     {
-      char tmp[_POSIX_PATH_MAX];
+      char tmp[PATH_MAX];
 
       if (mkdir (ctx->path, S_IRWXU))
       {
@@ -589,6 +589,7 @@ CONTEXT *mx_open_mailbox (const char *path, int flags, CONTEXT *pctx)
   CONTEXT *ctx = pctx;
   int rc;
 
+  fprintf(stderr, "mx_open_mailbox [%s]\n", path);
   if (!ctx)
     ctx = safe_malloc (sizeof (CONTEXT));
   memset (ctx, 0, sizeof (CONTEXT));
@@ -802,7 +803,7 @@ int mx_close_mailbox (CONTEXT *ctx, int *index_hint)
   int check;
   int isSpool = 0;
   CONTEXT f;
-  char mbox[_POSIX_PATH_MAX];
+  char mbox[PATH_MAX];
   char buf[SHORT_STRING];
 
   if (!ctx) return 0;
@@ -1394,8 +1395,8 @@ MESSAGE *mx_open_message (CONTEXT *ctx, int msgno)
     case M_MAILDIR:
     {
       HEADER *cur = ctx->hdrs[msgno];
-      char path[_POSIX_PATH_MAX];
-      
+      char path[PATH_MAX];
+
       snprintf (path, sizeof (path), "%s/%s", ctx->path, cur->path);
       
       if ((msg->fp = fopen (path, "r")) == NULL && errno == ENOENT &&

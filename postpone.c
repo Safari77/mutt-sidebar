@@ -112,7 +112,7 @@ int mutt_num_postponed (int force)
   {
     /* if we have a maildir mailbox, we need to stat the "new" dir */
 
-    char buf[_POSIX_PATH_MAX];
+    char buf[PATH_MAX];
 
     snprintf (buf, sizeof (buf), "%s/new", Postponed);
     if (access (buf, F_OK) == 0 && stat (buf, &st) == -1)
@@ -538,7 +538,7 @@ int mutt_prepare_template (FILE *fp, CONTEXT *ctx, HEADER *newhdr, HEADER *hdr,
 			       short weed)
 {
   MESSAGE *msg = NULL;
-  char file[_POSIX_PATH_MAX];
+  char file[PATH_MAX];
   BODY *b;
   FILE *bfp;
 

@@ -1537,7 +1537,7 @@ static void mutt_restore_default (struct option_t *p)
       FREE((char **) p->data);		/* __FREE_CHECKED__ */
       if (p->init)
       {
-	char path[_POSIX_PATH_MAX];
+	char path[PATH_MAX];
 	strfcpy (path, (char *) p->init, sizeof (path));
 	mutt_expand_path (path, sizeof (path));
 	*((char **) p->data) = safe_strdup (path);
@@ -1695,7 +1695,7 @@ static int parse_set (BUFFER *tmp, BUFFER *s, unsigned long data, BUFFER *err)
   int query, unset, inv, reset, r = 0;
   int idx = -1;
   const char *p;
-  char scratch[_POSIX_PATH_MAX];
+  char scratch[PATH_MAX];
   char* myvar;
 
   while (MoreArgs (s))
@@ -2303,7 +2303,7 @@ static int source_rc (const char *rcfile, BUFFER *err)
 
 static int parse_source (BUFFER *tmp, BUFFER *s, unsigned long data, BUFFER *err)
 {
-  char path[_POSIX_PATH_MAX];
+  char path[PATH_MAX];
 
   if (mutt_extract_token (tmp, s, 0) != 0)
   {
@@ -2823,8 +2823,8 @@ int mutt_getvaluebyname (const char *name, const struct mapping_t *map)
 static void start_debug (void)
 {
   int i;
-  char buf[_POSIX_PATH_MAX];
-  char buf2[_POSIX_PATH_MAX];
+  char buf[PATH_MAX];
+  char buf2[PATH_MAX];
 
   /* rotate the old debug logs */
   for (i=3; i>=0; i--)

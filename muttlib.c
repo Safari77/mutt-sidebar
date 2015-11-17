@@ -94,7 +94,7 @@ void mutt_adv_mktemp (char *s, size_t l)
 
 int mutt_copy_body (FILE *fp, BODY **tgt, BODY *src)
 {
-  char tmp[_POSIX_PATH_MAX];
+  char tmp[PATH_MAX];
   BODY *b;
 
   PARAMETER *par, **ppar;
@@ -379,9 +379,9 @@ char *mutt_expand_path (char *s, size_t slen)
 
 char *_mutt_expand_path (char *s, size_t slen, int rx)
 {
-  char p[_POSIX_PATH_MAX] = "";
-  char q[_POSIX_PATH_MAX] = "";
-  char tmp[_POSIX_PATH_MAX];
+  char p[PATH_MAX] = "";
+  char q[PATH_MAX] = "";
+  char tmp[PATH_MAX];
   char *t;
 
   char *tail = ""; 
@@ -1021,7 +1021,7 @@ int mutt_check_overwrite (const char *attname, const char *path,
 				char *fname, size_t flen, int *append, char **directory) 
 {
   int rc = 0;
-  char tmp[_POSIX_PATH_MAX];
+  char tmp[PATH_MAX];
   struct stat st;
 
   strfcpy (fname, path, flen);
@@ -1602,7 +1602,7 @@ FILE *mutt_open_read (const char *path, pid_t *thepid)
 /* returns 0 if OK to proceed, -1 to abort, 1 to retry */
 int mutt_save_confirm (const char *s, struct stat *st)
 {
-  char tmp[_POSIX_PATH_MAX];
+  char tmp[PATH_MAX];
   int ret = 0;
   int rc;
   int magic = 0;
