@@ -1074,6 +1074,15 @@ struct option_t MuttVars[] = {
   ** .pp
   ** Also see $$use_domain and $$hidden_host.
   */
+  { "hostname_mid",      DT_STR,  R_NONE, UL &Fqdn_mid, 0 },
+  /*
+  ** .pp
+  ** Specifies the fully-qualified hostname used in domain part
+  ** of generated Message-ID's.  If not set, uses $$hostname.
+  ** $$hidden_host setting is ignored when setting up $$hostname_mid.
+  ** .pp
+  ** Also see $$hostname.
+  */
   { "ignore_linear_white_space",    DT_BOOL, R_NONE, OPTIGNORELWS, 0 },
   /*
   ** .pp

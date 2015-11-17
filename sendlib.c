@@ -2124,19 +2124,16 @@ char *mutt_gen_msgid (void)
   char buf[SHORT_STRING];
   time_t now;
   struct tm *tm;
-  const char *fqdn;
   unsigned char rndid[MUTT_RANDTAG_LEN + 1];
 
   mutt_rand_base32(rndid, sizeof(rndid) - 1);
   rndid[MUTT_RANDTAG_LEN] = 0;
   now = time (NULL);
   tm = gmtime (&now);
-  if(!(fqdn = mutt_fqdn(0)))
-    fqdn = NONULL(Hostname);
 
   snprintf (buf, sizeof (buf), "<%d%02d%02d%02d%02d%02d.%s@%s>",
 	    tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday, tm->tm_hour,
-	    tm->tm_min, tm->tm_sec, rndid, fqdn);
+	    tm->tm_min, tm->tm_sec, rndid, Fqdn_mid);
   return (safe_strdup (buf));
 }
 

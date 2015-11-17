@@ -52,6 +52,7 @@ WHERE char *EscChar;
 WHERE char *FolderFormat;
 WHERE char *ForwFmt;
 WHERE char *Fqdn;
+WHERE char *Fqdn_mid;
 WHERE char *HdrFmt;
 WHERE char *HistFile;
 WHERE char *Homedir;

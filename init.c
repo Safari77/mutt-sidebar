@@ -3134,6 +3134,9 @@ void mutt_init (int skip_sys_rc, LIST *commands)
 
   mutt_read_histfile ();
 
+  if (!Fqdn_mid)
+    Fqdn_mid = safe_strdup(Fqdn);
+
 #if 0
   set_option (OPTWEED); /* turn weeding on by default */
 #endif
