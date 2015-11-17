@@ -589,7 +589,6 @@ CONTEXT *mx_open_mailbox (const char *path, int flags, CONTEXT *pctx)
   CONTEXT *ctx = pctx;
   int rc;
 
-  fprintf(stderr, "mx_open_mailbox [%s]\n", path);
   if (!ctx)
     ctx = safe_malloc (sizeof (CONTEXT));
   memset (ctx, 0, sizeof (CONTEXT));
