@@ -115,6 +115,7 @@ enum
   LOGINDISABLED,		/*           LOGINDISABLED */
   IDLE,                         /* RFC 2177: IDLE */
   SASL_IR,                      /* SASL initial response draft */
+  X_GM_EXT1,			/* http://code.google.com/apis/gmail/imap/ */
 
   CAPMAX
 };

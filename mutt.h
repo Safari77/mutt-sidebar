@@ -226,6 +226,7 @@ enum
   M_CRYPT_ENCRYPT,
   M_PGP_KEY,
   M_XLABEL,
+  M_SERVERSEARCH,
   M_MIMEATTACH,
   
   /* Options for Mailcap lookup */
