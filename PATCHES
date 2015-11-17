@@ -6,3 +6,4 @@ maildir-optimize-mutt_move_message
 543467-thread-segfault.patch
 228671-pipe-mime.patch
 pp.tls_sni
+patch mutt-1.5.23-system_certs.patch
