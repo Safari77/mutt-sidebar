@@ -870,8 +870,6 @@ static int imap_make_msg_set (IMAP_DATA* idata, BUFFER* buf, int flag,
   int n;
   int started = 0;
 
-  hdrs = idata->ctx->hdrs;
-
   for (n = *pos;
        n < idata->ctx->msgcount && buf->dptr - buf->data < IMAP_MAX_CMDLEN;
        n++)
