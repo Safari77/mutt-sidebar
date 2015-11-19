@@ -1390,7 +1390,8 @@ ENVELOPE *mutt_read_rfc822_header (FILE *f, HEADER *hdr, short user_hdrs,
 	  else
 	  {
 	    e->spam->dptr = e->spam->data;
-	    *e->spam->dptr = '\0';
+	    if (e->spam->dptr)
+              *e->spam->dptr = '\0';
 	    mutt_buffer_addstr(e->spam, buf);
 	  }
 	}

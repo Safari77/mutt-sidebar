@@ -86,6 +86,8 @@ static void my_wcstombs (char *dest, size_t dlen, const wchar_t *src, size_t sle
   mbstate_t st;
   size_t k;
 
+  if (!src)
+    return;
   /* First convert directly into the destination buffer */
   memset (&st, 0, sizeof (st));
   for (; slen && dlen >= MB_LEN_MAX; dest += k, dlen -= k, src++, slen--)
@@ -333,7 +335,7 @@ int _mutt_enter_string (char *buf, size_t buflen, int y, int x,
 	case OP_EDITOR_BACKSPACE:
 	  if (state->curpos == 0)
 	    BEEP ();
-	  else
+	  else if (state->wbuf)
 	  {
 	    i = state->curpos;
 	    while (i && COMB_CHAR (state->wbuf[i - 1]))
@@ -365,7 +367,7 @@ int _mutt_enter_string (char *buf, size_t buflen, int y, int x,
 	case OP_EDITOR_BACKWARD_CHAR:
 	  if (state->curpos == 0)
 	    BEEP ();
-	  else
+	  else if (state->wbuf)
 	  {
 	    while (state->curpos && COMB_CHAR (state->wbuf[state->curpos - 1]))
 	      state->curpos--;
@@ -388,7 +390,7 @@ int _mutt_enter_string (char *buf, size_t buflen, int y, int x,
 	case OP_EDITOR_BACKWARD_WORD:
 	  if (state->curpos == 0)
 	    BEEP ();
-	  else
+	  else if (state->wbuf)
 	  {
 	    while (state->curpos && iswspace (state->wbuf[state->curpos - 1]))
 	      --state->curpos;
@@ -417,6 +419,8 @@ int _mutt_enter_string (char *buf, size_t buflen, int y, int x,
 	    BEEP ();
 	    break;
 	  }
+	  if (!state->wbuf)
+	    break;
 	  while (state->curpos && !iswspace (state->wbuf[state->curpos]))
 	    --state->curpos;
 	  while (state->curpos < state->lastchar && iswspace (state->wbuf[state->curpos]))
@@ -454,7 +458,7 @@ int _mutt_enter_string (char *buf, size_t buflen, int y, int x,
 
 	case OP_EDITOR_KILL_WORD:
 	  /* delete to beginning of word */
-	  if (state->curpos != 0)
+	  if (state->curpos != 0 && state->wbuf)
 	  {
 	    i = state->curpos;
 	    while (i && iswspace (state->wbuf[i - 1]))
