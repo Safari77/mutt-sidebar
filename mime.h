@@ -65,7 +65,7 @@ extern const char B64Chars[];
 
 #define is_multipart(x) \
     ((x)->type == TYPEMULTIPART \
-     || ((x)->type == TYPEMESSAGE && (!strcasecmp((x)->subtype, "rfc822") \
+     || ((x)->type == TYPEMESSAGE && (x)->subtype && (!strcasecmp((x)->subtype, "rfc822") \
 				      || !strcasecmp((x)->subtype, "news"))))
 
 extern const char *BodyTypes[];

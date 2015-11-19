@@ -858,6 +858,8 @@ CONTENT *mutt_get_content_info (const char *fname, BODY *b)
   struct stat sb;
 
   if(b && !fname) fname = b->filename;
+  if (!fname)
+    return NULL;
 
   if (stat (fname, &sb) == -1)
   {
@@ -2415,7 +2417,6 @@ mutt_invoke_sendmail (ADDRESS *from,	/* the sender */
     {
       const char *e = mutt_strsysexit (i);
 
-      e = mutt_strsysexit (i);
       mutt_error (_("Error sending message, child exited %d (%s)."), i, NONULL (e));
       if (childout)
       {

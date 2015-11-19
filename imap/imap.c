@@ -870,6 +870,9 @@ static int imap_make_msg_set (IMAP_DATA* idata, BUFFER* buf, int flag,
   int n;
   int started = 0;
 
+  if (!hdrs)
+    return count;
+
   for (n = *pos;
        n < idata->ctx->msgcount && buf->dptr - buf->data < IMAP_MAX_CMDLEN;
        n++)
@@ -969,9 +972,14 @@ int imap_exec_msgset (IMAP_DATA* idata, const char* pre, const char* post,
    exactly the original order (duplicate messages?), because other parts of
    the ctx are tied to the header order. This may be overkill. */
   oldsort = Sort;
-  if (Sort != SORT_ORDER)
+  if ((Sort != SORT_ORDER) && idata->ctx->hdrs)
   {
     hdrs = idata->ctx->hdrs;
+    if (idata->ctx->msgcount > (INT_MAX / sizeof (HEADER*)))
+    {
+      mutt_error (_("imap_exec_msgset: integer overflow: %d"), idata->ctx->msgcount);
+      return -1;
+    }
     idata->ctx->hdrs = safe_malloc (idata->ctx->msgcount * sizeof (HEADER*));
     memcpy (idata->ctx->hdrs, hdrs, idata->ctx->msgcount * sizeof (HEADER*));
 
@@ -1241,6 +1249,12 @@ int imap_sync_mailbox (CONTEXT* ctx, int expunge, int* index_hint)
   if (Sort != SORT_ORDER)
   {
     hdrs = ctx->hdrs;
+    if (ctx->msgcount > (INT_MAX / sizeof (HEADER*)))
+    {
+      mutt_error (_("imap_sync_mailbox: integer overflow: %d"), ctx->msgcount);
+      rc = -1;
+      goto out;
+    }
     ctx->hdrs = safe_malloc (ctx->msgcount * sizeof (HEADER*));
     memcpy (ctx->hdrs, hdrs, ctx->msgcount * sizeof (HEADER*));
 
@@ -1281,7 +1295,7 @@ int imap_sync_mailbox (CONTEXT* ctx, int expunge, int* index_hint)
   /* Update local record of server state to reflect the synchronization just
    * completed.  imap_read_headers always overwrites hcache-origin flags, so
    * there is no need to mutate the hcache after flag-only changes. */
-  for (n = 0; n < ctx->msgcount; n++)
+  for (n = 0; n < ctx->msgcount && ctx->hdrs; n++)
   {
     HEADER_DATA(ctx->hdrs[n])->deleted = ctx->hdrs[n]->deleted;
     HEADER_DATA(ctx->hdrs[n])->flagged = ctx->hdrs[n]->flagged;

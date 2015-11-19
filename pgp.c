@@ -910,10 +910,12 @@ BODY *pgp_decrypt_part (BODY *a, STATE *s, FILE *fpout, BODY *p)
   {
     fflush (pgperr);
     rewind (pgperr);
-    if (pgp_copy_checksig (pgperr, s->fpout) == 0 && !rv && p)
+    if (pgp_copy_checksig (pgperr, s->fpout) == 0 && !rv && p) {
       p->goodsig = 1;
-    else
-      p->goodsig = 0;
+    } else {
+      if (p)
+        p->goodsig = 0;
+    }
     state_attach_puts (_("[-- End of PGP output --]\n\n"), s);
   }
   safe_fclose (&pgperr);

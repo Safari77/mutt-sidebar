@@ -716,7 +716,7 @@ int mutt_buffy_notify (void)
  */
 void mutt_buffy (char *s, size_t slen)
 {
-  BUFFY *tmp = Incoming;
+  BUFFY *tmp;
   int pass, found = 0;
 
   mutt_expand_path (s, slen);

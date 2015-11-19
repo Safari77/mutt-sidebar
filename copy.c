@@ -363,7 +363,7 @@ mutt_copy_header (FILE *in, HEADER *h, FILE *out, int flags, const char *prefix)
     fputc('\n', out);
   }
 
-  if ((flags & CH_UPDATE_IRT) && h->env->in_reply_to)
+  if ((flags & CH_UPDATE_IRT) && h->env && h->env->in_reply_to)
   {
     LIST *listp = h->env->in_reply_to;
     fputs ("In-Reply-To:", out);
@@ -375,7 +375,7 @@ mutt_copy_header (FILE *in, HEADER *h, FILE *out, int flags, const char *prefix)
     fputc ('\n', out);
   }
 
-  if ((flags & CH_UPDATE_REFS) && h->env->references)
+  if ((flags & CH_UPDATE_REFS) && h->env && h->env->references)
   {
     fputs ("References:", out);
     mutt_write_references (h->env->references, out, 0);
