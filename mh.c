@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 1996-2002,2007,2009 Michael R. Elkins <me@mutt.org>
  * Copyright (C) 1999-2005 Thomas Roessler <roessler@does-not-exist.org>
- * Copyright (C) 2013 Michael R. Elkins <me@mutt.org>
+ * Copyright (C) 2010,2013 Michael R. Elkins <me@mutt.org>
  * 
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
@@ -2132,7 +2132,11 @@ int mh_check_mailbox (CONTEXT * ctx, int *index_hint)
   fnames = hash_create (1031, 0);
 
   for (p = md; p; p = p->next)
-    hash_insert (fnames, p->h->path, p, 0);
+  {
+    /* the hash key must survive past the header, which is freed below. */
+    p->canon_fname = safe_strdup (p->h->path);
+    hash_insert (fnames, p->canon_fname, p, 0);
+  }
 
   for (i = 0; i < ctx->msgcount; i++)
   {

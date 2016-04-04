@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2000 Michael R. Elkins <me@mutt.org>
+ * Copyright (C) 1996-2000,2012-2013 Michael R. Elkins <me@mutt.org>
  * 
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
@@ -43,6 +43,7 @@ char *mutt_read_rfc822_line (FILE *f, char *line, size_t *linelen)
   char *buf = line;
   int ch;
   size_t offset = 0;
+  size_t len = 0;
 
   FOREVER
   {
@@ -53,7 +54,11 @@ char *mutt_read_rfc822_line (FILE *f, char *line, size_t *linelen)
       return (line);
     }
 
-    buf += strlen (buf) - 1;
+    len = mutt_strlen (buf);
+    if (! len)
+      return (line);
+
+    buf += len - 1;
     if (*buf == '\n')
     {
       /* we did get a full line. remove trailing space */
@@ -1175,7 +1180,7 @@ int mutt_parse_rfc822_line (ENVELOPE *e, HEADER *hdr, char *line, char *p, short
     {
       if (hdr && !hdr->received)
       {
-	char *d = strchr (p, ';');
+	char *d = strrchr (p, ';');
 	
 	if (d)
 	  hdr->received = mutt_parse_date (d + 1, NULL);
