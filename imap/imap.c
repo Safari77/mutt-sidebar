@@ -1547,7 +1547,7 @@ int imap_buffy_check (int force)
 
     imap_munge_mbox_name (idata, munged, sizeof (munged), name);
     snprintf (command, sizeof (command),
-	      "STATUS %s (UIDNEXT UIDVALIDITY UNSEEN RECENT MESSAGES)", munged);
+	      "STATUS %s (UIDNEXT UIDVALIDITY UNSEEN RECENT)", munged);
 
     if (imap_exec (idata, command, IMAP_CMD_QUEUE) < 0)
     {

@@ -29,7 +29,6 @@
 #include "copy.h"
 #include "keymap.h"
 #include "url.h"
-#include "sidebar.h"
 
 #ifdef USE_IMAP
 #include "imap.h"
@@ -581,7 +580,6 @@ static int mx_open_mailbox_append (CONTEXT *ctx, int flags)
  *		M_APPEND	open mailbox for appending
  *		M_READONLY	open mailbox in read-only mode
  *		M_QUIET		only print error messages
- *		M_PEEK		revert atime where applicable
  *	ctx	if non-null, context struct to use
  */
 CONTEXT *mx_open_mailbox (const char *path, int flags, CONTEXT *pctx)
@@ -604,8 +602,6 @@ CONTEXT *mx_open_mailbox (const char *path, int flags, CONTEXT *pctx)
     ctx->quiet = 1;
   if (flags & M_READONLY)
     ctx->readonly = 1;
-  if (flags & M_PEEK)
-    ctx->peekonly = 1;
 
   if (flags & (M_APPEND|M_NEWFOLDER))
   {
@@ -705,26 +701,13 @@ CONTEXT *mx_open_mailbox (const char *path, int flags, CONTEXT *pctx)
 void mx_fastclose_mailbox (CONTEXT *ctx)
 {
   int i;
-#ifndef BUFFY_SIZE
-  struct utimbuf ut;
-#endif
 
   if(!ctx) 
     return;
-#ifndef BUFFY_SIZE
-  /* fix up the times so buffy won't get confused */
-  if (ctx->peekonly && ctx->path && ctx->mtime > ctx->atime)
-  {
-    ut.actime = ctx->atime;
-    ut.modtime = ctx->mtime;
-    utime (ctx->path, &ut); 
-  }
-#endif
 
   /* never announce that a mailbox we've just left has new mail. #3290
    * XXX: really belongs in mx_close_mailbox, but this is a nice hook point */
-  if(!ctx->peekonly)
-    mutt_buffy_setnotified(ctx->path);
+  mutt_buffy_setnotified(ctx->path);
 
   if (ctx->mx_close)
     ctx->mx_close (ctx);
@@ -736,8 +719,6 @@ void mx_fastclose_mailbox (CONTEXT *ctx)
   mutt_clear_threads (ctx);
   for (i = 0; i < ctx->msgcount; i++)
     mutt_free_header (&ctx->hdrs[i]);
-  ctx->msgcount -= ctx->deleted;
-  set_buffystats(ctx);
   FREE (&ctx->hdrs);
   FREE (&ctx->v2r);
   FREE (&ctx->path);
@@ -831,10 +812,6 @@ int mx_close_mailbox (CONTEXT *ctx, int *index_hint)
     if (!ctx->hdrs[i]->deleted && ctx->hdrs[i]->read 
         && !(ctx->hdrs[i]->flagged && option (OPTKEEPFLAGGED)))
       read_msgs++;
-    if (ctx->hdrs[i]->deleted && !ctx->hdrs[i]->read)
-      ctx->unread--;
-    if (ctx->hdrs[i]->deleted && ctx->hdrs[i]->flagged)
-      ctx->flagged--;
   }
 
   if (read_msgs && quadoption (OPT_MOVE) != M_NO)

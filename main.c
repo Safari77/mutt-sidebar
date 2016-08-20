@@ -31,7 +31,6 @@
 #include "url.h"
 #include "mutt_crypt.h"
 #include "mutt_idna.h"
-#include "sidebar.h"
 
 #ifdef USE_SASL
 #include "mutt_sasl.h"
@@ -51,7 +50,6 @@
 #include <unistd.h>
 #include <errno.h>
 #include <sys/stat.h>
-#include <limits.h>
 #include <sys/utsname.h>
 
 #ifdef HAVE_GETOPT_H
@@ -559,7 +557,7 @@ init_extended_keys();
 
 int main (int argc, char **argv)
 {
-  char folder[PATH_MAX] = "";
+  char folder[_POSIX_PATH_MAX] = "";
   char *subject = NULL;
   char *includeFile = NULL;
   char *draftFile = NULL;
@@ -1186,13 +1184,6 @@ int main (int argc, char **argv)
       strfcpy (folder, NONULL(Spoolfile), sizeof (folder));
     mutt_expand_path (folder, sizeof (folder));
 
-    {
-      char tmpfolder[PATH_MAX];
-      strfcpy (tmpfolder, folder, sizeof (tmpfolder));
-      if(!realpath(tmpfolder, folder))
-          strfcpy (folder, tmpfolder, sizeof (tmpfolder));
-    }
-
     mutt_str_replace (&CurrentFolder, folder);
     mutt_str_replace (&LastFolder, folder);
 
@@ -1215,7 +1206,6 @@ int main (int argc, char **argv)
     if((Context = mx_open_mailbox (folder, ((flags & M_RO) || option (OPTREADONLY)) ? M_READONLY : 0, NULL))
        || !explicit_folder)
     {
-      set_curbuffy(folder);
       mutt_index_menu ();
       if (Context)
 	FREE (&Context);
