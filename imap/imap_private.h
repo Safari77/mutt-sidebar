@@ -115,15 +115,14 @@ enum
   LOGINDISABLED,		/*           LOGINDISABLED */
   IDLE,                         /* RFC 2177: IDLE */
   SASL_IR,                      /* SASL initial response draft */
-  X_GM_EXT1,			/* X-GM-RAW https://developers.google.com/gmail/imap_extensions?csw=1 */
   ENABLE,			/* RFC 5161 */
 
   CAPMAX
 };
 
 /* imap_conn_find flags */
-#define M_IMAP_CONN_NONEW    (1<<0)
-#define M_IMAP_CONN_NOSELECT (1<<1)
+#define MUTT_IMAP_CONN_NONEW    (1<<0)
+#define MUTT_IMAP_CONN_NOSELECT (1<<1)
 
 /* -- data structures -- */
 typedef struct
@@ -268,6 +267,10 @@ int imap_read_headers (IMAP_DATA* idata, int msgbegin, int msgend);
 char* imap_set_flags (IMAP_DATA* idata, HEADER* h, char* s);
 int imap_cache_del (IMAP_DATA* idata, HEADER* h);
 int imap_cache_clean (IMAP_DATA* idata);
+
+int imap_fetch_message (CONTEXT *ctx, MESSAGE *msg, int msgno);
+int imap_close_message (CONTEXT *ctx, MESSAGE *msg);
+int imap_commit_message (CONTEXT *ctx, MESSAGE *msg);
 
 /* util.c */
 #ifdef USE_HCACHE

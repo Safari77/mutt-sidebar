@@ -175,6 +175,14 @@ if test x$have_smime != xno ; then
 	SMIMEAUX_TARGET="smime_keys"
 fi
 
+AC_ARG_ENABLE(sidebar, AS_HELP_STRING([--enable-sidebar],[Enable Sidebar support]),
+[       if test x$enableval = xyes ; then
+		AC_DEFINE(USE_SIDEBAR, 1, [Define if you want support for the sidebar.])
+		OPS="$OPS \$(srcdir)/OPS.SIDEBAR"
+                MUTT_LIB_OBJECTS="$MUTT_LIB_OBJECTS sidebar.o"
+        fi
+])
+
 AC_ARG_WITH(mixmaster, AS_HELP_STRING([--with-mixmaster@<:@=PATH@:>@],[Include Mixmaster support]),
   [if test "$withval" != no
    then
@@ -281,7 +289,9 @@ main ()
 	done
         AC_CHECK_LIB($cf_ncurses, initscr,
                 [MUTTLIBS="$MUTTLIBS -l$cf_ncurses"
-		
+
+                AC_CHECK_LIB(tinfo, tgetent, [MUTTLIBS="$MUTTLIBS -ltinfo"])
+
                 if test "$cf_ncurses" = ncursesw; then
 			AC_CHECK_HEADERS(ncursesw/ncurses.h,[cf_cv_ncurses_header="ncursesw/ncurses.h"])
 		else
@@ -1163,6 +1173,13 @@ fi
 fi # libiconv
 
 dnl -- IDN depends on iconv
+
+dnl mutt_idna.c will perform charset transformations (for smtputf8
+dnl support) as long as at least iconv is installed.  If there is no
+dnl iconv, then it doesn't need to be included in the build.
+if test "$am_cv_func_iconv" = yes; then
+  MUTT_LIB_OBJECTS="$MUTT_LIB_OBJECTS mutt_idna.o"
+fi
 
 dnl mutt_idna.c will perform charset transformations (for smtputf8
 dnl support) as long as at least iconv is installed.  If there is no

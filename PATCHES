@@ -1,6 +1,5 @@
 random-msgid-boundary
 fsync-attachments
-maildir-optimize-mutt_move_message
 553321-ansi-escape-segfault.patch
 543467-thread-segfault.patch
 228671-pipe-mime.patch
@@ -9,5 +8,4 @@ mutt-1.5.23-system_certs.patch
 mutt-1.5.21-cabundle.patch 
 mutt-1.5.21-syncdebug.patch
 hostname_mid
-gmail_X-GM-EXT-1
 debian sensible_browser_position.patch
