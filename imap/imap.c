@@ -1747,6 +1747,9 @@ static int do_search (const pattern_t* search, int allpats)
         if (pat->stringmatch)
           rc++;
         break;
+      case MUTT_SERVERSEARCH:
+        rc++;
+        break;
       default:
         if (pat->child && do_search (pat->child, 1))
           rc++;
@@ -1762,7 +1765,7 @@ static int do_search (const pattern_t* search, int allpats)
 /* convert mutt pattern_t to IMAP SEARCH command containing only elements
  * that require full-text search (mutt already has what it needs for most
  * match types, and does a better job (eg server doesn't support regexps). */
-static int imap_compile_search (const pattern_t* pat, BUFFER* buf)
+static int imap_compile_search (CONTEXT* ctx, const pattern_t* pat, BUFFER* buf)
 {
   if (! do_search (pat, 0))
     return 0;
@@ -1788,7 +1791,7 @@ static int imap_compile_search (const pattern_t* pat, BUFFER* buf)
             mutt_buffer_addstr (buf, "OR ");
           clauses--;
 
-          if (imap_compile_search (clause, buf) < 0)
+          if (imap_compile_search (ctx, clause, buf) < 0)
             return -1;
 
           if (clauses)
@@ -1839,6 +1842,19 @@ static int imap_compile_search (const pattern_t* pat, BUFFER* buf)
         imap_quote_string (term, sizeof (term), pat->p.str);
         mutt_buffer_addstr (buf, term);
         break;
+      case MUTT_SERVERSEARCH:
+        {
+          IMAP_DATA* idata = (IMAP_DATA*)ctx->data;
+          if (!mutt_bit_isset (idata->capabilities, X_GM_EXT1))
+          {
+            mutt_error(_("Server-side custom search not supported: %s"), pat->p.str);
+            return -1;
+          }
+        }
+        mutt_buffer_addstr (buf, "X-GM-RAW ");
+        imap_quote_string (term, sizeof (term), pat->p.str);
+        mutt_buffer_addstr (buf, term);
+        break;
     }
   }
 
@@ -1859,7 +1875,7 @@ int imap_search (CONTEXT* ctx, const pattern_t* pat)
 
   mutt_buffer_init (&buf);
   mutt_buffer_addstr (&buf, "UID SEARCH ");
-  if (imap_compile_search (pat, &buf) < 0)
+  if (imap_compile_search (ctx, pat, &buf) < 0)
   {
     FREE (&buf.data);
     return -1;

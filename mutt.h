@@ -225,6 +225,7 @@ enum
   MUTT_CRYPT_ENCRYPT,
   MUTT_PGP_KEY,
   MUTT_XLABEL,
+  MUTT_SERVERSEARCH,
   MUTT_MIMEATTACH,
   
   /* Options for Mailcap lookup */
