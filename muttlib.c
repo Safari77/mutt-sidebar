@@ -794,8 +794,10 @@ void mutt_randbuf(void *out, size_t len)
   } while ((ret == -1) && (errno == EINTR));
   if (ret == len) return;
   if (!whined) {
-    mutt_error (_("getrandom failed: %s"), strerror(errno));
-    mutt_sleep (1);
+    if ((ret == -1) && (errno != ENOSYS)) {
+      mutt_error (_("getrandom failed: %s"), strerror(errno));
+      mutt_sleep (1);
+    }
     whined = 1;
   }
   /* let's try urandom in case user has configured selinux or something
