@@ -3837,8 +3837,8 @@ a message's score if <emphasis>pattern</emphasis> matches it.
 <emphasis>pattern</emphasis> is a string in the format described in the
 <link linkend="patterns">patterns</link> section (note: For efficiency
 reasons, patterns which scan information not available in the index,
-such as <literal>~b</literal>, <literal>~B</literal> or
-<literal>~h</literal>, may not be used).  <emphasis>value</emphasis> is
+such as <literal>~b</literal>, <literal>~B</literal>, <literal>~h</literal>,
+or <literal>~X</literal> may not be used).  <emphasis>value</emphasis> is
 a positive or negative integer.  A message's final score is the sum
 total of all matching <command>score</command> entries.  However, you
 may optionally prefix <emphasis>value</emphasis> with an equal sign
@@ -8209,11 +8209,6 @@ please have a look at the mixmaster documentation.
 	    <entry><literal>no</literal></entry>
 	  </row>
 	  <row>
-	    <entry><literal>sidebar_whitelist</literal></entry>
-	    <entry>list</entry>
-	    <entry>(empty)</entry>
-	  </row>
-	  <row>
 	    <entry><literal>sidebar_width</literal></entry>
 	    <entry>number</entry>
 	    <entry><literal>20</literal></entry>
@@ -8298,6 +8293,13 @@ please have a look at the mixmaster documentation.
 	<replaceable class="parameter">mailbox</replaceable>
       </arg>
     </cmdsynopsis>
+
+    <para>
+      This command specifies mailboxes that will always be displayed
+      in the sidebar, even if <link
+      linkend="sidebar-new-mail-only">$sidebar_new_mail_only</link>
+      is set and the mailbox does not contain new mail.
+    </para>
   </sect2>
 
   <sect2 id="sidebar-colors">
