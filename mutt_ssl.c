@@ -37,12 +37,6 @@
 #include "mutt_ssl.h"
 #include "mutt_idna.h"
 
-#if OPENSSL_VERSION_NUMBER >= 0x00904000L
-#define READ_X509_KEY(fp, key)	PEM_read_X509(fp, key, NULL, NULL)
-#else
-#define READ_X509_KEY(fp, key)	PEM_read_X509(fp, key, NULL)
-#endif
-
 /* Just in case OpenSSL doesn't define DEVRANDOM */
 #ifndef DEVRANDOM
 #define DEVRANDOM "/dev/urandom"
@@ -406,11 +400,7 @@ static int ssl_negotiate (CONNECTION *conn, sslsockdata* ssldata)
   int err;
   const char* errmsg;
 
-#if OPENSSL_VERSION_NUMBER >= 0x00906000L
-  /* This only exists in 0.9.6 and above. Without it we may get interrupted
-   *   reads or writes. Bummer. */
   SSL_set_mode (ssldata->ssl, SSL_MODE_AUTO_RETRY);
-#endif
 
 #if OPENSSL_VERSION_NUMBER >= 0x0090806fL && !defined(OPENSSL_NO_TLSEXT)
   /* TLS Virtual-hosting requires that the server present the correct
@@ -643,7 +633,7 @@ static char *asn1time_to_string (ASN1_UTCTIME *tm)
 
 static int check_certificate_by_signer (X509 *peercert)
 {
-  X509_STORE_CTX xsc;
+  X509_STORE_CTX *xsc;
   X509_STORE *ctx;
   int pass = 0, i;
 
@@ -673,23 +663,24 @@ static int check_certificate_by_signer (X509 *peercert)
     return 0;
   }
 
-  X509_STORE_CTX_init (&xsc, ctx, peercert, SslSessionCerts);
+  xsc = X509_STORE_CTX_new();
+  if (xsc == NULL) return 0;
+  X509_STORE_CTX_init (xsc, ctx, peercert, SslSessionCerts);
 
-  pass = (X509_verify_cert (&xsc) > 0);
+  pass = (X509_verify_cert (xsc) > 0);
 #ifdef DEBUG
   if (! pass)
   {
     char buf[SHORT_STRING];
     int err;
 
-    err = X509_STORE_CTX_get_error (&xsc);
+    err = X509_STORE_CTX_get_error (xsc);
     snprintf (buf, sizeof (buf), "%s (%d)",
 	X509_verify_cert_error_string(err), err);
     dprint (2, (debugfile, "X509_verify_cert: %s\n", buf));
-    dprint (2, (debugfile, " [%s]\n", peercert->name));
   }
 #endif
-  X509_STORE_CTX_cleanup (&xsc);
+  X509_STORE_CTX_free (xsc);
   X509_STORE_free (ctx);
 
   return pass;
@@ -778,7 +769,7 @@ static int check_certificate_by_digest (X509 *peercert)
     return 0;
   }
 
-  while ((cert = READ_X509_KEY (fp, &cert)) != NULL)
+  while ((cert = PEM_read_X509 (fp, &cert, NULL, NULL)) != NULL)
   {
     pass = compare_certificates (cert, peercert, peermd, peermdlen) ? 0 : 1;
 
@@ -934,7 +925,7 @@ out:
 
 static int ssl_cache_trusted_cert (X509 *c)
 {
-  dprint (1, (debugfile, "trusted: %s\n", c->name));
+  dprint (1, (debugfile, "ssl_cache_trusted_cert: trusted\n"));
   if (!SslSessionCerts)
     SslSessionCerts = sk_X509_new_null();
   return (sk_X509_push (SslSessionCerts, X509_dup(c)));
@@ -987,6 +978,13 @@ static int ssl_check_certificate (CONNECTION *conn, sslsockdata *data)
   int i, preauthrc, chain_len;
   STACK_OF(X509) *chain;
   X509 *cert;
+#ifdef DEBUG
+  char buf[STRING];
+
+  dprint (1, (debugfile, "ssl_check_certificate: checking cert %s\n",
+              X509_NAME_oneline (X509_get_subject_name (data->cert),
+                                 buf, sizeof (buf))));
+#endif
 
   if ((preauthrc = ssl_check_preauth (data->cert, conn->account.host)) > 0)
     return preauthrc;
@@ -1002,6 +1000,10 @@ static int ssl_check_certificate (CONNECTION *conn, sslsockdata *data)
   for (i = chain_len-1; i >= 0; i--)
   {
     cert = sk_X509_value (chain, i);
+
+    dprint (1, (debugfile, "ssl_check_certificate: checking cert chain entry %s\n",
+                X509_NAME_oneline (X509_get_subject_name (cert),
+                                   buf, sizeof (buf))));
 
     /* if the certificate validates or is manually accepted, then add it to
      * the trusted set and recheck the peer certificate */
@@ -1029,8 +1031,6 @@ static int interactive_check_cert (X509 *cert, int idx, int len)
   FILE *fp;
   char *name = NULL, *c;
 
-  dprint (2, (debugfile, "interactive_check_cert: %s\n", cert->name));
-
   menu->max = 19;
   menu->dialog = (char **) safe_calloc (1, menu->max * sizeof (char *));
   for (i = 0; i < menu->max; i++)
@@ -1041,7 +1041,6 @@ static int interactive_check_cert (X509 *cert, int idx, int len)
   row++;
   name = X509_NAME_oneline (X509_get_subject_name (cert),
 			    buf, sizeof (buf));
-  dprint (2, (debugfile, "oneline: %s\n", name));
 
   for (i = 0; i < 5; i++)
   {

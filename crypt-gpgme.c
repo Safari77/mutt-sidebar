@@ -673,17 +673,15 @@ static gpgme_key_t *create_recipient_set (const char *keylist,
 	    else
 	      err = gpgme_get_key (context, buf, &key, 0);
 
+            safe_realloc (&rset, sizeof (*rset) * (rset_n + 1));
 	    if (! err)
-	      {
-		safe_realloc (&rset, sizeof (*rset) * (rset_n + 1));
-		rset[rset_n++] = key;
-	      }
+              rset[rset_n++] = key;
 	    else
 	      {
 		mutt_error (_("error adding recipient `%s': %s\n"),
 			    buf, gpgme_strerror (err));
-		rset[rset_n] = NULL;
-		free_recipient_set (&rset);
+                rset[rset_n] = NULL;
+                free_recipient_set (&rset);
 		gpgme_release (context);
 		return NULL;
 	      }
@@ -4946,7 +4944,7 @@ int smime_gpgme_verify_sender (HEADER *h)
   return verify_sender (h, GPGME_PROTOCOL_CMS);
 }
 
-void gpgme_set_sender (const char *sender)
+void mutt_gpgme_set_sender (const char *sender)
 {
   mutt_error ("[setting sender] mailbox: %s\n", sender);
   FREE (&current_sender);
