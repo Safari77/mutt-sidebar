@@ -2345,6 +2345,8 @@ mutt_invoke_sendmail (ADDRESS *from,	/* the sender */
   char *ps = NULL, *path = NULL, *s = safe_strdup (Sendmail), *childout = NULL;
   char **args = NULL;
   size_t argslen = 0, argsmax = 0;
+  char **extra_args = NULL;
+  size_t extra_argslen = 0, extra_argsmax = 0;
   int i;
 
   /* ensure that $sendmail is set to avoid a crash. http://dev.mutt.org/trac/ticket/3548 */
@@ -2362,7 +2364,11 @@ mutt_invoke_sendmail (ADDRESS *from,	/* the sender */
       safe_realloc (&args, sizeof (char *) * (argsmax += 5));
 
     if (i)
+    {
+      if (!mutt_strcmp (ps, "--"))
+        break;
       args[argslen++] = ps;
+    }
     else
     {
       path = safe_strdup (ps);
@@ -2375,6 +2381,21 @@ mutt_invoke_sendmail (ADDRESS *from,	/* the sender */
     }
     ps = NULL;
     i++;
+  }
+
+  /* If Sendmail contained a "--", we save the recipients to append to
+   * args after other possible options added below. */
+  if (ps)
+  {
+    ps = NULL;
+    while ((ps = strtok (ps, " ")))
+    {
+      if (extra_argslen == extra_argsmax)
+        safe_realloc (&extra_args, sizeof (char *) * (extra_argsmax += 5));
+
+      extra_args[extra_argslen++] = ps;
+      ps = NULL;
+    }
   }
 
   if (eightbit && option (OPTUSE8BITMIME))
@@ -2405,6 +2426,8 @@ mutt_invoke_sendmail (ADDRESS *from,	/* the sender */
     args = add_option (args, &argslen, &argsmax, DsnReturn);
   }
   args = add_option (args, &argslen, &argsmax, "--");
+  for (i = 0; i < extra_argslen; i++)
+    args = add_option (args, &argslen, &argsmax, extra_args[i]);
   args = add_args (args, &argslen, &argsmax, to);
   args = add_args (args, &argslen, &argsmax, cc);
   args = add_args (args, &argslen, &argsmax, bcc);
@@ -2418,7 +2441,7 @@ mutt_invoke_sendmail (ADDRESS *from,	/* the sender */
   {
     if (i != S_BKG)
     {
-      const char *e = mutt_strsysexit (i);
+      const char *e;
 
       mutt_error (_("Error sending message, child exited %d (%s)."), i, NONULL (e));
       if (childout)
@@ -2437,6 +2460,7 @@ mutt_invoke_sendmail (ADDRESS *from,	/* the sender */
   FREE (&path);
   FREE (&s);
   FREE (&args);
+  FREE (&extra_args);
 
   if (i == (EX_OK & 0xff))
     i = 0;

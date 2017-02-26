@@ -784,6 +784,7 @@ pattern_t *mutt_pattern_comp (/* const */ char *s, int flags, BUFFER *err)
   int alladdr = 0;
   int or = 0;
   int implicit = 1;	/* used to detect logical AND operator */
+  int isalias = 0;
   const struct pattern_flags *entry;
   char *p;
   char *buf;
@@ -805,6 +806,10 @@ pattern_t *mutt_pattern_comp (/* const */ char *s, int flags, BUFFER *err)
       case '!':
 	ps.dptr++;
 	not = !not;
+	break;
+      case '@':
+	ps.dptr++;
+	isalias = !isalias;
 	break;
       case '|':
 	if (!or)
@@ -831,6 +836,7 @@ pattern_t *mutt_pattern_comp (/* const */ char *s, int flags, BUFFER *err)
 	implicit = 0;
 	not = 0;
 	alladdr = 0;
+	isalias = 0;
 	break;
       case '%':
       case '=':
@@ -860,8 +866,10 @@ pattern_t *mutt_pattern_comp (/* const */ char *s, int flags, BUFFER *err)
 	  last = tmp;
 	  tmp->not ^= not;
 	  tmp->alladdr |= alladdr;
+	  tmp->isalias |= isalias;
 	  not = 0;
 	  alladdr = 0;
+	  isalias = 0;
 	  /* compile the sub-expression */
 	  buf = mutt_substrdup (ps.dptr + 1, p);
 	  if ((tmp2 = mutt_pattern_comp (buf, flags, err)) == NULL)
@@ -889,10 +897,12 @@ pattern_t *mutt_pattern_comp (/* const */ char *s, int flags, BUFFER *err)
 	tmp = new_pattern ();
 	tmp->not = not;
 	tmp->alladdr = alladdr;
+	tmp->isalias = isalias;
         tmp->stringmatch = (*ps.dptr == '=') ? 1 : 0;
         tmp->groupmatch  = (*ps.dptr == '%') ? 1 : 0;
 	not = 0;
 	alladdr = 0;
+	isalias = 0;
 
 	if (last)
 	  last->next = tmp;
@@ -958,8 +968,10 @@ pattern_t *mutt_pattern_comp (/* const */ char *s, int flags, BUFFER *err)
 	last = tmp;
 	tmp->not ^= not;
 	tmp->alladdr |= alladdr;
+	tmp->isalias |= isalias;
 	not = 0;
 	alladdr = 0;
+	isalias = 0;
 	ps.dptr = p + 1; /* restore location */
 	break;
       default:
@@ -984,19 +996,19 @@ pattern_t *mutt_pattern_comp (/* const */ char *s, int flags, BUFFER *err)
 }
 
 static int
-perform_and (pattern_t *pat, pattern_exec_flag flags, CONTEXT *ctx, HEADER *hdr)
+perform_and (pattern_t *pat, pattern_exec_flag flags, CONTEXT *ctx, HEADER *hdr, pattern_cache_t *cache)
 {
   for (; pat; pat = pat->next)
-    if (mutt_pattern_exec (pat, flags, ctx, hdr) <= 0)
+    if (mutt_pattern_exec (pat, flags, ctx, hdr, cache) <= 0)
       return 0;
   return 1;
 }
 
 static int
-perform_or (struct pattern_t *pat, pattern_exec_flag flags, CONTEXT *ctx, HEADER *hdr)
+perform_or (struct pattern_t *pat, pattern_exec_flag flags, CONTEXT *ctx, HEADER *hdr, pattern_cache_t *cache)
 {
   for (; pat; pat = pat->next)
-    if (mutt_pattern_exec (pat, flags, ctx, hdr) > 0)
+    if (mutt_pattern_exec (pat, flags, ctx, hdr, cache) > 0)
       return 1;
   return 0;
 }
@@ -1011,8 +1023,10 @@ static int match_adrlist (pattern_t *pat, int match_personal, int n, ...)
   {
     for (a = va_arg (ap, ADDRESS *) ; a ; a = a->next)
     {
-      if (pat->alladdr ^ ((a->mailbox && patmatch (pat, a->mailbox) == 0) ||
-	   (match_personal && a->personal && patmatch (pat, a->personal) == 0)))
+      if (pat->alladdr ^
+          ((!pat->isalias || alias_reverse_lookup (a)) &&
+           ((a->mailbox && !patmatch (pat, a->mailbox)) ||
+	    (match_personal && a->personal && !patmatch (pat, a->personal) ))))
       {
 	va_end (ap);
 	return (! pat->alladdr); /* Found match, or non-match if alladdr */
@@ -1081,7 +1095,7 @@ static int match_threadcomplete(struct pattern_t *pat, pattern_exec_flag flags, 
     return 0;
   h = t->message;
   if(h)
-    if(mutt_pattern_exec(pat, flags, ctx, h))
+    if(mutt_pattern_exec(pat, flags, ctx, h, NULL))
       return 1;
 
   if(up && (a=match_threadcomplete(pat, flags, ctx, t->parent,1,1,1,0)))
@@ -1095,17 +1109,44 @@ static int match_threadcomplete(struct pattern_t *pat, pattern_exec_flag flags, 
   return 0;
 }
 
-/* flags
-   	MUTT_MATCH_FULL_ADDRESS	match both personal and machine address */
-int
-mutt_pattern_exec (struct pattern_t *pat, pattern_exec_flag flags, CONTEXT *ctx, HEADER *h)
+
+/* Sets a value in the pattern_cache_t cache entry.
+ * Normalizes the "true" value to 2. */
+static void set_pattern_cache_value (int *cache_entry, int value)
 {
+  *cache_entry = value ? 2 : 1;
+}
+
+/* Returns 1 if the cache value is set and has a true value.
+ * 0 otherwise (even if unset!) */
+static int get_pattern_cache_value (int cache_entry)
+{
+  return cache_entry == 2;
+}
+
+static int is_pattern_cache_set (int cache_entry)
+{
+  return cache_entry != 0;
+}
+
+
+/*
+ * flags: MUTT_MATCH_FULL_ADDRESS - match both personal and machine address
+ * cache: For repeated matches against the same HEADER, passing in non-NULL will
+ *        store some of the cacheable pattern matches in this structure. */
+int
+mutt_pattern_exec (struct pattern_t *pat, pattern_exec_flag flags, CONTEXT *ctx, HEADER *h,
+                   pattern_cache_t *cache)
+{
+  int result;
+  int *cache_entry;
+
   switch (pat->op)
   {
     case MUTT_AND:
-      return (pat->not ^ (perform_and (pat->child, flags, ctx, h) > 0));
+      return (pat->not ^ (perform_and (pat->child, flags, ctx, h, cache) > 0));
     case MUTT_OR:
-      return (pat->not ^ (perform_or (pat->child, flags, ctx, h) > 0));
+      return (pat->not ^ (perform_or (pat->child, flags, ctx, h, cache) > 0));
     case MUTT_THREAD:
       return (pat->not ^ match_threadcomplete(pat->child, flags, ctx, h->thread, 1, 1, 1, 1));
     case MUTT_ALL:
@@ -1203,13 +1244,53 @@ mutt_pattern_exec (struct pattern_t *pat, pattern_exec_flag flags, CONTEXT *ctx,
            return (pat->not ^ match_adrlist (pat, flags & MUTT_MATCH_FULL_ADDRESS,
                                              2, h->env->to, h->env->cc));
     case MUTT_LIST:	/* known list, subscribed or not */
-      return (pat->not ^ mutt_is_list_cc (pat->alladdr, h->env->to, h->env->cc));
+      if (cache)
+      {
+        cache_entry = pat->alladdr ? &cache->list_all : &cache->list_one;
+        if (!is_pattern_cache_set (*cache_entry))
+          set_pattern_cache_value (cache_entry,
+                                   mutt_is_list_cc (pat->alladdr, h->env->to, h->env->cc));
+        result = get_pattern_cache_value (*cache_entry);
+      }
+      else
+        result = mutt_is_list_cc (pat->alladdr, h->env->to, h->env->cc);
+      return (pat->not ^ result);
     case MUTT_SUBSCRIBED_LIST:
-      return (pat->not ^ mutt_is_list_recipient (pat->alladdr, h->env->to, h->env->cc));
+      if (cache)
+      {
+        cache_entry = pat->alladdr ? &cache->sub_all : &cache->sub_one;
+        if (!is_pattern_cache_set (*cache_entry))
+          set_pattern_cache_value (cache_entry,
+                                   mutt_is_list_recipient (pat->alladdr, h->env->to, h->env->cc));
+        result = get_pattern_cache_value (*cache_entry);
+      }
+      else
+        result = mutt_is_list_recipient (pat->alladdr, h->env->to, h->env->cc);
+      return (pat->not ^ result);
     case MUTT_PERSONAL_RECIP:
-      return (pat->not ^ match_user (pat->alladdr, h->env->to, h->env->cc));
+      if (cache)
+      {
+        cache_entry = pat->alladdr ? &cache->pers_recip_all : &cache->pers_recip_one;
+        if (!is_pattern_cache_set (*cache_entry))
+          set_pattern_cache_value (cache_entry,
+                                   match_user (pat->alladdr, h->env->to, h->env->cc));
+        result = get_pattern_cache_value (*cache_entry);
+      }
+      else
+        result = match_user (pat->alladdr, h->env->to, h->env->cc);
+      return (pat->not ^ result);
     case MUTT_PERSONAL_FROM:
-      return (pat->not ^ match_user (pat->alladdr, h->env->from, NULL));
+      if (cache)
+      {
+        cache_entry = pat->alladdr ? &cache->pers_from_all : &cache->pers_from_one;
+        if (!is_pattern_cache_set (*cache_entry))
+          set_pattern_cache_value (cache_entry,
+                                   match_user (pat->alladdr, h->env->from, NULL));
+        result = get_pattern_cache_value (*cache_entry);
+      }
+      else
+        result = match_user (pat->alladdr, h->env->from, NULL);
+      return (pat->not ^ result);
     case MUTT_COLLAPSED:
       return (pat->not ^ (h->collapsed && h->num_hidden > 1));
    case MUTT_CRYPT_SIGN:
@@ -1369,7 +1450,7 @@ int mutt_pattern_func (int op, char *prompt)
       Context->hdrs[i]->limited = 0;
       Context->hdrs[i]->collapsed = 0;
       Context->hdrs[i]->num_hidden = 0;
-      if (mutt_pattern_exec (pat, MUTT_MATCH_FULL_ADDRESS, Context, Context->hdrs[i]))
+      if (mutt_pattern_exec (pat, MUTT_MATCH_FULL_ADDRESS, Context, Context->hdrs[i], NULL))
       {
 	Context->hdrs[i]->virtual = Context->vcount;
 	Context->hdrs[i]->limited = 1;
@@ -1385,7 +1466,7 @@ int mutt_pattern_func (int op, char *prompt)
     for (i = 0; i < Context->vcount; i++)
     {
       mutt_progress_update (&progress, i, -1);
-      if (mutt_pattern_exec (pat, MUTT_MATCH_FULL_ADDRESS, Context, Context->hdrs[Context->v2r[i]]))
+      if (mutt_pattern_exec (pat, MUTT_MATCH_FULL_ADDRESS, Context, Context->hdrs[Context->v2r[i]], NULL))
       {
 	switch (op)
 	{
@@ -1545,7 +1626,7 @@ int mutt_search_command (int cur, int op)
     {
       /* remember that we've already searched this message */
       h->searched = 1;
-      if ((h->matched = (mutt_pattern_exec (SearchPattern, MUTT_MATCH_FULL_ADDRESS, Context, h) > 0)))
+      if ((h->matched = (mutt_pattern_exec (SearchPattern, MUTT_MATCH_FULL_ADDRESS, Context, h, NULL) > 0)))
       {
 	mutt_clear_error();
 	if (msg && *msg)
