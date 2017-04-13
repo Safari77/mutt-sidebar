@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2017-02-24 10:48-0800\n"
+"POT-Creation-Date: 2017-04-12 17:42-0700\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -45,7 +45,7 @@ msgid "Select"
 msgstr ""
 
 #: addrbook.c:41 browser.c:49 compose.c:96 crypt-gpgme.c:4026 curs_main.c:493
-#: mutt_ssl.c:1082 mutt_ssl_gnutls.c:1003 pager.c:1663 pgpkey.c:522
+#: mutt_ssl.c:1093 mutt_ssl_gnutls.c:1003 pager.c:1663 pgpkey.c:522
 #: postpone.c:44 query.c:53 recvattach.c:57 smime.c:440
 msgid "Help"
 msgstr ""
@@ -115,8 +115,8 @@ msgstr ""
 msgid "Mailcap compose entry requires %%s"
 msgstr ""
 
-#: attach.c:134 attach.c:266 commands.c:223 compose.c:1233 compress.c:444
-#: curs_lib.c:205 curs_lib.c:724
+#: attach.c:134 attach.c:266 commands.c:223 compose.c:1234 compress.c:444
+#: curs_lib.c:206 curs_lib.c:725
 #, c-format
 msgid "Error running \"%s\"!"
 msgstr ""
@@ -340,7 +340,7 @@ msgstr ""
 msgid "%s: no such attribute"
 msgstr ""
 
-#: color.c:736 hook.c:73 hook.c:81 init.c:1860 init.c:1935 keymap.c:921
+#: color.c:736 hook.c:73 hook.c:81 init.c:1942 init.c:2019 keymap.c:921
 msgid "too few arguments"
 msgstr ""
 
@@ -671,106 +671,106 @@ msgstr ""
 msgid "Unable to attach %s!"
 msgstr ""
 
-#: compose.c:733
+#: compose.c:734
 msgid "Open mailbox to attach message from"
 msgstr ""
 
-#: compose.c:763
+#: compose.c:764
 #, c-format
 msgid "Unable to open mailbox %s"
 msgstr ""
 
-#: compose.c:771
+#: compose.c:772
 msgid "No messages in that folder."
 msgstr ""
 
-#: compose.c:780
+#: compose.c:781
 msgid "Tag the messages you want to attach!"
 msgstr ""
 
-#: compose.c:812
+#: compose.c:813
 msgid "Unable to attach!"
 msgstr ""
 
-#: compose.c:863
+#: compose.c:864
 msgid "Recoding only affects text attachments."
 msgstr ""
 
-#: compose.c:868
+#: compose.c:869
 msgid "The current attachment won't be converted."
 msgstr ""
 
-#: compose.c:870
+#: compose.c:871
 msgid "The current attachment will be converted."
 msgstr ""
 
-#: compose.c:945
+#: compose.c:946
 msgid "Invalid encoding."
 msgstr ""
 
-#: compose.c:971
+#: compose.c:972
 msgid "Save a copy of this message?"
 msgstr ""
 
-#: compose.c:1034
+#: compose.c:1035
 msgid "Send attachment with name: "
 msgstr ""
 
-#: compose.c:1052
+#: compose.c:1053
 msgid "Rename to: "
 msgstr ""
 
 #. L10N:
 #. "stat" is a system call. Do "man 2 stat" for more information.
-#: compose.c:1059 editmsg.c:96 editmsg.c:121 sendlib.c:872
+#: compose.c:1060 editmsg.c:96 editmsg.c:121 sendlib.c:872
 #, c-format
 msgid "Can't stat %s: %s"
 msgstr ""
 
-#: compose.c:1086
+#: compose.c:1087
 msgid "New file: "
 msgstr ""
 
-#: compose.c:1099
+#: compose.c:1100
 msgid "Content-Type is of the form base/sub"
 msgstr ""
 
-#: compose.c:1105
+#: compose.c:1106
 #, c-format
 msgid "Unknown Content-Type %s"
 msgstr ""
 
-#: compose.c:1118
+#: compose.c:1119
 #, c-format
 msgid "Can't create file %s"
 msgstr ""
 
-#: compose.c:1126
+#: compose.c:1127
 msgid "What we have here is a failure to make an attachment"
 msgstr ""
 
-#: compose.c:1187
+#: compose.c:1188
 msgid "Postpone this message?"
 msgstr ""
 
-#: compose.c:1251
+#: compose.c:1252
 msgid "Write message to mailbox"
 msgstr ""
 
-#: compose.c:1254
+#: compose.c:1255
 #, c-format
 msgid "Writing message to %s ..."
 msgstr ""
 
-#: compose.c:1263
+#: compose.c:1264
 msgid "Message written."
 msgstr ""
 
-#: compose.c:1277
+#: compose.c:1278
 msgid "S/MIME already selected. Clear & continue ? "
 msgstr ""
 
-#: compose.c:1310
+#: compose.c:1311
 msgid "PGP already selected. Clear & continue ? "
 msgstr ""
 
@@ -1270,7 +1270,7 @@ msgstr ""
 msgid "All matching keys are marked expired/revoked."
 msgstr ""
 
-#: crypt-gpgme.c:4018 mutt_ssl.c:1080 mutt_ssl_gnutls.c:1001 pgpkey.c:515
+#: crypt-gpgme.c:4018 mutt_ssl.c:1091 mutt_ssl_gnutls.c:1001 pgpkey.c:515
 #: smime.c:435
 msgid "Exit  "
 msgstr ""
@@ -1541,27 +1541,27 @@ msgstr ""
 msgid "Invoking S/MIME..."
 msgstr ""
 
-#: curs_lib.c:219
+#: curs_lib.c:220
 msgid "yes"
 msgstr ""
 
-#: curs_lib.c:220
+#: curs_lib.c:221
 msgid "no"
 msgstr ""
 
-#: curs_lib.c:327
+#: curs_lib.c:328
 msgid "Exit Mutt?"
 msgstr ""
 
-#: curs_lib.c:676 mutt_socket.c:577 mutt_ssl.c:500
+#: curs_lib.c:677 mutt_socket.c:577 mutt_ssl.c:507
 msgid "unknown error"
 msgstr ""
 
-#: curs_lib.c:696
+#: curs_lib.c:697
 msgid "Press any key to continue..."
 msgstr ""
 
-#: curs_lib.c:741
+#: curs_lib.c:742
 msgid " ('?' for list): "
 msgstr ""
 
@@ -2300,7 +2300,7 @@ msgstr ""
 msgid "Error opening mailbox"
 msgstr ""
 
-#: imap/imap.c:810 imap/imap.c:2160 imap/message.c:895 muttlib.c:1683
+#: imap/imap.c:810 imap/imap.c:2160 imap/message.c:903 muttlib.c:1683
 #, c-format
 msgid "Create %s?"
 msgstr ""
@@ -2364,7 +2364,7 @@ msgstr ""
 msgid "Unsubscribed from %s"
 msgstr ""
 
-#: imap/imap.c:2145 imap/message.c:859
+#: imap/imap.c:2145 imap/message.c:867
 #, c-format
 msgid "Copying %d messages to %s..."
 msgstr ""
@@ -2388,19 +2388,19 @@ msgstr ""
 msgid "Fetching message headers..."
 msgstr ""
 
-#: imap/message.c:462 imap/message.c:519 pop.c:573
+#: imap/message.c:466 imap/message.c:525 pop.c:573
 msgid "Fetching message..."
 msgstr ""
 
-#: imap/message.c:508 pop.c:568
+#: imap/message.c:512 pop.c:568
 msgid "The message index is incorrect. Try reopening the mailbox."
 msgstr ""
 
-#: imap/message.c:678
+#: imap/message.c:686
 msgid "Uploading message..."
 msgstr ""
 
-#: imap/message.c:863
+#: imap/message.c:871
 #, c-format
 msgid "Copying message %d to %s..."
 msgstr ""
@@ -2409,7 +2409,7 @@ msgstr ""
 msgid "Continue?"
 msgstr ""
 
-#: init.c:60 init.c:2044 pager.c:53
+#: init.c:60 init.c:2100 pager.c:53
 #, c-format
 msgid "Not available in this menu."
 msgstr ""
@@ -2436,174 +2436,174 @@ msgstr ""
 msgid "nospam: no matching pattern"
 msgstr ""
 
-#: init.c:1006
+#: init.c:1046
 #, c-format
 msgid "%sgroup: missing -rx or -addr."
 msgstr ""
 
-#: init.c:1024
+#: init.c:1064
 #, c-format
 msgid "%sgroup: warning: bad IDN '%s'.\n"
 msgstr ""
 
-#: init.c:1239
+#: init.c:1279
 msgid "attachments: no disposition"
 msgstr ""
 
-#: init.c:1277
+#: init.c:1317
 msgid "attachments: invalid disposition"
 msgstr ""
 
-#: init.c:1291
+#: init.c:1331
 msgid "unattachments: no disposition"
 msgstr ""
 
-#: init.c:1314
+#: init.c:1354
 msgid "unattachments: invalid disposition"
 msgstr ""
 
-#: init.c:1441
+#: init.c:1481
 msgid "alias: no address"
 msgstr ""
 
-#: init.c:1489
+#: init.c:1529
 #, c-format
 msgid "Warning: Bad IDN '%s' in alias '%s'.\n"
 msgstr ""
 
-#: init.c:1577
+#: init.c:1617
 msgid "invalid header field"
 msgstr ""
 
-#: init.c:1630
+#: init.c:1670
 #, c-format
 msgid "%s: unknown sorting method"
 msgstr ""
 
-#: init.c:1741
+#: init.c:1781
 #, c-format
 msgid "mutt_restore_default(%s): error in regexp: %s\n"
 msgstr ""
 
-#: init.c:1899 init.c:2092
+#: init.c:1981 init.c:2148
 #, c-format
 msgid "%s is unset"
 msgstr ""
 
-#: init.c:2021 init.c:2137
+#: init.c:2077 init.c:2193
 #, c-format
 msgid "%s: unknown variable"
 msgstr ""
 
-#: init.c:2030
+#: init.c:2086
 #, c-format
 msgid "prefix is illegal with reset"
 msgstr ""
 
-#: init.c:2036
+#: init.c:2092
 #, c-format
 msgid "value is illegal with reset"
 msgstr ""
 
-#: init.c:2072 init.c:2084
+#: init.c:2128 init.c:2140
 #, c-format
 msgid "Usage: set variable=yes|no"
 msgstr ""
 
-#: init.c:2092
+#: init.c:2148
 #, c-format
 msgid "%s is set"
 msgstr ""
 
-#: init.c:2203
+#: init.c:2259
 #, c-format
 msgid "Invalid value for option %s: \"%s\""
 msgstr ""
 
-#: init.c:2345
+#: init.c:2401
 #, c-format
 msgid "%s: invalid mailbox type"
 msgstr ""
 
-#: init.c:2376
+#: init.c:2432
 #, c-format
 msgid "%s: invalid value (%s)"
 msgstr ""
 
-#: init.c:2377
+#: init.c:2433
 msgid "format error"
 msgstr ""
 
-#: init.c:2377
+#: init.c:2433
 msgid "number overflow"
 msgstr ""
 
-#: init.c:2437
+#: init.c:2493
 #, c-format
 msgid "%s: invalid value"
 msgstr ""
 
-#: init.c:2481
+#: init.c:2537
 #, c-format
 msgid "%s: Unknown type."
 msgstr ""
 
-#: init.c:2508
+#: init.c:2564
 #, c-format
 msgid "%s: unknown type"
 msgstr ""
 
-#: init.c:2576
+#: init.c:2632
 #, c-format
 msgid "Error in %s, line %d: %s"
 msgstr ""
 
-#: init.c:2599
+#: init.c:2655
 #, c-format
 msgid "source: errors in %s"
 msgstr ""
 
-#: init.c:2600
+#: init.c:2656
 #, c-format
 msgid "source: reading aborted due to too many errors in %s"
 msgstr ""
 
-#: init.c:2614
+#: init.c:2670
 #, c-format
 msgid "source: error at %s"
 msgstr ""
 
-#: init.c:2619
+#: init.c:2675
 msgid "source: too many arguments"
 msgstr ""
 
-#: init.c:2673
+#: init.c:2729
 #, c-format
 msgid "%s: unknown command"
 msgstr ""
 
-#: init.c:3166
+#: init.c:3222
 #, c-format
 msgid "Error in command line: %s\n"
 msgstr ""
 
-#: init.c:3287
+#: init.c:3343
 msgid "unable to determine home directory"
 msgstr ""
 
-#: init.c:3295
+#: init.c:3351
 msgid "unable to determine username"
 msgstr ""
 
-#: init.c:3321
+#: init.c:3377
 msgid "unable to determine nodename via uname()"
 msgstr ""
 
-#: init.c:3562
+#: init.c:3618
 msgid "-group: no group name"
 msgstr ""
 
-#: init.c:3572
+#: init.c:3628
 msgid "out of arguments"
 msgstr ""
 
@@ -3042,21 +3042,21 @@ msgstr ""
 msgid "Could not connect to %s (%s)."
 msgstr ""
 
-#: mutt_ssl.c:278
+#: mutt_ssl.c:284
 msgid "Failed to find enough entropy on your system"
 msgstr ""
 
-#: mutt_ssl.c:302
+#: mutt_ssl.c:308
 #, c-format
 msgid "Filling entropy pool: %s...\n"
 msgstr ""
 
-#: mutt_ssl.c:310
+#: mutt_ssl.c:316
 #, c-format
 msgid "%s has insecure permissions!"
 msgstr ""
 
-#: mutt_ssl.c:329
+#: mutt_ssl.c:335
 msgid "SSL disabled due to the lack of entropy"
 msgstr ""
 
@@ -3064,15 +3064,15 @@ msgstr ""
 #. *       function SSL_CTX_new().  In this case it returned NULL: an
 #. *       error condition.
 #.
-#: mutt_ssl.c:396
+#: mutt_ssl.c:402
 msgid "Unable to create SSL context"
 msgstr ""
 
-#: mutt_ssl.c:494
+#: mutt_ssl.c:501
 msgid "I/O error"
 msgstr ""
 
-#: mutt_ssl.c:503
+#: mutt_ssl.c:510
 #, c-format
 msgid "SSL failed: %s"
 msgstr ""
@@ -3081,109 +3081,109 @@ msgstr ""
 #. %1$s is version (e.g. "TLSv1.2")
 #. %2$s is cipher_version (e.g. "TLSv1/SSLv3")
 #. %3$s is cipher_name (e.g. "ECDHE-RSA-AES128-GCM-SHA256")
-#: mutt_ssl.c:513
+#: mutt_ssl.c:520
 #, c-format
 msgid "%s connection using %s (%s)"
 msgstr ""
 
-#: mutt_ssl.c:640
+#: mutt_ssl.c:647
 msgid "Unknown"
 msgstr ""
 
-#: mutt_ssl.c:653 mutt_ssl_gnutls.c:598
+#: mutt_ssl.c:660 mutt_ssl_gnutls.c:598
 #, c-format
 msgid "[unable to calculate]"
 msgstr ""
 
-#: mutt_ssl.c:671 mutt_ssl_gnutls.c:621
+#: mutt_ssl.c:678 mutt_ssl_gnutls.c:621
 msgid "[invalid date]"
 msgstr ""
 
-#: mutt_ssl.c:745
+#: mutt_ssl.c:752
 msgid "Server certificate is not yet valid"
 msgstr ""
 
-#: mutt_ssl.c:752
+#: mutt_ssl.c:759
 msgid "Server certificate has expired"
 msgstr ""
 
-#: mutt_ssl.c:874
+#: mutt_ssl.c:885
 msgid "cannot get certificate subject"
 msgstr ""
 
-#: mutt_ssl.c:884 mutt_ssl.c:893
+#: mutt_ssl.c:895 mutt_ssl.c:904
 msgid "cannot get certificate common name"
 msgstr ""
 
-#: mutt_ssl.c:907
+#: mutt_ssl.c:918
 #, c-format
 msgid "certificate owner does not match hostname %s"
 msgstr ""
 
-#: mutt_ssl.c:972
+#: mutt_ssl.c:983
 #, c-format
 msgid "Certificate host check failed: %s"
 msgstr ""
 
-#: mutt_ssl.c:1031 mutt_ssl_gnutls.c:860
+#: mutt_ssl.c:1042 mutt_ssl_gnutls.c:860
 msgid "This certificate belongs to:"
 msgstr ""
 
-#: mutt_ssl.c:1039 mutt_ssl_gnutls.c:899
+#: mutt_ssl.c:1050 mutt_ssl_gnutls.c:899
 msgid "This certificate was issued by:"
 msgstr ""
 
-#: mutt_ssl.c:1047 mutt_ssl_gnutls.c:938
+#: mutt_ssl.c:1058 mutt_ssl_gnutls.c:938
 #, c-format
 msgid "This certificate is valid"
 msgstr ""
 
-#: mutt_ssl.c:1048 mutt_ssl_gnutls.c:941
+#: mutt_ssl.c:1059 mutt_ssl_gnutls.c:941
 #, c-format
 msgid "   from %s"
 msgstr ""
 
-#: mutt_ssl.c:1050 mutt_ssl_gnutls.c:945
+#: mutt_ssl.c:1061 mutt_ssl_gnutls.c:945
 #, c-format
 msgid "     to %s"
 msgstr ""
 
-#: mutt_ssl.c:1056 mutt_ssl_gnutls.c:950
+#: mutt_ssl.c:1067 mutt_ssl_gnutls.c:950
 #, c-format
 msgid "SHA1 Fingerprint: %s"
 msgstr ""
 
-#: mutt_ssl.c:1059 mutt_ssl_gnutls.c:953
+#: mutt_ssl.c:1070 mutt_ssl_gnutls.c:953
 #, c-format
 msgid "MD5 Fingerprint: %s"
 msgstr ""
 
-#: mutt_ssl.c:1062 mutt_ssl_gnutls.c:982
+#: mutt_ssl.c:1073 mutt_ssl_gnutls.c:982
 #, c-format
 msgid "SSL Certificate check (certificate %d of %d in chain)"
 msgstr ""
 
-#: mutt_ssl.c:1070 mutt_ssl_gnutls.c:991
+#: mutt_ssl.c:1081 mutt_ssl_gnutls.c:991
 msgid "(r)eject, accept (o)nce, (a)ccept always"
 msgstr ""
 
-#: mutt_ssl.c:1071 mutt_ssl_gnutls.c:992
+#: mutt_ssl.c:1082 mutt_ssl_gnutls.c:992
 msgid "roa"
 msgstr ""
 
-#: mutt_ssl.c:1075 mutt_ssl_gnutls.c:996
+#: mutt_ssl.c:1086 mutt_ssl_gnutls.c:996
 msgid "(r)eject, accept (o)nce"
 msgstr ""
 
-#: mutt_ssl.c:1076 mutt_ssl_gnutls.c:997
+#: mutt_ssl.c:1087 mutt_ssl_gnutls.c:997
 msgid "ro"
 msgstr ""
 
-#: mutt_ssl.c:1107 mutt_ssl_gnutls.c:1046
+#: mutt_ssl.c:1118 mutt_ssl_gnutls.c:1046
 msgid "Warning: Couldn't save certificate"
 msgstr ""
 
-#: mutt_ssl.c:1112 mutt_ssl_gnutls.c:1051
+#: mutt_ssl.c:1123 mutt_ssl_gnutls.c:1051
 msgid "Certificate saved"
 msgstr ""
 
