@@ -2,7 +2,6 @@ random-msgid-boundary
 fsync-attachments
 553321-ansi-escape-segfault.patch
 543467-thread-segfault.patch
-228671-pipe-mime.patch
 pp.tls_sni
 mutt-1.5.23-system_certs.patch
 mutt-1.5.21-cabundle.patch 
