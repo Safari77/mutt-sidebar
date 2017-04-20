@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2017-04-12 17:42-0700\n"
+"POT-Creation-Date: 2017-04-18 16:13-0700\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -340,7 +340,7 @@ msgstr ""
 msgid "%s: no such attribute"
 msgstr ""
 
-#: color.c:736 hook.c:73 hook.c:81 init.c:1942 init.c:2019 keymap.c:921
+#: color.c:736 hook.c:73 hook.c:81 init.c:1946 init.c:2023 keymap.c:921
 msgid "too few arguments"
 msgstr ""
 
@@ -1048,41 +1048,41 @@ msgstr ""
 msgid "Error: copy data failed\n"
 msgstr ""
 
-#: crypt-gpgme.c:2517 pgp.c:519
+#: crypt-gpgme.c:2517 pgp.c:522
 msgid ""
 "[-- BEGIN PGP MESSAGE --]\n"
 "\n"
 msgstr ""
 
-#: crypt-gpgme.c:2519 pgp.c:521
+#: crypt-gpgme.c:2519 pgp.c:524
 msgid "[-- BEGIN PGP PUBLIC KEY BLOCK --]\n"
 msgstr ""
 
-#: crypt-gpgme.c:2522 pgp.c:523
+#: crypt-gpgme.c:2522 pgp.c:526
 msgid ""
 "[-- BEGIN PGP SIGNED MESSAGE --]\n"
 "\n"
 msgstr ""
 
-#: crypt-gpgme.c:2549 pgp.c:566
+#: crypt-gpgme.c:2549 pgp.c:569
 msgid "[-- END PGP MESSAGE --]\n"
 msgstr ""
 
-#: crypt-gpgme.c:2551 pgp.c:573
+#: crypt-gpgme.c:2551 pgp.c:576
 msgid "[-- END PGP PUBLIC KEY BLOCK --]\n"
 msgstr ""
 
-#: crypt-gpgme.c:2553 pgp.c:575
+#: crypt-gpgme.c:2553 pgp.c:578
 msgid "[-- END PGP SIGNED MESSAGE --]\n"
 msgstr ""
 
-#: crypt-gpgme.c:2576 pgp.c:608
+#: crypt-gpgme.c:2576 pgp.c:611
 msgid ""
 "[-- Error: could not find beginning of PGP message! --]\n"
 "\n"
 msgstr ""
 
-#: crypt-gpgme.c:2607 crypt-gpgme.c:2680 pgp.c:1091
+#: crypt-gpgme.c:2607 crypt-gpgme.c:2680 pgp.c:1094
 msgid "[-- Error: could not create temporary file! --]\n"
 msgstr ""
 
@@ -1092,7 +1092,7 @@ msgid ""
 "\n"
 msgstr ""
 
-#: crypt-gpgme.c:2620 pgp.c:1100
+#: crypt-gpgme.c:2620 pgp.c:1103
 msgid ""
 "[-- The following data is PGP/MIME encrypted --]\n"
 "\n"
@@ -1102,15 +1102,15 @@ msgstr ""
 msgid "[-- End of PGP/MIME signed and encrypted data --]\n"
 msgstr ""
 
-#: crypt-gpgme.c:2643 pgp.c:1120
+#: crypt-gpgme.c:2643 pgp.c:1123
 msgid "[-- End of PGP/MIME encrypted data --]\n"
 msgstr ""
 
-#: crypt-gpgme.c:2648 pgp.c:570 pgp.c:1125
+#: crypt-gpgme.c:2648 pgp.c:573 pgp.c:1128
 msgid "PGP message successfully decrypted."
 msgstr ""
 
-#: crypt-gpgme.c:2652 pgp.c:505 pgp.c:568 pgp.c:1129
+#: crypt-gpgme.c:2652 pgp.c:508 pgp.c:571 pgp.c:1132
 msgid "Could not decrypt PGP message"
 msgstr ""
 
@@ -1345,12 +1345,12 @@ msgstr ""
 msgid "Looking for keys matching \"%s\"..."
 msgstr ""
 
-#: crypt-gpgme.c:4470 pgp.c:1304
+#: crypt-gpgme.c:4470 pgp.c:1307
 #, c-format
 msgid "Use keyID = \"%s\" for %s?"
 msgstr ""
 
-#: crypt-gpgme.c:4528 pgp.c:1353 smime.c:796 smime.c:902
+#: crypt-gpgme.c:4528 pgp.c:1356 smime.c:796 smime.c:902
 #, c-format
 msgid "Enter keyID for %s: "
 msgstr ""
@@ -1437,7 +1437,7 @@ msgstr ""
 msgid "esabmfc"
 msgstr ""
 
-#: crypt-gpgme.c:4798 pgp.c:1818 smime.c:2222 smime.c:2237
+#: crypt-gpgme.c:4798 pgp.c:1821 smime.c:2222 smime.c:2237
 msgid "Sign as: "
 msgstr ""
 
@@ -2409,7 +2409,7 @@ msgstr ""
 msgid "Continue?"
 msgstr ""
 
-#: init.c:60 init.c:2100 pager.c:53
+#: init.c:60 init.c:2104 pager.c:53
 #, c-format
 msgid "Not available in this menu."
 msgstr ""
@@ -2485,125 +2485,125 @@ msgstr ""
 msgid "mutt_restore_default(%s): error in regexp: %s\n"
 msgstr ""
 
-#: init.c:1981 init.c:2148
+#: init.c:1985 init.c:2152
 #, c-format
 msgid "%s is unset"
 msgstr ""
 
-#: init.c:2077 init.c:2193
+#: init.c:2081 init.c:2197
 #, c-format
 msgid "%s: unknown variable"
 msgstr ""
 
-#: init.c:2086
+#: init.c:2090
 #, c-format
 msgid "prefix is illegal with reset"
 msgstr ""
 
-#: init.c:2092
+#: init.c:2096
 #, c-format
 msgid "value is illegal with reset"
 msgstr ""
 
-#: init.c:2128 init.c:2140
+#: init.c:2132 init.c:2144
 #, c-format
 msgid "Usage: set variable=yes|no"
 msgstr ""
 
-#: init.c:2148
+#: init.c:2152
 #, c-format
 msgid "%s is set"
 msgstr ""
 
-#: init.c:2259
+#: init.c:2263
 #, c-format
 msgid "Invalid value for option %s: \"%s\""
 msgstr ""
 
-#: init.c:2401
+#: init.c:2405
 #, c-format
 msgid "%s: invalid mailbox type"
 msgstr ""
 
-#: init.c:2432
+#: init.c:2436
 #, c-format
 msgid "%s: invalid value (%s)"
 msgstr ""
 
-#: init.c:2433
+#: init.c:2437
 msgid "format error"
 msgstr ""
 
-#: init.c:2433
+#: init.c:2437
 msgid "number overflow"
 msgstr ""
 
-#: init.c:2493
+#: init.c:2497
 #, c-format
 msgid "%s: invalid value"
 msgstr ""
 
-#: init.c:2537
+#: init.c:2541
 #, c-format
 msgid "%s: Unknown type."
 msgstr ""
 
-#: init.c:2564
+#: init.c:2568
 #, c-format
 msgid "%s: unknown type"
 msgstr ""
 
-#: init.c:2632
+#: init.c:2636
 #, c-format
 msgid "Error in %s, line %d: %s"
 msgstr ""
 
-#: init.c:2655
+#: init.c:2659
 #, c-format
 msgid "source: errors in %s"
 msgstr ""
 
-#: init.c:2656
+#: init.c:2660
 #, c-format
 msgid "source: reading aborted due to too many errors in %s"
 msgstr ""
 
-#: init.c:2670
+#: init.c:2674
 #, c-format
 msgid "source: error at %s"
 msgstr ""
 
-#: init.c:2675
+#: init.c:2679
 msgid "source: too many arguments"
 msgstr ""
 
-#: init.c:2729
+#: init.c:2733
 #, c-format
 msgid "%s: unknown command"
 msgstr ""
 
-#: init.c:3222
+#: init.c:3226
 #, c-format
 msgid "Error in command line: %s\n"
 msgstr ""
 
-#: init.c:3343
+#: init.c:3347
 msgid "unable to determine home directory"
 msgstr ""
 
-#: init.c:3351
+#: init.c:3355
 msgid "unable to determine username"
 msgstr ""
 
-#: init.c:3377
+#: init.c:3381
 msgid "unable to determine nodename via uname()"
 msgstr ""
 
-#: init.c:3618
+#: init.c:3622
 msgid "-group: no group name"
 msgstr ""
 
-#: init.c:3628
+#: init.c:3632
 msgid "out of arguments"
 msgstr ""
 
@@ -3545,48 +3545,48 @@ msgstr ""
 msgid "PGP passphrase forgotten."
 msgstr ""
 
-#: pgp.c:449
+#: pgp.c:452
 msgid "[-- Error: unable to create PGP subprocess! --]\n"
 msgstr ""
 
-#: pgp.c:483 pgp.c:752 pgp.c:964
+#: pgp.c:486 pgp.c:755 pgp.c:967
 msgid ""
 "[-- End of PGP output --]\n"
 "\n"
 msgstr ""
 
-#: pgp.c:860
+#: pgp.c:863
 msgid "Internal error.  Please submit a bug report."
 msgstr ""
 
-#: pgp.c:921
+#: pgp.c:924
 msgid ""
 "[-- Error: could not create a PGP subprocess! --]\n"
 "\n"
 msgstr ""
 
-#: pgp.c:952 pgp.c:976
+#: pgp.c:955 pgp.c:979
 msgid "Decryption failed"
 msgstr ""
 
-#: pgp.c:1182
+#: pgp.c:1185
 msgid "Can't open PGP subprocess!"
 msgstr ""
 
-#: pgp.c:1616
+#: pgp.c:1619
 msgid "Can't invoke PGP"
 msgstr ""
 
-#: pgp.c:1730
+#: pgp.c:1733
 #, c-format
 msgid "PGP (s)ign, sign (a)s, %s format, (c)lear, or (o)ppenc mode off? "
 msgstr ""
 
-#: pgp.c:1731 pgp.c:1761 pgp.c:1783
+#: pgp.c:1734 pgp.c:1764 pgp.c:1786
 msgid "PGP/M(i)ME"
 msgstr ""
 
-#: pgp.c:1731 pgp.c:1761 pgp.c:1783
+#: pgp.c:1734 pgp.c:1764 pgp.c:1786
 msgid "(i)nline"
 msgstr ""
 
@@ -3594,51 +3594,51 @@ msgstr ""
 #. 'clear'.  Please use a corresponding letter in your language.
 #. Alternatively, you may duplicate the letter 'c' is translated to.
 #. This comment also applies to the five following letter sequences.
-#: pgp.c:1737
+#: pgp.c:1740
 msgid "safcoi"
 msgstr ""
 
-#: pgp.c:1742
+#: pgp.c:1745
 msgid "PGP (s)ign, sign (a)s, (c)lear, or (o)ppenc mode off? "
 msgstr ""
 
-#: pgp.c:1743
+#: pgp.c:1746
 msgid "safco"
 msgstr ""
 
-#: pgp.c:1760
+#: pgp.c:1763
 #, c-format
 msgid ""
 "PGP (e)ncrypt, (s)ign, sign (a)s, (b)oth, %s format, (c)lear, or (o)ppenc "
 "mode? "
 msgstr ""
 
-#: pgp.c:1763
+#: pgp.c:1766
 msgid "esabfcoi"
 msgstr ""
 
-#: pgp.c:1768
+#: pgp.c:1771
 msgid "PGP (e)ncrypt, (s)ign, sign (a)s, (b)oth, (c)lear, or (o)ppenc mode? "
 msgstr ""
 
-#: pgp.c:1769
+#: pgp.c:1772
 msgid "esabfco"
 msgstr ""
 
-#: pgp.c:1782
+#: pgp.c:1785
 #, c-format
 msgid "PGP (e)ncrypt, (s)ign, sign (a)s, (b)oth, %s format, or (c)lear? "
 msgstr ""
 
-#: pgp.c:1785
+#: pgp.c:1788
 msgid "esabfci"
 msgstr ""
 
-#: pgp.c:1790
+#: pgp.c:1793
 msgid "PGP (e)ncrypt, (s)ign, sign (a)s, (b)oth, or (c)lear? "
 msgstr ""
 
-#: pgp.c:1791
+#: pgp.c:1794
 msgid "esabfc"
 msgstr ""
 
