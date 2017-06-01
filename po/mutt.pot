@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2017-04-18 16:13-0700\n"
+"POT-Creation-Date: 2017-05-30 12:46-0700\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -340,7 +340,7 @@ msgstr ""
 msgid "%s: no such attribute"
 msgstr ""
 
-#: color.c:736 hook.c:73 hook.c:81 init.c:1946 init.c:2023 keymap.c:921
+#: color.c:736 hook.c:73 hook.c:81 init.c:1953 init.c:2030 keymap.c:950
 msgid "too few arguments"
 msgstr ""
 
@@ -1573,7 +1573,7 @@ msgstr ""
 msgid "There are no messages."
 msgstr ""
 
-#: curs_main.c:59 mx.c:1117 pager.c:54 recvattach.c:43
+#: curs_main.c:59 mx.c:1131 pager.c:54 recvattach.c:43
 msgid "Mailbox is read-only."
 msgstr ""
 
@@ -1660,7 +1660,7 @@ msgid "Invalid message number."
 msgstr ""
 
 #. L10N: CHECK_ACL
-#: curs_main.c:894 curs_main.c:2018 pager.c:2457
+#: curs_main.c:894 curs_main.c:2022 pager.c:2457
 msgid "Cannot delete message(s)"
 msgstr ""
 
@@ -1695,7 +1695,7 @@ msgid "Tag messages matching: "
 msgstr ""
 
 #. L10N: CHECK_ACL
-#: curs_main.c:1068 curs_main.c:2376 pager.c:2772
+#: curs_main.c:1068 curs_main.c:2380 pager.c:2772
 msgid "Cannot undelete message(s)"
 msgstr ""
 
@@ -1723,120 +1723,120 @@ msgstr ""
 msgid "No mailboxes have new mail"
 msgstr ""
 
-#: curs_main.c:1238 mx.c:516 mx.c:605
+#: curs_main.c:1238 mx.c:516 mx.c:614
 #, c-format
 msgid "%s is not a mailbox."
 msgstr ""
 
-#: curs_main.c:1346
+#: curs_main.c:1350
 msgid "Exit Mutt without saving?"
 msgstr ""
 
-#: curs_main.c:1364 curs_main.c:1400 curs_main.c:1860 curs_main.c:1892
+#: curs_main.c:1368 curs_main.c:1404 curs_main.c:1864 curs_main.c:1896
 #: flags.c:302 thread.c:1025 thread.c:1081 thread.c:1148
 msgid "Threading is not enabled."
 msgstr ""
 
-#: curs_main.c:1376
+#: curs_main.c:1380
 msgid "Thread broken"
 msgstr ""
 
-#: curs_main.c:1387
+#: curs_main.c:1391
 msgid "Thread cannot be broken, message is not part of a thread"
 msgstr ""
 
 #. L10N: CHECK_ACL
-#: curs_main.c:1397
+#: curs_main.c:1401
 msgid "Cannot link threads"
 msgstr ""
 
-#: curs_main.c:1402
+#: curs_main.c:1406
 msgid "No Message-ID: header available to link thread"
 msgstr ""
 
-#: curs_main.c:1404
+#: curs_main.c:1408
 msgid "First, please tag a message to be linked here"
 msgstr ""
 
-#: curs_main.c:1416
+#: curs_main.c:1420
 msgid "Threads linked"
 msgstr ""
 
-#: curs_main.c:1419
+#: curs_main.c:1423
 msgid "No thread linked"
 msgstr ""
 
-#: curs_main.c:1455 curs_main.c:1480
+#: curs_main.c:1459 curs_main.c:1484
 msgid "You are on the last message."
 msgstr ""
 
-#: curs_main.c:1462 curs_main.c:1506
+#: curs_main.c:1466 curs_main.c:1510
 msgid "No undeleted messages."
 msgstr ""
 
-#: curs_main.c:1499 curs_main.c:1523
+#: curs_main.c:1503 curs_main.c:1527
 msgid "You are on the first message."
 msgstr ""
 
-#: curs_main.c:1598 menu.c:773 pager.c:2122 pattern.c:1575
+#: curs_main.c:1602 menu.c:773 pager.c:2122 pattern.c:1575
 msgid "Search wrapped to top."
 msgstr ""
 
-#: curs_main.c:1607 pager.c:2144 pattern.c:1586
+#: curs_main.c:1611 pager.c:2144 pattern.c:1586
 msgid "Search wrapped to bottom."
 msgstr ""
 
-#: curs_main.c:1651
+#: curs_main.c:1655
 msgid "No new messages in this limited view."
 msgstr ""
 
-#: curs_main.c:1653
+#: curs_main.c:1657
 msgid "No new messages."
 msgstr ""
 
-#: curs_main.c:1658
+#: curs_main.c:1662
 msgid "No unread messages in this limited view."
 msgstr ""
 
-#: curs_main.c:1660
+#: curs_main.c:1664
 msgid "No unread messages."
 msgstr ""
 
 #. L10N: CHECK_ACL
-#: curs_main.c:1678
+#: curs_main.c:1682
 msgid "Cannot flag message"
 msgstr ""
 
 #. L10N: CHECK_ACL
-#: curs_main.c:1716 pager.c:2735
+#: curs_main.c:1720 pager.c:2735
 msgid "Cannot toggle new"
 msgstr ""
 
-#: curs_main.c:1793
+#: curs_main.c:1797
 msgid "No more threads."
 msgstr ""
 
-#: curs_main.c:1795
+#: curs_main.c:1799
 msgid "You are on the first thread."
 msgstr ""
 
-#: curs_main.c:1878
+#: curs_main.c:1882
 msgid "Thread contains unread messages."
 msgstr ""
 
 #. L10N: CHECK_ACL
-#: curs_main.c:1974 pager.c:2424
+#: curs_main.c:1978 pager.c:2424
 msgid "Cannot delete message"
 msgstr ""
 
 #. L10N: CHECK_ACL
-#: curs_main.c:2060
+#: curs_main.c:2064
 msgid "Cannot edit message"
 msgstr ""
 
 #. L10N: This is displayed when the x-label on one or more
 #. * messages is edited.
-#: curs_main.c:2106 pager.c:2823
+#: curs_main.c:2110 pager.c:2823
 #, c-format
 msgid "%d labels changed."
 msgstr ""
@@ -1844,44 +1844,44 @@ msgstr ""
 #. L10N: This is displayed when editing an x-label, but no messages
 #. * were updated.  Possibly due to canceling at the prompt or if the new
 #. * label is the same as the old label.
-#: curs_main.c:2112 pager.c:2826
+#: curs_main.c:2116 pager.c:2826
 msgid "No labels changed."
 msgstr ""
 
 #. L10N: CHECK_ACL
-#: curs_main.c:2212
+#: curs_main.c:2216
 msgid "Cannot mark message(s) as read"
 msgstr ""
 
 #. L10N: This is the prompt for <mark-message>.  Whatever they
 #. enter will be prefixed by $mark_macro_prefix and will become
 #. a macro hotkey to jump to the currently selected message.
-#: curs_main.c:2248
+#: curs_main.c:2252
 msgid "Enter macro stroke: "
 msgstr ""
 
 #. L10N: "message hotkey" is the key bindings menu description of a
 #. macro created by <mark-message>.
-#: curs_main.c:2256
+#: curs_main.c:2260
 msgid "message hotkey"
 msgstr ""
 
 #. L10N: This is echoed after <mark-message> creates a new hotkey
 #. macro.  %s is the hotkey string ($mark_macro_prefix followed
 #. by whatever they typed at the prompt.)
-#: curs_main.c:2261
+#: curs_main.c:2265
 #, c-format
 msgid "Message bound to %s."
 msgstr ""
 
 #. L10N: This error is printed if <mark-message> cannot find a
 #. Message-ID for the currently selected message in the index.
-#: curs_main.c:2269
+#: curs_main.c:2273
 msgid "No message ID to macro."
 msgstr ""
 
 #. L10N: CHECK_ACL
-#: curs_main.c:2346 pager.c:2755
+#: curs_main.c:2350 pager.c:2755
 msgid "Cannot undelete message"
 msgstr ""
 
@@ -2300,7 +2300,7 @@ msgstr ""
 msgid "Error opening mailbox"
 msgstr ""
 
-#: imap/imap.c:810 imap/imap.c:2160 imap/message.c:903 muttlib.c:1683
+#: imap/imap.c:810 imap/imap.c:2171 imap/message.c:903 muttlib.c:1683
 #, c-format
 msgid "Create %s?"
 msgstr ""
@@ -2331,40 +2331,40 @@ msgstr ""
 msgid "Expunging messages from server..."
 msgstr ""
 
-#: imap/imap.c:1339
+#: imap/imap.c:1340
 msgid "imap_sync_mailbox: EXPUNGE failed"
 msgstr ""
 
-#: imap/imap.c:1810
+#: imap/imap.c:1821
 #, c-format
 msgid "Header search without header name: %s"
 msgstr ""
 
-#: imap/imap.c:1881
+#: imap/imap.c:1892
 msgid "Bad mailbox name"
 msgstr ""
 
-#: imap/imap.c:1905
+#: imap/imap.c:1916
 #, c-format
 msgid "Subscribing to %s..."
 msgstr ""
 
-#: imap/imap.c:1907
+#: imap/imap.c:1918
 #, c-format
 msgid "Unsubscribing from %s..."
 msgstr ""
 
-#: imap/imap.c:1917
+#: imap/imap.c:1928
 #, c-format
 msgid "Subscribed to %s"
 msgstr ""
 
-#: imap/imap.c:1919
+#: imap/imap.c:1930
 #, c-format
 msgid "Unsubscribed from %s"
 msgstr ""
 
-#: imap/imap.c:2145 imap/message.c:867
+#: imap/imap.c:2156 imap/message.c:867
 #, c-format
 msgid "Copying %d messages to %s..."
 msgstr ""
@@ -2409,7 +2409,7 @@ msgstr ""
 msgid "Continue?"
 msgstr ""
 
-#: init.c:60 init.c:2104 pager.c:53
+#: init.c:60 init.c:2111 pager.c:53
 #, c-format
 msgid "Not available in this menu."
 msgstr ""
@@ -2436,174 +2436,174 @@ msgstr ""
 msgid "nospam: no matching pattern"
 msgstr ""
 
-#: init.c:1046
+#: init.c:1053
 #, c-format
 msgid "%sgroup: missing -rx or -addr."
 msgstr ""
 
-#: init.c:1064
+#: init.c:1071
 #, c-format
 msgid "%sgroup: warning: bad IDN '%s'.\n"
 msgstr ""
 
-#: init.c:1279
+#: init.c:1286
 msgid "attachments: no disposition"
 msgstr ""
 
-#: init.c:1317
+#: init.c:1324
 msgid "attachments: invalid disposition"
 msgstr ""
 
-#: init.c:1331
+#: init.c:1338
 msgid "unattachments: no disposition"
 msgstr ""
 
-#: init.c:1354
+#: init.c:1361
 msgid "unattachments: invalid disposition"
 msgstr ""
 
-#: init.c:1481
+#: init.c:1488
 msgid "alias: no address"
 msgstr ""
 
-#: init.c:1529
+#: init.c:1536
 #, c-format
 msgid "Warning: Bad IDN '%s' in alias '%s'.\n"
 msgstr ""
 
-#: init.c:1617
+#: init.c:1624
 msgid "invalid header field"
 msgstr ""
 
-#: init.c:1670
+#: init.c:1677
 #, c-format
 msgid "%s: unknown sorting method"
 msgstr ""
 
-#: init.c:1781
+#: init.c:1788
 #, c-format
 msgid "mutt_restore_default(%s): error in regexp: %s\n"
 msgstr ""
 
-#: init.c:1985 init.c:2152
+#: init.c:1992 init.c:2159
 #, c-format
 msgid "%s is unset"
 msgstr ""
 
-#: init.c:2081 init.c:2197
+#: init.c:2088 init.c:2204
 #, c-format
 msgid "%s: unknown variable"
 msgstr ""
 
-#: init.c:2090
+#: init.c:2097
 #, c-format
 msgid "prefix is illegal with reset"
 msgstr ""
 
-#: init.c:2096
+#: init.c:2103
 #, c-format
 msgid "value is illegal with reset"
 msgstr ""
 
-#: init.c:2132 init.c:2144
+#: init.c:2139 init.c:2151
 #, c-format
 msgid "Usage: set variable=yes|no"
 msgstr ""
 
-#: init.c:2152
+#: init.c:2159
 #, c-format
 msgid "%s is set"
 msgstr ""
 
-#: init.c:2263
+#: init.c:2270
 #, c-format
 msgid "Invalid value for option %s: \"%s\""
 msgstr ""
 
-#: init.c:2405
+#: init.c:2412
 #, c-format
 msgid "%s: invalid mailbox type"
 msgstr ""
 
-#: init.c:2436
+#: init.c:2443
 #, c-format
 msgid "%s: invalid value (%s)"
 msgstr ""
 
-#: init.c:2437
+#: init.c:2444
 msgid "format error"
 msgstr ""
 
-#: init.c:2437
+#: init.c:2444
 msgid "number overflow"
 msgstr ""
 
-#: init.c:2497
+#: init.c:2504
 #, c-format
 msgid "%s: invalid value"
 msgstr ""
 
-#: init.c:2541
+#: init.c:2548
 #, c-format
 msgid "%s: Unknown type."
 msgstr ""
 
-#: init.c:2568
+#: init.c:2575
 #, c-format
 msgid "%s: unknown type"
 msgstr ""
 
-#: init.c:2636
+#: init.c:2643
 #, c-format
 msgid "Error in %s, line %d: %s"
 msgstr ""
 
-#: init.c:2659
+#: init.c:2666
 #, c-format
 msgid "source: errors in %s"
 msgstr ""
 
-#: init.c:2660
+#: init.c:2667
 #, c-format
 msgid "source: reading aborted due to too many errors in %s"
 msgstr ""
 
-#: init.c:2674
+#: init.c:2681
 #, c-format
 msgid "source: error at %s"
 msgstr ""
 
-#: init.c:2679
+#: init.c:2686
 msgid "source: too many arguments"
 msgstr ""
 
-#: init.c:2733
+#: init.c:2740
 #, c-format
 msgid "%s: unknown command"
 msgstr ""
 
-#: init.c:3226
+#: init.c:3233
 #, c-format
 msgid "Error in command line: %s\n"
 msgstr ""
 
-#: init.c:3347
+#: init.c:3354
 msgid "unable to determine home directory"
 msgstr ""
 
-#: init.c:3355
+#: init.c:3362
 msgid "unable to determine username"
 msgstr ""
 
-#: init.c:3381
+#: init.c:3388
 msgid "unable to determine nodename via uname()"
 msgstr ""
 
-#: init.c:3622
+#: init.c:3629
 msgid "-group: no group name"
 msgstr ""
 
-#: init.c:3632
+#: init.c:3639
 msgid "out of arguments"
 msgstr ""
 
@@ -2615,59 +2615,59 @@ msgstr ""
 msgid "Macro loop detected."
 msgstr ""
 
-#: keymap.c:846 keymap.c:854
+#: keymap.c:847 keymap.c:882
 msgid "Key is not bound."
 msgstr ""
 
-#: keymap.c:858
+#: keymap.c:887
 #, c-format
 msgid "Key is not bound.  Press '%s' for help."
 msgstr ""
 
-#: keymap.c:869
+#: keymap.c:898
 msgid "push: too many arguments"
 msgstr ""
 
-#: keymap.c:899
+#: keymap.c:928
 #, c-format
 msgid "%s: no such menu"
 msgstr ""
 
-#: keymap.c:914
+#: keymap.c:943
 msgid "null key sequence"
 msgstr ""
 
-#: keymap.c:1001
+#: keymap.c:1030
 msgid "bind: too many arguments"
 msgstr ""
 
-#: keymap.c:1024
+#: keymap.c:1053
 #, c-format
 msgid "%s: no such function in map"
 msgstr ""
 
-#: keymap.c:1048
+#: keymap.c:1077
 msgid "macro: empty key sequence"
 msgstr ""
 
-#: keymap.c:1059
+#: keymap.c:1088
 msgid "macro: too many arguments"
 msgstr ""
 
-#: keymap.c:1095
+#: keymap.c:1124
 msgid "exec: no arguments"
 msgstr ""
 
-#: keymap.c:1115
+#: keymap.c:1144
 #, c-format
 msgid "%s: no such function"
 msgstr ""
 
-#: keymap.c:1136
+#: keymap.c:1165
 msgid "Enter keys (^G to abort): "
 msgstr ""
 
-#: keymap.c:1141
+#: keymap.c:1170
 #, c-format
 msgid "Char = %s, Octal = %o, Decimal = %d"
 msgstr ""
@@ -2849,7 +2849,7 @@ msgstr ""
 msgid "Mailbox is empty."
 msgstr ""
 
-#: mbox.c:120 mbox.c:271 mh.c:1258 mx.c:625
+#: mbox.c:120 mbox.c:271 mh.c:1258 mx.c:632
 #, c-format
 msgid "Reading %s..."
 msgstr ""
@@ -2879,7 +2879,7 @@ msgstr ""
 msgid "sync: mbox modified, but no modified messages! (report this bug)"
 msgstr ""
 
-#: mbox.c:914 mh.c:1892 mx.c:707
+#: mbox.c:914 mh.c:1892 mx.c:714
 #, c-format
 msgid "Writing %s..."
 msgstr ""
@@ -3336,67 +3336,67 @@ msgstr ""
 msgid "Waiting for flock attempt... %d"
 msgstr ""
 
-#: mx.c:739
+#: mx.c:746
 msgid "message(s) not deleted"
 msgstr ""
 
-#: mx.c:772
+#: mx.c:779
 msgid "Can't open trash folder"
 msgstr ""
 
-#: mx.c:830
+#: mx.c:831
 #, c-format
 msgid "Move read messages to %s?"
 msgstr ""
 
-#: mx.c:846 mx.c:1133
+#: mx.c:847 mx.c:1147
 #, c-format
 msgid "Purge %d deleted message?"
 msgstr ""
 
-#: mx.c:846 mx.c:1133
+#: mx.c:847 mx.c:1147
 #, c-format
 msgid "Purge %d deleted messages?"
 msgstr ""
 
-#: mx.c:867
+#: mx.c:868
 #, c-format
 msgid "Moving read messages to %s..."
 msgstr ""
 
-#: mx.c:928 mx.c:1124
+#: mx.c:929 mx.c:1138
 msgid "Mailbox is unchanged."
 msgstr ""
 
-#: mx.c:981
+#: mx.c:982
 #, c-format
 msgid "%d kept, %d moved, %d deleted."
 msgstr ""
 
-#: mx.c:984 mx.c:1185
+#: mx.c:985 mx.c:1199
 #, c-format
 msgid "%d kept, %d deleted."
 msgstr ""
 
-#: mx.c:1108
+#: mx.c:1122
 #, c-format
 msgid " Press '%s' to toggle write"
 msgstr ""
 
-#: mx.c:1110
+#: mx.c:1124
 msgid "Use 'toggle-write' to re-enable write!"
 msgstr ""
 
-#: mx.c:1112
+#: mx.c:1126
 #, c-format
 msgid "Mailbox is marked unwritable. %s"
 msgstr ""
 
-#: mx.c:1179
+#: mx.c:1193
 msgid "Mailbox checkpointed."
 msgstr ""
 
-#: mx.c:1354
+#: mx.c:1368
 msgid "Integer overflow -- can't allocate memory."
 msgstr ""
 

@@ -567,7 +567,14 @@ CONTEXT *mx_open_mailbox (const char *path, int flags, CONTEXT *pctx)
   if (!ctx)
     ctx = safe_malloc (sizeof (CONTEXT));
   memset (ctx, 0, sizeof (CONTEXT));
+
   ctx->path = safe_strdup (path);
+  if (!ctx->path)
+  {
+    if (!pctx)
+      FREE (&ctx);
+    return NULL;
+  }
   if (! (ctx->realpath = realpath (ctx->path, NULL)) )
     ctx->realpath = safe_strdup (ctx->path);
 
@@ -601,10 +608,10 @@ CONTEXT *mx_open_mailbox (const char *path, int flags, CONTEXT *pctx)
 
   if (ctx->magic <= 0 || !ctx->mx_ops)
   {
-    if (ctx->magic == 0 || !ctx->mx_ops)
-      mutt_error (_("%s is not a mailbox."), path);
-    else if (ctx->magic == -1)
+    if (ctx->magic == -1)
       mutt_perror(path);
+    else if (ctx->magic == 0 || !ctx->mx_ops)
+      mutt_error (_("%s is not a mailbox."), path);
 
     mx_fastclose_mailbox (ctx);
     if (!pctx)
@@ -801,12 +808,6 @@ int mx_close_mailbox (CONTEXT *ctx, int *index_hint)
     if (!ctx->hdrs[i]->deleted && ctx->hdrs[i]->read 
         && !(ctx->hdrs[i]->flagged && option (OPTKEEPFLAGGED)))
       read_msgs++;
-#ifdef USE_SIDEBAR
-    if (ctx->hdrs[i]->deleted && !ctx->hdrs[i]->read)
-      ctx->unread--;
-    if (ctx->hdrs[i]->deleted && ctx->hdrs[i]->flagged)
-      ctx->flagged--;
-#endif
   }
 
   if (read_msgs && quadoption (OPT_MOVE) != MUTT_NO)
@@ -991,8 +992,21 @@ int mx_close_mailbox (CONTEXT *ctx, int *index_hint)
     mx_unlink_empty (ctx->path);
 
 #ifdef USE_SIDEBAR
-  ctx->msgcount -= ctx->deleted;
-  mutt_sb_set_buffystats (ctx);
+  if (purge && ctx->deleted)
+  {
+    int orig_msgcount = ctx->msgcount;
+
+    for (i = 0; i < ctx->msgcount; i++)
+    {
+      if (ctx->hdrs[i]->deleted && !ctx->hdrs[i]->read)
+        ctx->unread--;
+      if (ctx->hdrs[i]->deleted && ctx->hdrs[i]->flagged)
+        ctx->flagged--;
+    }
+    ctx->msgcount -= ctx->deleted;
+    mutt_sb_set_buffystats (ctx);
+    ctx->msgcount = orig_msgcount;
+  }
 #endif
 
   mx_fastclose_mailbox (ctx);
