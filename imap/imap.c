@@ -55,7 +55,7 @@ static void imap_set_flag (IMAP_DATA* idata, int aclbit, int flag,
 /* imap_access: Check permissions on an IMAP mailbox.
  * TODO: ACL checks. Right now we assume if it exists we can
  *       mess with it. */
-int imap_access (const char* path, int flags)
+int imap_access (const char* path)
 {
   IMAP_DATA* idata;
   IMAP_MBOX mx;
@@ -250,16 +250,21 @@ void imap_expunge_mailbox (IMAP_DATA* idata)
 {
   HEADER* h;
   int i, cacheno;
+  short old_sort;
 
 #ifdef USE_HCACHE
   idata->hcache = imap_hcache_open (idata, NULL);
 #endif
 
+  old_sort = Sort;
+  Sort = SORT_ORDER;
+  mutt_sort_headers (idata->ctx, 0);
+
   for (i = 0; i < idata->ctx->msgcount; i++)
   {
     h = idata->ctx->hdrs[i];
 
-    if (h->index == -1)
+    if (h->index == INT_MAX)
     {
       dprint (2, (debugfile, "Expunging message UID %d.\n", HEADER_DATA (h)->uid));
 
@@ -284,6 +289,8 @@ void imap_expunge_mailbox (IMAP_DATA* idata)
 
       imap_free_header_data ((IMAP_HEADER_DATA**)&h->data);
     }
+    else
+      h->index = i;
   }
 
 #if USE_HCACHE
@@ -293,6 +300,7 @@ void imap_expunge_mailbox (IMAP_DATA* idata)
   /* We may be called on to expunge at any time. We can't rely on the caller
    * to always know to rethread */
   mx_update_tables (idata->ctx, 0);
+  Sort = old_sort;
   mutt_sort_headers (idata->ctx, 1);
 }
 
@@ -412,7 +420,7 @@ int imap_open_connection (IMAP_DATA* idata)
 
   idata->state = IMAP_CONNECTED;
 
-  if (imap_cmd_step (idata) != IMAP_CMD_CONTINUE)
+  if (imap_cmd_step (idata) != IMAP_CMD_OK)
   {
     imap_close_connection (idata);
     return -1;
@@ -600,6 +608,7 @@ static int imap_open_mailbox (CONTEXT* ctx)
   idata->status = 0;
   memset (idata->ctx->rights, 0, sizeof (idata->ctx->rights));
   idata->newMailCount = 0;
+  idata->max_msn = 0;
 
   mutt_message (_("Selecting %s..."), idata->mailbox);
   imap_munge_mbox_name (idata, buf, sizeof(buf), idata->mailbox);
@@ -754,7 +763,7 @@ static int imap_open_mailbox (CONTEXT* ctx)
   ctx->v2r = safe_calloc (count, sizeof (int));
   ctx->msgcount = 0;
 
-  if (count && (imap_read_headers (idata, 0, count-1) < 0))
+  if (count && (imap_read_headers (idata, 1, count) < 0))
   {
     mutt_error _("Error opening mailbox");
     mutt_sleep (1);
@@ -800,8 +809,7 @@ static int imap_open_mailbox_append (CONTEXT *ctx, int flags)
     strfcpy (mailbox, "INBOX", sizeof (mailbox));
   FREE (&mx.mbox);
 
-  /* really we should also check for W_OK */
-  if ((rc = imap_access (ctx->path, F_OK)) == 0)
+  if ((rc = imap_access (ctx->path)) == 0)
     return 0;
 
   if (rc == -1)
@@ -824,8 +832,12 @@ void imap_logout (IMAP_DATA** idata)
    * receive a bye response (so it doesn't freak out and close the conn) */
   (*idata)->status = IMAP_BYE;
   imap_cmd_start (*idata, "LOGOUT");
-  while (imap_cmd_step (*idata) == IMAP_CMD_CONTINUE)
-    ;
+  if (ImapPollTimeout <= 0 ||
+      mutt_socket_poll ((*idata)->conn, ImapPollTimeout) != 0)
+  {
+    while (imap_cmd_step (*idata) == IMAP_CMD_CONTINUE)
+      ;
+  }
 
   mutt_socket_close ((*idata)->conn);
   imap_free_idata (idata);
@@ -1412,6 +1424,9 @@ int imap_close_mailbox (CONTEXT* ctx)
     idata->ctx = NULL;
 
     hash_destroy (&idata->uid_hash, NULL);
+    FREE (&idata->msn_index);
+    idata->msn_index_size = 0;
+    idata->max_msn = 0;
 
     for (i = 0; i < IMAP_CACHE_LEN; i++)
     {
@@ -1460,7 +1475,7 @@ int imap_check_mailbox (CONTEXT *ctx, int *index_hint, int force)
   }
   if (idata->state == IMAP_IDLE)
   {
-    while ((result = mutt_socket_poll (idata->conn)) > 0)
+    while ((result = mutt_socket_poll (idata->conn, 0)) > 0)
     {
       if (imap_cmd_step (idata) != IMAP_CMD_CONTINUE)
       {
@@ -1477,7 +1492,7 @@ int imap_check_mailbox (CONTEXT *ctx, int *index_hint, int force)
 
   if ((force ||
        (idata->state != IMAP_IDLE && time(NULL) >= idata->lastread + Timeout))
-      && imap_exec (idata, "NOOP", 0) != 0)
+      && imap_exec (idata, "NOOP", IMAP_CMD_POLL) != 0)
     return -1;
 
   /* We call this even when we haven't run NOOP in case we have pending
@@ -1601,14 +1616,14 @@ int imap_buffy_check (int force, int check_stats)
       snprintf (command, sizeof (command),
 	      "STATUS %s (UIDNEXT UIDVALIDITY UNSEEN RECENT)", munged);
 
-    if (imap_exec (idata, command, IMAP_CMD_QUEUE) < 0)
+    if (imap_exec (idata, command, IMAP_CMD_QUEUE | IMAP_CMD_POLL) < 0)
     {
       dprint (1, (debugfile, "Error queueing command\n"));
       return 0;
     }
   }
 
-  if (lastdata && (imap_exec (lastdata, NULL, IMAP_CMD_FAIL_OK) == -1))
+  if (lastdata && (imap_exec (lastdata, NULL, IMAP_CMD_FAIL_OK | IMAP_CMD_POLL) == -1))
   {
     dprint (1, (debugfile, "Error polling mailboxes\n"));
     return 0;
@@ -1639,8 +1654,11 @@ int imap_status (char* path, int queue)
   if (imap_get_mailbox (path, &idata, buf, sizeof (buf)) < 0)
     return -1;
 
-  if (!imap_mxcmp (buf, idata->mailbox))
-    /* We are in the folder we're polling - just return the mailbox count */
+  /* We are in the folder we're polling - just return the mailbox count.
+   *
+   * Note that imap_mxcmp() converts NULL to "INBOX", so we need to
+   * make sure the idata really is open to a folder. */
+  if (idata->ctx && !imap_mxcmp (buf, idata->mailbox))
     return idata->ctx->msgcount;
   else if (mutt_bit_isset(idata->capabilities,IMAP4REV1) ||
 	   mutt_bit_isset(idata->capabilities,STATUS))
@@ -1966,10 +1984,10 @@ int imap_subscribe (char *path, int subscribe)
 
 /* trim dest to the length of the longest prefix it shares with src,
  * returning the length of the trimmed string */
-static int
-longest_common_prefix (char *dest, const char* src, int start, size_t dlen)
+static size_t
+longest_common_prefix (char *dest, const char* src, size_t start, size_t dlen)
 {
-  int pos = start;
+  size_t pos = start;
 
   while (pos < dlen && dest[pos] && dest[pos] == src[pos])
     pos++;
@@ -1986,7 +2004,7 @@ imap_complete_hosts (char *dest, size_t len)
   BUFFY* mailbox;
   CONNECTION* conn;
   int rc = -1;
-  int matchlen;
+  size_t matchlen;
 
   matchlen = mutt_strlen (dest);
   for (mailbox = Incoming; mailbox; mailbox = mailbox->next)
@@ -2039,7 +2057,8 @@ int imap_complete(char* dest, size_t dlen, char* path) {
   char buf[LONG_STRING];
   IMAP_LIST listresp;
   char completion[LONG_STRING];
-  int clen, matchlen = 0;
+  int clen;
+  size_t matchlen = 0;
   int completions = 0;
   IMAP_MBOX mx;
   int rc;
