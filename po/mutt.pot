@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2017-09-02 11:32-0700\n"
+"POT-Creation-Date: 2017-09-23 11:39-0700\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -45,7 +45,7 @@ msgid "Select"
 msgstr ""
 
 #: addrbook.c:41 browser.c:49 compose.c:125 crypt-gpgme.c:4088 curs_main.c:493
-#: mutt_ssl.c:1257 mutt_ssl_gnutls.c:1023 pager.c:1981 pgpkey.c:522
+#: mutt_ssl.c:1257 mutt_ssl_gnutls.c:1024 pager.c:1981 pgpkey.c:522
 #: postpone.c:44 query.c:53 recvattach.c:61 smime.c:440
 msgid "Help"
 msgstr ""
@@ -1331,7 +1331,7 @@ msgstr ""
 msgid "All matching keys are marked expired/revoked."
 msgstr ""
 
-#: crypt-gpgme.c:4080 mutt_ssl.c:1255 mutt_ssl_gnutls.c:1021 pgpkey.c:515
+#: crypt-gpgme.c:4080 mutt_ssl.c:1255 mutt_ssl_gnutls.c:1022 pgpkey.c:515
 #: smime.c:435
 msgid "Exit  "
 msgstr ""
@@ -2274,7 +2274,7 @@ msgstr ""
 msgid "SASL authentication failed."
 msgstr ""
 
-#: imap/browse.c:59 imap/imap.c:579
+#: imap/browse.c:59 imap/imap.c:598
 #, c-format
 msgid "%s is an invalid IMAP path"
 msgstr ""
@@ -2322,7 +2322,7 @@ msgstr ""
 msgid "Connection to %s timed out"
 msgstr ""
 
-#: imap/command.c:467
+#: imap/command.c:468
 msgid "Mailbox closed"
 msgstr ""
 
@@ -2336,96 +2336,96 @@ msgstr ""
 msgid "Closing connection to %s..."
 msgstr ""
 
-#: imap/imap.c:319
+#: imap/imap.c:338
 msgid "This IMAP server is ancient. Mutt does not work with it."
 msgstr ""
 
-#: imap/imap.c:444 pop_lib.c:295 smtp.c:466
+#: imap/imap.c:463 pop_lib.c:295 smtp.c:466
 msgid "Secure connection with TLS?"
 msgstr ""
 
-#: imap/imap.c:453 pop_lib.c:315 smtp.c:478
+#: imap/imap.c:472 pop_lib.c:315 smtp.c:478
 msgid "Could not negotiate TLS connection"
 msgstr ""
 
-#: imap/imap.c:469 pop_lib.c:336
+#: imap/imap.c:488 pop_lib.c:336
 msgid "Encrypted connection unavailable"
 msgstr ""
 
-#: imap/imap.c:613
+#: imap/imap.c:632
 #, c-format
 msgid "Selecting %s..."
 msgstr ""
 
-#: imap/imap.c:768
+#: imap/imap.c:787
 msgid "Error opening mailbox"
 msgstr ""
 
-#: imap/imap.c:818 imap/imap.c:2190 imap/message.c:1014 muttlib.c:1683
+#: imap/imap.c:837 imap/imap.c:2231 imap/message.c:1014 muttlib.c:1683
 #, c-format
 msgid "Create %s?"
 msgstr ""
 
-#: imap/imap.c:1215
+#: imap/imap.c:1247
 msgid "Expunge failed"
-msgstr ""
-
-#: imap/imap.c:1227
-#, c-format
-msgid "Marking %d messages deleted..."
 msgstr ""
 
 #: imap/imap.c:1259
 #, c-format
+msgid "Marking %d messages deleted..."
+msgstr ""
+
+#: imap/imap.c:1291
+#, c-format
 msgid "Saving changed messages... [%d/%d]"
 msgstr ""
 
-#: imap/imap.c:1315
+#: imap/imap.c:1347
 msgid "Error saving flags. Close anyway?"
 msgstr ""
 
-#: imap/imap.c:1323
+#: imap/imap.c:1355
 msgid "Error saving flags"
 msgstr ""
 
-#: imap/imap.c:1346
+#: imap/imap.c:1378
 msgid "Expunging messages from server..."
 msgstr ""
 
-#: imap/imap.c:1352
+#: imap/imap.c:1384
 msgid "imap_sync_mailbox: EXPUNGE failed"
 msgstr ""
 
-#: imap/imap.c:1839
+#: imap/imap.c:1871
 #, c-format
 msgid "Header search without header name: %s"
 msgstr ""
 
-#: imap/imap.c:1910
+#: imap/imap.c:1942
 msgid "Bad mailbox name"
 msgstr ""
 
-#: imap/imap.c:1934
+#: imap/imap.c:1966
 #, c-format
 msgid "Subscribing to %s..."
 msgstr ""
 
-#: imap/imap.c:1936
+#: imap/imap.c:1968
 #, c-format
 msgid "Unsubscribing from %s..."
 msgstr ""
 
-#: imap/imap.c:1946
+#: imap/imap.c:1978
 #, c-format
 msgid "Subscribed to %s"
 msgstr ""
 
-#: imap/imap.c:1948
+#: imap/imap.c:1980
 #, c-format
 msgid "Unsubscribed from %s"
 msgstr ""
 
-#: imap/imap.c:2175 imap/message.c:978
+#: imap/imap.c:2216 imap/message.c:978
 #, c-format
 msgid "Copying %d messages to %s..."
 msgstr ""
@@ -3196,40 +3196,40 @@ msgstr ""
 msgid "Certificate host check failed: %s"
 msgstr ""
 
-#: mutt_ssl.c:1181 mutt_ssl_gnutls.c:868
+#: mutt_ssl.c:1181 mutt_ssl_gnutls.c:869
 msgid "This certificate belongs to:"
 msgstr ""
 
-#: mutt_ssl.c:1189 mutt_ssl_gnutls.c:907
+#: mutt_ssl.c:1189 mutt_ssl_gnutls.c:908
 msgid "This certificate was issued by:"
 msgstr ""
 
-#: mutt_ssl.c:1197 mutt_ssl_gnutls.c:946
+#: mutt_ssl.c:1197 mutt_ssl_gnutls.c:947
 #, c-format
 msgid "This certificate is valid"
 msgstr ""
 
-#: mutt_ssl.c:1198 mutt_ssl_gnutls.c:949
+#: mutt_ssl.c:1198 mutt_ssl_gnutls.c:950
 #, c-format
 msgid "   from %s"
 msgstr ""
 
-#: mutt_ssl.c:1200 mutt_ssl_gnutls.c:953
+#: mutt_ssl.c:1200 mutt_ssl_gnutls.c:954
 #, c-format
 msgid "     to %s"
 msgstr ""
 
-#: mutt_ssl.c:1206 mutt_ssl_gnutls.c:958
+#: mutt_ssl.c:1206 mutt_ssl_gnutls.c:959
 #, c-format
 msgid "SHA1 Fingerprint: %s"
 msgstr ""
 
-#: mutt_ssl.c:1209 mutt_ssl_gnutls.c:961
+#: mutt_ssl.c:1209 mutt_ssl_gnutls.c:962
 #, c-format
 msgid "MD5 Fingerprint: %s"
 msgstr ""
 
-#: mutt_ssl.c:1212 mutt_ssl_gnutls.c:990
+#: mutt_ssl.c:1212 mutt_ssl_gnutls.c:991
 #, c-format
 msgid "SSL Certificate check (certificate %d of %d in chain)"
 msgstr ""
@@ -3248,7 +3248,7 @@ msgstr ""
 msgid "(r)eject, accept (o)nce, (a)ccept always, (s)kip"
 msgstr ""
 
-#: mutt_ssl.c:1244 mutt_ssl_gnutls.c:999
+#: mutt_ssl.c:1244 mutt_ssl_gnutls.c:1000
 msgid "(r)eject, accept (o)nce, (a)ccept always"
 msgstr ""
 
@@ -3256,15 +3256,15 @@ msgstr ""
 msgid "(r)eject, accept (o)nce, (s)kip"
 msgstr ""
 
-#: mutt_ssl.c:1251 mutt_ssl_gnutls.c:1010
+#: mutt_ssl.c:1251 mutt_ssl_gnutls.c:1011
 msgid "(r)eject, accept (o)nce"
 msgstr ""
 
-#: mutt_ssl.c:1284 mutt_ssl_gnutls.c:1066
+#: mutt_ssl.c:1284 mutt_ssl_gnutls.c:1067
 msgid "Warning: Couldn't save certificate"
 msgstr ""
 
-#: mutt_ssl.c:1289 mutt_ssl_gnutls.c:1071
+#: mutt_ssl.c:1289 mutt_ssl_gnutls.c:1072
 msgid "Certificate saved"
 msgstr ""
 
@@ -3285,35 +3285,35 @@ msgstr ""
 msgid "SSL/TLS connection using %s (%s/%s/%s)"
 msgstr ""
 
-#: mutt_ssl_gnutls.c:695 mutt_ssl_gnutls.c:847
+#: mutt_ssl_gnutls.c:696 mutt_ssl_gnutls.c:848
 msgid "Error initialising gnutls certificate data"
 msgstr ""
 
-#: mutt_ssl_gnutls.c:702 mutt_ssl_gnutls.c:854
+#: mutt_ssl_gnutls.c:703 mutt_ssl_gnutls.c:855
 msgid "Error processing certificate data"
 msgstr ""
 
-#: mutt_ssl_gnutls.c:838
+#: mutt_ssl_gnutls.c:839
 msgid "Warning: Server certificate was signed using an insecure algorithm"
 msgstr ""
 
-#: mutt_ssl_gnutls.c:966
+#: mutt_ssl_gnutls.c:967
 msgid "WARNING: Server certificate is not yet valid"
 msgstr ""
 
-#: mutt_ssl_gnutls.c:971
+#: mutt_ssl_gnutls.c:972
 msgid "WARNING: Server certificate has expired"
 msgstr ""
 
-#: mutt_ssl_gnutls.c:976
+#: mutt_ssl_gnutls.c:977
 msgid "WARNING: Server certificate has been revoked"
 msgstr ""
 
-#: mutt_ssl_gnutls.c:981
+#: mutt_ssl_gnutls.c:982
 msgid "WARNING: Server hostname does not match certificate"
 msgstr ""
 
-#: mutt_ssl_gnutls.c:986
+#: mutt_ssl_gnutls.c:987
 msgid "WARNING: Signer of server certificate is not a CA"
 msgstr ""
 
@@ -3323,7 +3323,7 @@ msgstr ""
 #. * This is an interactive certificate confirmation prompt for
 #. * a GNUTLS connection.
 #.
-#: mutt_ssl_gnutls.c:1006
+#: mutt_ssl_gnutls.c:1007
 msgid "roa"
 msgstr ""
 
@@ -3333,20 +3333,20 @@ msgstr ""
 #. * These is an interactive certificate confirmation prompt for
 #. * a GNUTLS connection.
 #.
-#: mutt_ssl_gnutls.c:1017
+#: mutt_ssl_gnutls.c:1018
 msgid "ro"
 msgstr ""
 
-#: mutt_ssl_gnutls.c:1100 mutt_ssl_gnutls.c:1135 mutt_ssl_gnutls.c:1145
+#: mutt_ssl_gnutls.c:1101 mutt_ssl_gnutls.c:1136 mutt_ssl_gnutls.c:1146
 msgid "Unable to get certificate from peer"
 msgstr ""
 
-#: mutt_ssl_gnutls.c:1106
+#: mutt_ssl_gnutls.c:1107
 #, c-format
 msgid "Certificate verification error (%s)"
 msgstr ""
 
-#: mutt_ssl_gnutls.c:1115
+#: mutt_ssl_gnutls.c:1116
 msgid "Certificate is not X.509"
 msgstr ""
 

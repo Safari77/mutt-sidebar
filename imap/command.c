@@ -475,6 +475,7 @@ static void cmd_handle_fatal (IMAP_DATA* idata)
       (idata->reopen & IMAP_REOPEN_ALLOW))
   {
     mx_fastclose_mailbox (idata->ctx);
+    mutt_socket_close (idata->conn);
     mutt_error (_("Mailbox closed"));
     mutt_sleep (1);
     idata->state = IMAP_DISCONNECTED;
@@ -673,7 +674,7 @@ static void cmd_parse_expunge (IMAP_DATA* idata, const char* s)
  *   Of course, a lot of code here duplicates code in message.c. */
 static void cmd_parse_fetch (IMAP_DATA* idata, char* s)
 {
-  unsigned int msn;
+  unsigned int msn, uid;
   HEADER *h;
 
   dprint (3, (debugfile, "Handling FETCH\n"));
@@ -704,18 +705,41 @@ static void cmd_parse_fetch (IMAP_DATA* idata, char* s)
   }
   s++;
 
-  if (ascii_strncasecmp ("FLAGS", s, 5) != 0)
+  while (*s)
   {
-    dprint (2, (debugfile, "Only handle FLAGS updates\n"));
-    return;
-  }
+    SKIPWS (s);
 
-  /* If server flags could conflict with mutt's flags, reopen the mailbox. */
-  if (h->changed)
-    idata->reopen |= IMAP_EXPUNGE_PENDING;
-  else {
-    imap_set_flags (idata, h, s);
-    idata->check_status = IMAP_FLAGS_PENDING;
+    if (ascii_strncasecmp ("FLAGS", s, 5) == 0)
+    {
+      /* If server flags could conflict with mutt's flags, reopen the mailbox. */
+      if (h->changed)
+        idata->reopen |= IMAP_EXPUNGE_PENDING;
+      else
+      {
+        imap_set_flags (idata, h, s);
+        idata->check_status = IMAP_FLAGS_PENDING;
+      }
+      return;
+    }
+    else if (ascii_strncasecmp ("UID", s, 3) == 0)
+    {
+      s += 3;
+      SKIPWS (s);
+      uid = (unsigned int) atoi (s);
+      if (uid != HEADER_DATA(h)->uid)
+      {
+        dprint (2, (debugfile, "FETCH UID vs MSN mismatch.  Skipping update.\n"));
+        return;
+      }
+      s = imap_next_word (s);
+    }
+    else if (*s == ')')
+      s++; /* end of request */
+    else if (*s)
+    {
+      dprint (2, (debugfile, "Only handle FLAGS updates\n"));
+      return;
+    }
   }
 }
 
