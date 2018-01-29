@@ -1433,10 +1433,10 @@ void mutt_check_simple (char *s, size_t len, const char *simple)
 
 int mutt_pattern_func (int op, char *prompt)
 {
-  pattern_t *pat;
-  char buf[LONG_STRING] = "", *simple;
+  pattern_t *pat = NULL;
+  char buf[LONG_STRING] = "", *simple = NULL;
   BUFFER err;
-  int i;
+  int i, rv = -1;
   progress_t progress;
 
   strfcpy (buf, NONULL (Context->pattern), sizeof (buf));
@@ -1453,15 +1453,13 @@ int mutt_pattern_func (int op, char *prompt)
   err.data = safe_malloc(err.dsize);
   if ((pat = mutt_pattern_comp (buf, MUTT_FULL_MSG, &err)) == NULL)
   {
-    FREE (&simple);
     mutt_error ("%s", err.data);
-    FREE (&err.data);
-    return (-1);
+    goto bail;
   }
 
 #ifdef USE_IMAP
   if (Context->magic == MUTT_IMAP && imap_search (Context, pat) < 0)
-    return -1;
+    goto bail;
 #endif
 
   mutt_progress_init (&progress, _("Executing command on matching messages..."),
@@ -1543,11 +1541,15 @@ int mutt_pattern_func (int op, char *prompt)
       Context->limit_pattern = mutt_pattern_comp (buf, MUTT_FULL_MSG, &err);
     }
   }
+
+  rv = 0;
+
+bail:
   FREE (&simple);
   mutt_pattern_free (&pat);
   FREE (&err.data);
 
-  return 0;
+  return rv;
 }
 
 int mutt_search_command (int cur, int op)
@@ -1596,6 +1598,7 @@ int mutt_search_command (int cur, int op)
 	LastSearch[0] = '\0';
 	return (-1);
       }
+      FREE (&err.data);
       mutt_clear_error ();
     }
   }

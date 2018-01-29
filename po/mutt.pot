@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2017-09-23 11:39-0700\n"
+"POT-Creation-Date: 2018-01-27 11:19-0800\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1835,11 +1835,11 @@ msgstr ""
 msgid "You are on the first message."
 msgstr ""
 
-#: curs_main.c:1613 menu.c:874 pager.c:2195 pattern.c:1609
+#: curs_main.c:1613 menu.c:874 pager.c:2195 pattern.c:1612
 msgid "Search wrapped to top."
 msgstr ""
 
-#: curs_main.c:1622 pager.c:2217 pattern.c:1620
+#: curs_main.c:1622 pager.c:2217 pattern.c:1623
 msgid "Search wrapped to bottom."
 msgstr ""
 
@@ -2317,12 +2317,12 @@ msgstr ""
 msgid "Mailbox renamed."
 msgstr ""
 
-#: imap/command.c:260
+#: imap/command.c:261
 #, c-format
 msgid "Connection to %s timed out"
 msgstr ""
 
-#: imap/command.c:468
+#: imap/command.c:469
 msgid "Mailbox closed"
 msgstr ""
 
@@ -2357,75 +2357,75 @@ msgstr ""
 msgid "Selecting %s..."
 msgstr ""
 
-#: imap/imap.c:787
+#: imap/imap.c:789
 msgid "Error opening mailbox"
 msgstr ""
 
-#: imap/imap.c:837 imap/imap.c:2231 imap/message.c:1014 muttlib.c:1683
+#: imap/imap.c:839 imap/imap.c:2227 imap/message.c:1015 muttlib.c:1683
 #, c-format
 msgid "Create %s?"
 msgstr ""
 
-#: imap/imap.c:1247
+#: imap/imap.c:1243
 msgid "Expunge failed"
 msgstr ""
 
-#: imap/imap.c:1259
+#: imap/imap.c:1255
 #, c-format
 msgid "Marking %d messages deleted..."
 msgstr ""
 
-#: imap/imap.c:1291
+#: imap/imap.c:1287
 #, c-format
 msgid "Saving changed messages... [%d/%d]"
 msgstr ""
 
-#: imap/imap.c:1347
+#: imap/imap.c:1343
 msgid "Error saving flags. Close anyway?"
 msgstr ""
 
-#: imap/imap.c:1355
+#: imap/imap.c:1351
 msgid "Error saving flags"
 msgstr ""
 
-#: imap/imap.c:1378
+#: imap/imap.c:1374
 msgid "Expunging messages from server..."
 msgstr ""
 
-#: imap/imap.c:1384
+#: imap/imap.c:1380
 msgid "imap_sync_mailbox: EXPUNGE failed"
 msgstr ""
 
-#: imap/imap.c:1871
+#: imap/imap.c:1867
 #, c-format
 msgid "Header search without header name: %s"
 msgstr ""
 
-#: imap/imap.c:1942
+#: imap/imap.c:1938
 msgid "Bad mailbox name"
 msgstr ""
 
-#: imap/imap.c:1966
+#: imap/imap.c:1962
 #, c-format
 msgid "Subscribing to %s..."
 msgstr ""
 
-#: imap/imap.c:1968
+#: imap/imap.c:1964
 #, c-format
 msgid "Unsubscribing from %s..."
 msgstr ""
 
-#: imap/imap.c:1978
+#: imap/imap.c:1974
 #, c-format
 msgid "Subscribed to %s"
 msgstr ""
 
-#: imap/imap.c:1980
+#: imap/imap.c:1976
 #, c-format
 msgid "Unsubscribed from %s"
 msgstr ""
 
-#: imap/imap.c:2216 imap/message.c:978
+#: imap/imap.c:2212 imap/message.c:979
 #, c-format
 msgid "Copying %d messages to %s..."
 msgstr ""
@@ -2453,19 +2453,19 @@ msgstr ""
 msgid "Fetching message headers..."
 msgstr ""
 
-#: imap/message.c:577 imap/message.c:636 pop.c:573
+#: imap/message.c:577 imap/message.c:637 pop.c:573
 msgid "Fetching message..."
 msgstr ""
 
-#: imap/message.c:623 pop.c:568
+#: imap/message.c:624 pop.c:568
 msgid "The message index is incorrect. Try reopening the mailbox."
 msgstr ""
 
-#: imap/message.c:797
+#: imap/message.c:798
 msgid "Uploading message..."
 msgstr ""
 
-#: imap/message.c:982
+#: imap/message.c:983
 #, c-format
 msgid "Copying message %d to %s..."
 msgstr ""
@@ -2659,11 +2659,11 @@ msgstr ""
 msgid "unable to determine nodename via uname()"
 msgstr ""
 
-#: init.c:3638
+#: init.c:3626
 msgid "-group: no group name"
 msgstr ""
 
-#: init.c:3648
+#: init.c:3636
 msgid "out of arguments"
 msgstr ""
 
@@ -2743,7 +2743,7 @@ msgstr ""
 #: main.c:68
 msgid ""
 "To contact the developers, please mail to <mutt-dev@mutt.org>.\n"
-"To report a bug, please visit http://bugs.mutt.org/.\n"
+"To report a bug, please visit https://gitlab.com/muttmua/mutt/issues.\n"
 msgstr ""
 
 #: main.c:72
@@ -2998,15 +2998,15 @@ msgstr ""
 msgid "You are on the first entry."
 msgstr ""
 
-#: menu.c:848 pager.c:2239 pattern.c:1548
+#: menu.c:848 pager.c:2239 pattern.c:1550
 msgid "Search for: "
 msgstr ""
 
-#: menu.c:848 pager.c:2239 pattern.c:1548
+#: menu.c:848 pager.c:2239 pattern.c:1550
 msgid "Reverse search for: "
 msgstr ""
 
-#: menu.c:892 pager.c:2192 pager.c:2214 pager.c:2334 pattern.c:1663
+#: menu.c:892 pager.c:2192 pager.c:2214 pager.c:2334 pattern.c:1666
 msgid "Not found."
 msgstr ""
 
@@ -3604,31 +3604,31 @@ msgstr ""
 msgid "error: unknown op %d (report this error)."
 msgstr ""
 
-#: pattern.c:1427 pattern.c:1569
+#: pattern.c:1427 pattern.c:1571
 msgid "Compiling search pattern..."
 msgstr ""
 
-#: pattern.c:1448
+#: pattern.c:1446
 msgid "Executing command on matching messages..."
 msgstr ""
 
-#: pattern.c:1517
+#: pattern.c:1515
 msgid "No messages matched criteria."
 msgstr ""
 
-#: pattern.c:1599
+#: pattern.c:1602
 msgid "Searching..."
 msgstr ""
 
-#: pattern.c:1612
+#: pattern.c:1615
 msgid "Search hit bottom without finding match"
 msgstr ""
 
-#: pattern.c:1623
+#: pattern.c:1626
 msgid "Search hit top without finding match"
 msgstr ""
 
-#: pattern.c:1655
+#: pattern.c:1658
 msgid "Search interrupted."
 msgstr ""
 
@@ -3894,11 +3894,11 @@ msgstr ""
 msgid "Illegal S/MIME header"
 msgstr ""
 
-#: postpone.c:597
+#: postpone.c:597 postpone.c:695 postpone.c:718
 msgid "Decrypting message..."
 msgstr ""
 
-#: postpone.c:605
+#: postpone.c:601 postpone.c:700 postpone.c:723
 msgid "Decryption failed."
 msgstr ""
 

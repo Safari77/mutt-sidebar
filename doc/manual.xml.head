@@ -86,14 +86,14 @@ not need to be subscribed to both lists.
 
 <para>
 Mutt releases can be downloaded from <ulink
-url="ftp://ftp.mutt.org/mutt/">ftp://ftp.mutt.org/mutt/</ulink>.  For a
+url="ftp://ftp.mutt.org/pub/mutt/">ftp://ftp.mutt.org/pub/mutt/</ulink>.  For a
 list of mirror sites, please refer to <ulink
 url="http://www.mutt.org/download.html">http://www.mutt.org/download.html</ulink>.
 </para>
 
 <para>
-For nightly tarballs and version control access, please refer to the
-<ulink url="http://dev.mutt.org/">Mutt development site</ulink>.
+For version control access, please refer to the
+<ulink url="https://gitlab.com/muttmua/mutt">Mutt development site</ulink>.
 </para>
 
 </sect1>
@@ -108,7 +108,7 @@ For nightly tarballs and version control access, please refer to the
 <listitem>
 <para>
 The official Mutt bug tracking system can be found at
-<ulink url="http://bugs.mutt.org/">http://bugs.mutt.org/</ulink>
+<ulink url="https://gitlab.com/muttmua/mutt/issues">https://gitlab.com/muttmua/mutt/issues</ulink>
 </para>
 </listitem>
 </varlistentry>
@@ -118,7 +118,7 @@ The official Mutt bug tracking system can be found at
 <listitem>
 <para>
 An (unofficial) wiki can be found
-at <ulink url="http://wiki.mutt.org/">http://wiki.mutt.org/</ulink>.
+at <ulink url="https://gitlab.com/muttmua/mutt/wikis/home">https://gitlab.com/muttmua/mutt/wikis/home</ulink>.
 </para>
 </listitem>
 </varlistentry>
@@ -168,7 +168,7 @@ improve and continue to maintain stale translations.
 <para>
 For contributing code patches for new features and bug fixes, please
 refer to the developer pages at
-<ulink url="http://dev.mutt.org/">http://dev.mutt.org/</ulink> for more details.
+<ulink url="https://gitlab.com/muttmua/mutt">https://gitlab.com/muttmua/mutt</ulink> for more details.
 </para>
 
 </sect1>
@@ -6461,7 +6461,7 @@ If a message contains URLs, it is efficient to get a menu with all the
 URLs and start a WWW browser on one of them.  This functionality is
 provided by the external urlview program which can be retrieved at
 <ulink
-url="ftp://ftp.mutt.org/mutt/contrib/">ftp://ftp.mutt.org/mutt/contrib/</ulink>
+url="https://github.com/sigpipe/urlview">https://github.com/sigpipe/urlview</ulink>
 and the configuration commands:
 </para>
 

@@ -1,3 +1,332 @@
+2018-01-21 18:33:16 -0800  Kevin McCarthy  <kevin@8t8.us> (45b15d3d)
+
+        * Fix the ftp site url in the manual.
+        
+        Also fix the urlview link to point to sigpipe's github account.
+
+M	doc/manual.xml.head
+
+2018-01-17 19:19:01 -0800  Kevin McCarthy  <kevin@8t8.us> (ffdda7e6)
+
+        * Fix one more dev site reference in the manual.
+
+M	doc/manual.xml.head
+
+2018-01-17 18:57:49 -0800  Kevin McCarthy  <kevin@8t8.us> (e9ef2a16)
+
+        * Fix a couple memory leaks in pattern.c
+        
+        BUFFER.data was not being freed in a couple cases.
+        
+        The pattern and simple search were not being freed if imap_search()
+        failed.
+
+M	pattern.c
+
+2018-01-17 18:05:28 -0800  Kevin McCarthy  <kevin@8t8.us> (f1307ce5)
+
+        * Change bug reporting URL to gitlab issues.
+
+M	doc/manual.xml.head
+M	doc/mutt.man
+M	main.c
+M	po/bg.po
+M	po/ca.po
+M	po/cs.po
+M	po/da.po
+M	po/de.po
+M	po/el.po
+M	po/eo.po
+M	po/es.po
+M	po/et.po
+M	po/eu.po
+M	po/fr.po
+M	po/ga.po
+M	po/gl.po
+M	po/hu.po
+M	po/id.po
+M	po/it.po
+M	po/ja.po
+M	po/ko.po
+M	po/lt.po
+M	po/nl.po
+M	po/pl.po
+M	po/pt_BR.po
+M	po/ru.po
+M	po/sk.po
+M	po/sv.po
+M	po/tr.po
+M	po/uk.po
+M	po/zh_CN.po
+M	po/zh_TW.po
+
+2018-01-17 18:01:31 -0800  Kevin McCarthy  <kevin@8t8.us> (c041535f)
+
+        * Pull latest Polish translation from master.
+
+M	po/pl.po
+
+2018-01-17 16:21:53 -0800  Kevin McCarthy  <kevin@8t8.us> (32ce9f35)
+
+        * Update manual to point to gitlab.com as development site.
+
+M	doc/manual.xml.head
+
+2018-01-17 16:16:10 -0800  Kevin McCarthy  <kevin@8t8.us> (eff9dfbf)
+
+        * Remove muttbug and flea.
+        
+        We have pretty much transitioned over to gitlab.com.
+
+M	.gitignore
+M	Makefile.am
+M	configure.ac
+M	doc/Makefile.am
+D	doc/muttbug.man
+M	init.c
+D	muttbug
+D	muttbug.sh.in
+
+2018-01-11 15:08:30 -0800  Kevin McCarthy  <kevin@8t8.us> (667a4710)
+
+        * Add missing setup calls when resuming encrypted drafts.
+        
+        Calls to get the passphrase were missing for app/pgp and app/smime.
+        App/smime was also missing a call to crypt_smime_getkeys().
+        
+        If a failure occurs, report it back, rather than just continuing.
+        Otherwise, postponed messages could be completely lost.
+
+M	postpone.c
+
+2018-01-07 12:12:42 -0800  Kevin McCarthy  <kevin@8t8.us> (a37a2c4d)
+
+        * Fix imap status count range check.
+        
+        The strtoul() call for parsing the STATUS count wasn't checking the
+        range properly, because it was assigning to an unsigned int.
+        
+        Change to assign to a unsigned long, and also add the conversion check
+        from mutt_atoui().
+        
+        Thanks to Charles (@chdiza) for quickly noticing the problem!
+
+M	imap/command.c
+
+2018-01-06 15:55:17 -0800  Kevin McCarthy  <kevin@8t8.us> (8fcf8eda)
+
+        * Change imap literal counts to parse and store unsigned ints.
+        
+        IMAP literals are of type number.  Change imap_get_literal_count() to
+        use mutt_atoui() instead of atoi().  Change the return type variables
+        used to store the count to type unsigned int.
+        
+        It's doubtful this was a real issue, but as long as we're cleaning up
+        incorrect atoi() usage, we should fix this too.
+
+M	imap/command.c
+M	imap/imap.c
+M	imap/imap_private.h
+M	imap/message.c
+M	imap/util.c
+
+2018-01-05 20:39:50 -0800  Kevin McCarthy  <kevin@8t8.us> (b8190ef3)
+
+        * Fix improper signed int conversion of IMAP uid and msn values.
+        
+        Several places in the imap code, when parsing "number" and "nz-number"
+        values from the IMAP data, use atoi() and strtol().  This is
+        incorrect, and can result in failures when a uid value happens to be
+        larger than 2^31.
+        
+        Create a helper function, mutt_atoui() and use that instead.  One
+        place was using strtol() and relying on the endptr parameter, and so
+        was changed to use strtoul() instead.
+        
+        Thanks to Paul Saunders for the bug report and original patch, which
+        this commit is based on.
+
+M	imap/command.c
+M	imap/imap.c
+M	imap/message.c
+M	lib.c
+M	lib.h
+
+2017-12-26 15:09:07 -0800  Kevin McCarthy  <kevin@8t8.us> (363f12a3)
+
+        * Update wiki link in manual.
+
+M	doc/manual.xml.head
+
+2017-12-18 12:55:20 -0800  Kevin McCarthy  <kevin@8t8.us> (80d06b0c)
+
+        * Determine latest tag using git describe.
+        
+        Commit 8648db83 relies on `sort -V` which is unavailable on some
+        platforms.  Instead just use `git describe` with --abbrev=0 to only
+        output the tag.  We still manually compute the distance to avoid the
+        problem mentioned in that commit.
+        
+        Additionally, add Vincent's fix from commit 3b142cea to the stable
+        branch.
+
+M	mkchangelog.sh
+M	version.sh
+
+2017-12-15 15:31:23 -0800  Kevin McCarthy  <kevin@8t8.us> (8e0d8616)
+
+        * automatic post-release commit for mutt-1.9.2
+
+M	ChangeLog
+M	UPDATING
+M	VERSION
+2017-12-15 12:09:42 -0800  Kevin McCarthy  <kevin@8t8.us> (9eedfd4e)
+
+        * Fix s/mime certificate deletion bug. (closes #3982)
+        
+        Commit c1bcf4ba exposed a bug in the s/mime encryption code.  It was
+        errorneously calling unlink on the list of generated cert files to
+        use.
+        
+        Prior to that commit, the list had an initial space, which apparently
+        made the unlink fail.  After that commit, encrypting to a single
+        certificate would end up deleting the certificate.
+        
+        Remove the calls to unlink the cert file.  Add some missing cleanup if
+        the call to openssl fails.
+
+M	smime.c
+
+2017-12-14 16:16:27 -0800  Kevin McCarthy  <kevin@8t8.us> (841f7101)
+
+        * Update mkchangelog.sh to use git.
+        
+        The output isn't quite as nice as the hg generated version, but is
+        close.
+        
+        With Mercurial, and now Git, I'm not sure of the usefulness of
+        maintaining a ChangeLog file in the repos, but that is another
+        discussion.
+
+D	hg-changelog-map
+M	mkchangelog.sh
+
+2017-12-12 19:09:42 -0800  Kevin McCarthy  <kevin@8t8.us> (ecbd86c9)
+
+        * Remove hg-commit and Makefile commit target.
+        
+        I haven't ever used this script, and we only update the ChangeLog
+        during releases now.
+        
+        doc/devel-notes already mentions running check_sec.sh.  Add a mention
+        of the 'make validate' target too.
+
+M	Makefile.am
+M	doc/devel-notes.txt
+D	hg-commit
+
+2017-12-12 18:17:10 -0800  Kevin McCarthy  <kevin@8t8.us> (a4d08d25)
+
+        * Minor tweaks to the version.sh fixes from last commit.
+        
+        Add back a check for whether the git program exists.
+        
+        Don't show distance if it is zero.
+        
+        Remove the dirty flag.
+        
+        Remove the initial "g" prefix from the commitid.  This is added by git
+        describe, but I don't think we need to preserve it.
+
+M	version.sh
+
+2017-12-11 21:46:30 -0500  Aaron Schrab  <aaron+mutt@schrab.com> (8648db83)
+
+        * Change version.sh to manually compute version and distance.
+        
+        In some cases `git describe` gives bizarre results (see URL below),
+        instead get the highest version-numbered tag contained in HEAD then
+        count the number of commits that aren't included in it.
+        
+        https://public-inbox.org/git/20161205232712.GA23868@pug.qqx.org/
+
+M	version.sh
+
+2017-12-10 20:03:30 -0800  Kevin McCarthy  <kevin@8t8.us> (7b65f780)
+
+        * Update some of the documentation to refer to git.
+        
+        Also update the repos URL.
+
+M	COPYRIGHT
+M	README
+M	doc/devel-notes.txt
+
+2017-12-03 17:55:59 -0800  Kevin McCarthy  <kevin@8t8.us> (6df931c8)
+
+        * Convert version.sh to work with git.
+        
+        Use the built-in `git describe` to get the tag, distance, and
+        revision id.
+
+M	version.sh
+
+2017-12-02 19:27:14 -0800  Kevin McCarthy  <kevin@8t8.us> (0ad4c11d)
+
+        * Convert to .gitignore file.
+
+A	.gitignore
+D	.hgignore
+
+2017-09-30 19:15:08 -0700  Kevin McCarthy  <kevin@8t8.us> (1f4a6c67)
+
+        * Fix address group terminator "exact address" printing to display trailing semicolon.
+        
+        The exact-address handling for comma and colon are different because
+        those are added outside the exact-address printing.
+        
+        The semicolon needs to be inside the address->val field of the address
+        group terminator.
+
+M	rfc822.c
+
+2017-09-26 19:44:11 -0700  Kevin McCarthy  <kevin@8t8.us> (0bcb77a6)
+
+        * Fix uses of context->changed as a counter.
+        
+        The first was in mx_update_tables(), but only when "not committing".
+        This is used by mh/maildir during an "occult" update, and in imap when
+        expunging the mailbox.  It meant to simply turn on changed when a
+        single changed header is seen.
+        
+        The second use was in imap_sync_message_for_copy().  Previously this
+        was used for a server side copy/save, but is now also used for
+        fast-trash copying.  Remove the code that was trying to decrement the
+        counter: this function is not capable of properly setting a status
+        bit.
+
+M	imap/imap.c
+M	mx.c
+
+2017-09-23 11:40:44 -0700  Kevin McCarthy  <kevin@8t8.us> (b333df6d)
+
+        * mutt-1.9.1 signed
+
+M	.hgsigs
+
+2017-09-23 11:39:54 -0700  Kevin McCarthy  <kevin@8t8.us> (5e007dac)
+
+        * Added tag mutt-1-9-1-rel for changeset 869633ef393e
+
+M	.hgtags
+
+2017-09-23 11:39:45 -0700  Kevin McCarthy  <kevin@8t8.us> (8473efa7)
+
+        * automatic post-release commit for mutt-1.9.1
+
+M	ChangeLog
+M	UPDATING
+M	VERSION
 2017-09-22 11:14 -0700  Kevin McCarthy  <kevin@8t8.us>  (19c81a140c6e)
 
 	* imap/imap.c: Add missing IMAP_CMD_POLL flag in imap buffy check.
