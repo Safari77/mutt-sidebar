@@ -50,7 +50,7 @@ doc/stamp-
 doc/stamp-doc-chunked
 doc/stamp-doc-xml
 doc/tuning.html
-flea
+/flea
 .gdb_history
 *.gmo
 hcachever.sh
