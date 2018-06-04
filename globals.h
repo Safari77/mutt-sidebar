@@ -116,6 +116,7 @@ WHERE char *Postponed;
 WHERE char *PostponeEncryptAs;
 WHERE char *Prefix;
 WHERE char *PrintCmd;
+WHERE char *NewMailCmd;
 WHERE char *QueryCmd;
 WHERE char *QueryFormat;
 WHERE char *Realname;
@@ -206,6 +207,7 @@ extern unsigned char QuadOptions[];
 #endif
 
 WHERE short ConnectTimeout;
+WHERE short ErrorHistSize;
 WHERE short HistSize;
 WHERE short MenuContext;
 WHERE short PagerContext;
@@ -249,6 +251,7 @@ WHERE LIST *UserHeader INITVAL (0);
 /*-- formerly in pgp.h --*/
 WHERE REGEXP PgpGoodSign;
 WHERE REGEXP PgpDecryptionOkay;
+WHERE char *PgpDefaultKey;
 WHERE char *PgpSignAs;
 WHERE short PgpTimeout;
 WHERE char *PgpEntryFormat;
@@ -265,10 +268,10 @@ WHERE char *PgpVerifyKeyCommand;
 WHERE char *PgpListSecringCommand;
 WHERE char *PgpListPubringCommand;
 WHERE char *PgpGetkeysCommand;
-WHERE char *PgpSelfEncryptAs;
 
 /*-- formerly in smime.h --*/
 WHERE char *SmimeDefaultKey;
+WHERE char *SmimeSignAs;
 WHERE short SmimeTimeout;
 WHERE char *SmimeCertificates;
 WHERE char *SmimeKeys;
@@ -286,7 +289,6 @@ WHERE char *SmimePk7outCommand;
 WHERE char *SmimeGetCertCommand;
 WHERE char *SmimeImportCertCommand;
 WHERE char *SmimeGetCertEmailCommand;
-WHERE char *SmimeSelfEncryptAs;
 
 
 

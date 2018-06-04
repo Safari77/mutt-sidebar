@@ -153,6 +153,16 @@ int mutt_protect (HEADER *msg, char *keylist)
         return -1;
       }
     }
+    else if (!mutt_strcasecmp ("flowed",
+                               mutt_get_parameter ("format", msg->content->parameter)))
+    {
+      if ((i = query_quadoption (OPT_PGPMIMEAUTO,
+              _("Inline PGP can't be used with format=flowed.  Revert to PGP/MIME?"))) != MUTT_YES)
+      {
+        mutt_error _("Mail not sent: inline PGP can't be used with format=flowed.");
+        return -1;
+      }
+    }
     else
     {
       /* they really want to send it inline... go for it */
@@ -822,7 +832,7 @@ int crypt_get_keys (HEADER *msg, char **keylist, int oppenc_mode)
        }
        unset_option (OPTPGPCHECKTRUST);
        if (option (OPTPGPSELFENCRYPT))
-         self_encrypt = PgpSelfEncryptAs;
+         self_encrypt = PgpDefaultKey;
      }
      if ((WithCrypto & APPLICATION_SMIME)
          && (msg->security & APPLICATION_SMIME))
@@ -833,7 +843,7 @@ int crypt_get_keys (HEADER *msg, char **keylist, int oppenc_mode)
            return (-1);
        }
        if (option (OPTSMIMESELFENCRYPT))
-         self_encrypt = SmimeSelfEncryptAs;
+         self_encrypt = SmimeDefaultKey;
      }
   }
 
@@ -959,7 +969,8 @@ int mutt_signed_handler (BODY *a, STATE *s)
   if (inconsistent)
   {
     state_attach_puts (_("[-- Error: "
-                         "Inconsistent multipart/signed structure! --]\n\n"),
+                         "Missing or bad-format multipart/signed signature!"
+                         " --]\n\n"),
                        s);
     return mutt_body_handler (a, s);
   }

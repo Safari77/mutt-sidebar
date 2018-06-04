@@ -122,6 +122,7 @@ time_t mutt_local_tz (time_t);
 time_t mutt_mktime (struct tm *, int);
 time_t mutt_parse_date (const char *, HEADER *);
 int is_from (const char *, char *, size_t, time_t *);
+void mutt_touch_atime (int);
 
 const char *mutt_attach_fmt (
 	char *dest,
@@ -197,6 +198,8 @@ void mutt_curses_message (const char *, ...);
 void mutt_encode_descriptions (BODY *, short);
 void mutt_encode_path (char *, size_t, const char *);
 void mutt_enter_command (void);
+void mutt_error_history_display (void);
+void mutt_error_history_init (void);
 void mutt_expand_aliases_env (ENVELOPE *);
 void mutt_expand_file_fmt (char *, size_t, const char *, const char *);
 void mutt_expand_fmt (char *, size_t, const char *, const char *);

@@ -67,7 +67,8 @@
 
 static const char *ReachingUs = N_("\
 To contact the developers, please mail to <mutt-dev@mutt.org>.\n\
-To report a bug, please visit <https://gitlab.com/muttmua/mutt/issues>.\n");
+To report a bug, please contact the Mutt maintainers via gitlab:\n\
+    https://gitlab.com/muttmua/mutt/issues\n");
 
 static const char *Notice = N_("\
 Copyright (C) 1996-2016 Michael R. Elkins and others.\n\
@@ -75,17 +76,18 @@ Mutt comes with ABSOLUTELY NO WARRANTY; for details type `mutt -vv'.\n\
 Mutt is free software, and you are welcome to redistribute it\n\
 under certain conditions; type `mutt -vv' for details.\n");
 
-static const char *Copyright = N_("\
+static const char Copyright[] = "\
 Copyright (C) 1996-2016 Michael R. Elkins <me@mutt.org>\n\
 Copyright (C) 1996-2002 Brandon Long <blong@fiction.net>\n\
 Copyright (C) 1997-2009 Thomas Roessler <roessler@does-not-exist.org>\n\
 Copyright (C) 1998-2005 Werner Koch <wk@isil.d.shuttle.de>\n\
-Copyright (C) 1999-2014 Brendan Cully <brendan@kublai.com>\n\
+Copyright (C) 1999-2017 Brendan Cully <brendan@kublai.com>\n\
 Copyright (C) 1999-2002 Tommi Komulainen <Tommi.Komulainen@iki.fi>\n\
 Copyright (C) 2000-2004 Edmund Grimley Evans <edmundo@rano.org>\n\
 Copyright (C) 2006-2009 Rocco Rutte <pdmef@gmx.net>\n\
-Copyright (C) 2014-2016 Kevin J. McCarthy <kevin@8t8.us>\n\
-\n\
+Copyright (C) 2014-2018 Kevin J. McCarthy <kevin@8t8.us>\n";
+
+static const char *Thanks = N_("\
 Many others not mentioned here contributed code, fixes,\n\
 and suggestions.\n");
 
@@ -214,6 +216,11 @@ static void show_version (void)
 #ifdef HAVE_LIBIDN
   printf ("\nlibidn: %s (compiled with %s)", stringprep_check_version (NULL), 
 	  STRINGPREP_VERSION);
+#endif
+
+#ifdef HAVE_LIBIDN2
+  printf ("\nlibidn2: %s (compiled with %s)", idn2_check_version (NULL),
+	  IDN2_VERSION);
 #endif
 
 #ifdef USE_HCACHE
@@ -392,6 +399,12 @@ static void show_version (void)
 #else
 	"-HAVE_RESIZETERM  "
 #endif
+	
+#ifdef HAVE_FUTIMENS
+	"+HAVE_FUTIMENS  "
+#else
+	"-HAVE_FUTIMENS  "
+#endif
         );	
   
   puts (
@@ -477,7 +490,13 @@ static void show_version (void)
 #else
 	"-HAVE_LIBIDN  "
 #endif
-	
+
+#if HAVE_LIBIDN2
+	"+HAVE_LIBIDN2  "
+#else
+	"-HAVE_LIBIDN2  "
+#endif
+
 #if HAVE_GETSID
 	"+HAVE_GETSID  "
 #else
@@ -520,6 +539,8 @@ static void show_version (void)
 #else
   puts ("-MIXMASTER");
 #endif
+
+  putchar ('\n');
 
   puts(_(ReachingUs));
 
@@ -790,7 +811,8 @@ int main (int argc, char **argv, char **environ)
       break;
     default:
       puts (mutt_make_version ());
-      puts (_(Copyright));
+      puts (Copyright);
+      puts (_(Thanks));
       puts (_(Licence));
       puts (_(Obtaining));
       puts (_(ReachingUs));

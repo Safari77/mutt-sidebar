@@ -345,7 +345,21 @@ int imap_cmd_idle (IMAP_DATA* idata)
 {
   int rc;
 
-  imap_cmd_start (idata, "IDLE");
+  if (cmd_start (idata, "IDLE", IMAP_CMD_POLL) < 0)
+  {
+    cmd_handle_fatal (idata);
+    return -1;
+  }
+
+  if ((ImapPollTimeout > 0) &&
+      (mutt_socket_poll (idata->conn, ImapPollTimeout)) == 0)
+  {
+    mutt_error (_("Connection to %s timed out"), idata->conn->account.host);
+    mutt_sleep (2);
+    cmd_handle_fatal (idata);
+    return -1;
+  }
+
   do
     rc = imap_cmd_step (idata);
   while (rc == IMAP_CMD_CONTINUE);
@@ -477,7 +491,8 @@ static void cmd_handle_fatal (IMAP_DATA* idata)
   {
     mx_fastclose_mailbox (idata->ctx);
     mutt_socket_close (idata->conn);
-    mutt_error (_("Mailbox closed"));
+    mutt_error (_("Mailbox %s@%s closed"),
+	idata->conn->account.login, idata->conn->account.host);
     mutt_sleep (1);
     idata->state = IMAP_DISCONNECTED;
   }
@@ -677,6 +692,7 @@ static void cmd_parse_fetch (IMAP_DATA* idata, char* s)
 {
   unsigned int msn, uid;
   HEADER *h;
+  int server_changes = 0;
 
   dprint (3, (debugfile, "Handling FETCH\n"));
 
@@ -712,13 +728,14 @@ static void cmd_parse_fetch (IMAP_DATA* idata, char* s)
 
     if (ascii_strncasecmp ("FLAGS", s, 5) == 0)
     {
-      /* If server flags could conflict with mutt's flags, reopen the mailbox. */
-      if (h->changed)
-        idata->reopen |= IMAP_EXPUNGE_PENDING;
-      else
+      imap_set_flags (idata, h, s, &server_changes);
+      if (server_changes)
       {
-        imap_set_flags (idata, h, s);
-        idata->check_status = IMAP_FLAGS_PENDING;
+        /* If server flags could conflict with mutt's flags, reopen the mailbox. */
+        if (h->changed)
+          idata->reopen |= IMAP_EXPUNGE_PENDING;
+        else
+          idata->check_status = IMAP_FLAGS_PENDING;
       }
       return;
     }

@@ -71,6 +71,20 @@
 # define MB_LEN_MAX 16
 #endif
 
+#ifdef HAVE_FGETS_UNLOCKED
+# ifdef fgets
+#  undef fgets
+# endif
+# define fgets fgets_unlocked
+#endif
+
+#ifdef HAVE_FGETC_UNLOCKED
+# ifdef fgetc
+#  undef fgetc
+# endif
+# define fgetc fgetc_unlocked
+#endif
+
 /* nifty trick I stole from ELM 2.5alpha. */
 #ifdef MAIN_C
 #define WHERE 
@@ -240,6 +254,7 @@ enum
   MUTT_XLABEL,
   MUTT_SERVERSEARCH,
   MUTT_MIMEATTACH,
+  MUTT_MIMETYPE,
   
   /* Options for Mailcap lookup */
   MUTT_EDIT,
@@ -271,6 +286,7 @@ enum
 enum
 {
   OPT_ABORT,
+  OPT_ABORTNOATTACH,
   OPT_BOUNCE,
   OPT_COPY,
   OPT_DELETE,
@@ -342,7 +358,9 @@ enum
   OPTBEEP,
   OPTBEEPNEW,
   OPTBOUNCEDELIVERED,
+  OPTCHANGEFOLDERNEXT,
   OPTBRAILLEFRIENDLY,
+  OPTBROWSERABBRMAILBOXES,
   OPTCHECKMBOXSIZE,
   OPTCHECKNEW,
   OPTCOLLAPSEUNREAD,
@@ -477,7 +495,7 @@ enum
   OPTUSEDOMAIN,
   OPTUSEFROM,
   OPTUSEGPGAGENT,
-#ifdef HAVE_LIBIDN
+#if defined(HAVE_LIBIDN) || defined(HAVE_LIBIDN2)
   OPTIDNDECODE,
   OPTIDNENCODE,
 #endif

@@ -399,12 +399,9 @@ static void add_to_list (LIST **list, const char *str)
     t = (LIST *) safe_calloc (1, sizeof (LIST));
     t->data = safe_strdup (str);
     if (last)
-    {
       last->next = t;
-      last = last->next;
-    }
     else
-      *list = last = t;
+      *list = t;
   }
 }
 
@@ -440,12 +437,9 @@ int mutt_add_to_rx_list (RX_LIST **list, const char *s, int flags, BUFFER *err)
     t = mutt_new_rx_list();
     t->rx = rx;
     if (last)
-    {
       last->next = t;
-      last = last->next;
-    }
     else
-      *list = last = t;
+      *list = t;
   }
   else /* duplicate */
     mutt_free_regexp (&rx);
@@ -694,6 +688,22 @@ static int parse_list (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *err)
     add_to_list ((LIST **) data, buf->data);
   }
   while (MoreArgs (s));
+
+  return 0;
+}
+
+static int parse_echo (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *err)
+{
+  if (!MoreArgs (s))
+  {
+    strfcpy (err->data, _("not enough arguments"), err->dsize);
+    return -1;
+  }
+  mutt_extract_token (buf, s, 0);
+  set_option (OPTFORCEREFRESH);
+  mutt_message ("%s", buf->data);
+  unset_option (OPTFORCEREFRESH);
+  mutt_sleep (0);
 
   return 0;
 }
@@ -2457,6 +2467,12 @@ static int parse_set (BUFFER *tmp, BUFFER *s, unsigned long data, BUFFER *err)
 	  *ptr = 0;
 	mutt_init_history ();
       }
+      else if (mutt_strcmp (MuttVars[idx].option, "error_history") == 0)
+      {
+	if (*ptr < 0)
+	  *ptr = 0;
+	mutt_error_history_init ();
+      }
       else if (mutt_strcmp (MuttVars[idx].option, "pager_index_lines") == 0)
       {
 	if (*ptr < 0)
@@ -3490,6 +3506,7 @@ void mutt_init (int skip_sys_rc, LIST *commands)
 #endif
 
   mutt_init_history ();
+  mutt_error_history_init ();
 
   /* RFC2368, "4. Unsafe headers"
    * The creator of a mailto URL cannot expect the resolver of a URL to

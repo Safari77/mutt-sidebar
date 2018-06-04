@@ -592,7 +592,7 @@ void mutt_fix_reply_recipients (ENVELOPE *env)
      * the user is the only recipient, it ends up on the TO: field
      */
     env->cc = remove_user (env->cc, (env->to == NULL));
-    env->to = remove_user (env->to, (env->cc == NULL));
+    env->to = remove_user (env->to, (env->cc == NULL) || option (OPTREPLYSELF));
   }
   
   /* the CC field can get cluttered, especially with lists */
@@ -1133,6 +1133,31 @@ static int has_recips (ADDRESS *a)
   return c;
 }
 
+static int has_attach_keyword (char *filename)
+{
+  int match = 0;
+  char buffer[LONG_STRING];
+  FILE *fp;
+
+  if ((fp = safe_fopen (filename, "r")) == NULL)
+  {
+    mutt_perror (filename);
+    return 0;
+  }
+
+  while (fgets (buffer, sizeof(buffer), fp) != NULL)
+  {
+    if (regexec (AbortNoattachRegexp.rx, buffer, 0, NULL, 0) == 0)
+    {
+      match = 1;
+      break;
+    }
+  }
+  safe_fclose (&fp);
+
+  return match;
+}
+
 /*
  * Returns 0 if the message was successfully sent
  *        -1 if the message was aborted or an error occurred
@@ -1158,7 +1183,7 @@ ci_send_message (int flags,		/* send mode */
   char *pgpkeylist = NULL;
   /* save current value of "pgp_sign_as"  and "smime_default_key" */
   char *pgp_signas = NULL;
-  char *smime_default_key = NULL;
+  char *smime_signas = NULL;
   char *tag = NULL, *err = NULL;
   char *ctype;
 
@@ -1183,7 +1208,7 @@ ci_send_message (int flags,		/* send mode */
     if (WithCrypto & APPLICATION_PGP)
       pgp_signas = safe_strdup(PgpSignAs);
     if (WithCrypto & APPLICATION_SMIME)
-      smime_default_key = safe_strdup(SmimeDefaultKey);
+      smime_signas = safe_strdup(SmimeSignAs);
   }
 
   /* Delay expansion of aliases until absolutely necessary--shouldn't
@@ -1569,6 +1594,18 @@ ci_send_message (int flags,		/* send mode */
       msg->security = 0;
   }
 
+  /* Deal with the corner case where the crypto module backend is not available.
+   * This can happen if configured without pgp/smime and with gpgme, but
+   * $crypt_use_gpgme is unset.
+   */
+  if (msg->security &&
+      !crypt_has_module_backend (msg->security))
+  {
+    mutt_error _("No crypto backend configured.  Disabling message security setting.");
+    mutt_sleep (1);
+    msg->security = 0;
+  }
+
   /* specify a default fcc.  if we are in batchmode, only save a copy of
    * the message if the value of $copy is yes or ask-yes */
 
@@ -1617,9 +1654,9 @@ main_loop:
         char *encrypt_as = NULL;
 
         if ((WithCrypto & APPLICATION_PGP) && (msg->security & APPLICATION_PGP))
-          encrypt_as = PgpSelfEncryptAs;
+          encrypt_as = PgpDefaultKey;
         else if ((WithCrypto & APPLICATION_SMIME) && (msg->security & APPLICATION_SMIME))
-          encrypt_as = SmimeSelfEncryptAs;
+          encrypt_as = SmimeDefaultKey;
         if (!(encrypt_as && *encrypt_as))
           encrypt_as = PostponeEncryptAs;
 
@@ -1701,6 +1738,24 @@ main_loop:
     if (quadoption (OPT_SUBJECT) == MUTT_YES)
       mutt_error _("No subject specified.");
     goto main_loop;
+  }
+
+  /* Scan for a mention of an attachment in the message body and
+   * prompt if there is none. */
+  if (!(flags & SENDBATCH) &&
+      (quadoption (OPT_ABORTNOATTACH) != MUTT_NO) &&
+      AbortNoattachRegexp.pattern &&
+      !msg->content->next &&
+      (msg->content->type == TYPETEXT) &&
+      !ascii_strcasecmp (msg->content->subtype, "plain") &&
+      has_attach_keyword (msg->content->filename))
+  {
+    if (query_quadoption (OPT_ABORTNOATTACH, _("No attachments, abort sending?")) != MUTT_NO)
+    {
+      if (quadoption (OPT_ABORTNOATTACH) == MUTT_YES)
+        mutt_error _("Attachment referenced in message is missing");
+      goto main_loop;
+    }
   }
 
   if (msg->content->next)
@@ -1946,8 +2001,8 @@ cleanup:
     }
     if (WithCrypto & APPLICATION_SMIME)
     {
-      FREE (&SmimeDefaultKey);
-      SmimeDefaultKey = smime_default_key;
+      FREE (&SmimeSignAs);
+      SmimeSignAs = smime_signas;
     }
   }
    

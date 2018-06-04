@@ -336,6 +336,7 @@ AC_CHECK_HEADERS(sys/time.h sys/resource.h)
 AC_CHECK_HEADERS(unix.h)
 
 AC_CHECK_FUNCS(setrlimit getsid)
+AC_CHECK_FUNCS(fgets_unlocked fgetc_unlocked)
 
 AC_MSG_CHECKING(for sig_atomic_t in signal.h)
 AC_EGREP_HEADER(sig_atomic_t,signal.h,
@@ -449,6 +450,9 @@ AC_CHECK_FUNCS(ftruncate, , [AC_CHECK_LIB(x, chsize)])
 
 dnl SCO has strftime() in libintl
 AC_CHECK_FUNCS(strftime, , [AC_CHECK_LIB(intl, strftime)])
+
+dnl Set the atime of files
+AC_CHECK_FUNCS(futimens)
 
 dnl AIX may not have fchdir()
 AC_CHECK_FUNCS(fchdir, , [mutt_cv_fchdir=no])
@@ -1289,6 +1293,25 @@ AC_ARG_WITH(idn, AS_HELP_STRING([--with-idn=@<:@PFX@:>@],[Use GNU libidn for int
 		 ],
 		 [with_idn=auto])
 
+AC_ARG_WITH(idn2, AS_HELP_STRING([--with-idn2=@<:@PFX@:>@],[Use GNU libidn2 for internationalized domain names]),
+        [
+          if test "$with_idn2" != "no" ; then
+            if test "$with_idn" = "auto"; then
+              with_idn="no"
+            fi
+
+            if test "$with_idn" != "no"; then
+              AC_MSG_ERROR([Cannot enable IDN and IDN2 support at the same time])
+            fi
+
+            if test "$with_idn2" != "yes" ; then
+              CPPFLAGS="$CPPFLAGS -I$with_idn2/include"
+              LDFLAGS="$LDFLAGS -L$with_idn2/lib"
+            fi
+          fi
+        ],
+        [with_idn2=no])
+
 if test "x$with_idn" != "xno"; then
   if test "$am_cv_func_iconv" != "yes"; then
     if test "$with_idn" != "auto"; then
@@ -1324,6 +1347,68 @@ if test "x$with_idn" != "xno"; then
       if test $have_stringprep_h = no || test $have_idna_h = no || test $ac_cv_search_stringprep_check_version = no; then
 	AC_MSG_ERROR([IDN was requested, but libidn was not usable on this system])
       fi
+    fi
+  fi
+fi
+
+dnl idna2
+if test "x$with_idn2" != "xno"; then
+  if test "$am_cv_func_iconv" != "yes"; then
+    AC_MSG_ERROR([IDN2 requested but iconv is disabled or unavailable])
+  else
+    dnl Solaris 11 has /usr/include/idn
+    have_idn2_h=no
+    AC_CHECK_HEADERS([idn2.h idn/idn2.h], [
+              have_idn2_h=yes
+              break])
+
+    mutt_save_LIBS="$LIBS"
+    LIBS=
+
+    AC_SEARCH_LIBS([idn2_check_version], [idn2], [
+      AC_DEFINE([HAVE_LIBIDN2], 1, [Define to 1 if you have the GNU idn2 library])
+      MUTTLIBS="$MUTTLIBS $LIBS"
+
+      dnl libidn2 >= 2.0.0 declares compatibility macros in idn2.h
+      LIBS="$LIBS $LIBICONV"
+      AC_CHECK_DECL([idna_to_unicode_8z8z],
+                    [AC_DEFINE([HAVE_IDNA_TO_UNICODE_8Z8Z])], [],
+                    [[
+#if defined(HAVE_IDN2_H)
+#include <idn2.h>
+#elif defined(HAVE_IDN_IDN2_H)
+#include <idn/idn2.h>
+#endif
+        ]])
+      AC_CHECK_DECL([idna_to_ascii_8z],
+                    [AC_DEFINE([HAVE_IDNA_TO_ASCII_8Z])], [],
+                    [[
+#if defined(HAVE_IDN2_H)
+#include <idn2.h>
+#elif defined(HAVE_IDN_IDN2_H)
+#include <idn/idn2.h>
+#endif
+        ]])
+      AC_CHECK_DECL([idna_to_ascii_lz],
+                    [AC_DEFINE([HAVE_IDNA_TO_ASCII_LZ])], [],
+                    [[
+#if defined(HAVE_IDN2_H)
+#include <idn2.h>
+#elif defined(HAVE_IDN_IDN2_H)
+#include <idn/idn2.h>
+#endif
+        ]])
+    ])
+
+    LIBS="$mutt_save_LIBS"
+
+    if test "$have_idn2_h" = "no" || \
+       test "$ac_cv_search_idn2_check_version" = "no" || \
+       test "x$ac_cv_have_decl_idna_to_unicode_8z8z" != "xyes" || \
+       test "x$ac_cv_have_decl_idna_to_ascii_8z" != "xyes" || \
+       test "x$ac_cv_have_decl_idna_to_ascii_lz" != "xyes"
+    then
+      AC_MSG_ERROR([IDN2 was requested, but libidn2 was not usable on this system])
     fi
   fi
 fi

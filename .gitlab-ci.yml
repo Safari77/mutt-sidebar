@@ -1,0 +1,36 @@
+image: mutt/ubuntu:16.04
+
+stages:
+  - build
+  - deploy
+
+openssl:
+  stage: build
+  script:
+    - scan-build-5.0 ./prepare --disable-dependency-tracking --enable-gpgme --enable-sidebar --enable-compressed --enable-pop --enable-imap --enable-smtp --enable-debug --enable-hcache --with-ssl
+    - scan-build-5.0 -o scan-build-openssl make -j
+  artifacts:
+    paths:
+      - scan-build-openssl
+
+gnutls:
+  stage: build
+  script:
+    - scan-build-5.0 ./prepare --disable-dependency-tracking --enable-gpgme --enable-sidebar --enable-compressed --enable-pop --enable-imap --enable-smtp --enable-debug --enable-hcache --with-gnutls
+    - scan-build-5.0 -o scan-build-gnutls make -j
+  artifacts:
+    paths:
+      - scan-build-gnutls
+
+pages:
+  stage: deploy
+  script:
+    - ./prepare
+    - make update-doc
+    - mkdir -p public
+    - cp doc/manual.html public/manual-dev.html
+  artifacts:
+    paths:
+      - public
+  only:
+    - master

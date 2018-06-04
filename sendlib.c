@@ -1315,15 +1315,15 @@ BODY *mutt_make_message_attach (CONTEXT *ctx, HEADER *hdr, int attach_msg)
       cmflags = MUTT_CM_DECODE_PGP;
       pgp &= ~PGPENCRYPT;
     }
-    else if ((WithCrypto & APPLICATION_PGP)
-             && (mutt_is_application_pgp (hdr->content) & PGPENCRYPT))
+    else if ((WithCrypto & APPLICATION_PGP) &&
+             ((mutt_is_application_pgp (hdr->content) & PGPENCRYPT) == PGPENCRYPT))
     {
       chflags |= CH_MIME | CH_TXTPLAIN;
       cmflags = MUTT_CM_DECODE | MUTT_CM_CHARCONV;
       pgp &= ~PGPENCRYPT;
     }
-    else if ((WithCrypto & APPLICATION_SMIME)
-              && mutt_is_application_smime (hdr->content) & SMIMEENCRYPT)
+    else if ((WithCrypto & APPLICATION_SMIME) &&
+             ((mutt_is_application_smime (hdr->content) & SMIMEENCRYPT) == SMIMEENCRYPT))
     {
       chflags |= CH_MIME | CH_TXTPLAIN;
       cmflags = MUTT_CM_DECODE | MUTT_CM_CHARCONV;
@@ -1678,7 +1678,7 @@ static int fold_one_header (FILE *fp, const char *tag, const char *value,
   int first = 1, enc, col = 0, w, l = 0, fold;
 
   dprint(4,(debugfile,"mwoh: pfx=[%s], tag=[%s], flags=%d value=[%s]\n",
-	    pfx, tag, flags, value));
+	    NONULL (pfx), tag, flags, value));
 
   if (tag && *tag && fprintf (fp, "%s%s: ", NONULL (pfx), tag) < 0)
     return -1;
@@ -2858,8 +2858,8 @@ int mutt_write_fcc (const char *path, HEADER *hdr, const char *msgid, int post, 
       fputc ('O', msg->fp);
     if (hdr->security & SIGN) {
 	fputc ('S', msg->fp);
-	if (SmimeDefaultKey && *SmimeDefaultKey)
-	    fprintf (msg->fp, "<%s>", SmimeDefaultKey);
+	if (SmimeSignAs && *SmimeSignAs)
+	    fprintf (msg->fp, "<%s>", SmimeSignAs);
     }
     if (hdr->security & INLINE)
       fputc ('I', msg->fp);
