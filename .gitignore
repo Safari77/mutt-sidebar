@@ -96,4 +96,4 @@ conststrings.c
 doc/pgpewrap.1
 doc/pgpring.1
 mutt-kz-*.tar.*
-
+po/*.gmo

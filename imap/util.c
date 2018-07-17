@@ -84,6 +84,7 @@ header_cache_t* imap_hcache_open (IMAP_DATA* idata, const char* path)
   ciss_url_t url;
   char cachepath[LONG_STRING];
   char mbox[LONG_STRING];
+  size_t len;
 
   if (path)
     imap_cachepath (idata, path, mbox, sizeof (mbox));
@@ -95,6 +96,12 @@ header_cache_t* imap_hcache_open (IMAP_DATA* idata, const char* path)
     imap_cachepath (idata, mx.mbox, mbox, sizeof (mbox));
     FREE (&mx.mbox);
   }
+
+  if (strstr(mbox, "/../") || (strcmp(mbox, "..") == 0) || (strncmp(mbox, "../", 3) == 0))
+    return NULL;
+  len = strlen(mbox);
+  if ((len > 3) && (strcmp(mbox + len - 3, "/..") == 0))
+    return NULL;
 
   mutt_account_tourl (&idata->conn->account, &url);
   url.path = mbox;
@@ -608,28 +615,35 @@ void imap_qualify_path (char *dest, size_t len, IMAP_MBOX *mx, char* path)
 }
 
 
-/* imap_quote_string: quote string according to IMAP rules:
- *   surround string with quotes, escape " and \ with \ */
-void imap_quote_string (char *dest, size_t dlen, const char *src)
+static void _imap_quote_string (char *dest, size_t dlen, const char *src,
+                                const char *to_quote)
 {
-  static const char quote[] = "\"\\";
   char *pt;
   const char *s;
+
+  if (!(dest && dlen && src && to_quote))
+    return;
+
+  if (dlen < 3)
+  {
+    *dest = 0;
+    return;
+  }
 
   pt = dest;
   s  = src;
 
-  *pt++ = '"';
-  /* save room for trailing quote-char */
-  dlen -= 2;
+  /* save room for pre/post quote-char and trailing null */
+  dlen -= 3;
 
+  *pt++ = '"';
   for (; *s && dlen; s++)
   {
-    if (strchr (quote, *s))
+    if (strchr (to_quote, *s))
     {
+      if (dlen < 2)
+        break;
       dlen -= 2;
-      if (!dlen)
-	break;
       *pt++ = '\\';
       *pt++ = *s;
     }
@@ -641,6 +655,23 @@ void imap_quote_string (char *dest, size_t dlen, const char *src)
   }
   *pt++ = '"';
   *pt = 0;
+}
+
+/* imap_quote_string: quote string according to IMAP rules:
+ *   surround string with quotes, escape " and \ with \ */
+void imap_quote_string (char *dest, size_t dlen, const char *src)
+{
+  _imap_quote_string (dest, dlen, src, "\"\\");
+}
+
+/* imap_quote_string_and_backquotes: quote string according to IMAP rules:
+ *   surround string with quotes, escape " and \ with \.
+ * Additionally, escape backquotes with \ to protect against code injection
+ * when using the resulting string in mutt_parse_rc_line().
+ */
+void imap_quote_string_and_backquotes (char *dest, size_t dlen, const char *src)
+{
+  _imap_quote_string (dest, dlen, src, "\"\\`");
 }
 
 /* imap_unquote_string: equally stupid unquoting routine */
