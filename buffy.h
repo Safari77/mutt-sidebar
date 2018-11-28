@@ -40,8 +40,8 @@ typedef struct buffy_t
   short notified;		/* user has been notified */
   short magic;			/* mailbox type */
   short newly_created;		/* mbox or mmdf just popped into existence */
-  time_t last_visited;		/* time of last exit from this mailbox */
-  time_t stats_last_checked;	/* mtime of mailbox the last time stats where checked. */
+  struct timespec last_visited;		/* time of last exit from this mailbox */
+  struct timespec stats_last_checked;	/* mtime of mailbox the last time stats where checked. */
 }
 BUFFY;
 
@@ -62,5 +62,9 @@ void mutt_buffy_cleanup (const char *buf, struct stat *st);
 void mutt_buffy_setnotified (const char *path);
 
 int mh_buffy (BUFFY *, int);
+
+/* force flags passed to mutt_buffy_check() */
+#define MUTT_BUFFY_CHECK_FORCE       1
+#define MUTT_BUFFY_CHECK_FORCE_STATS (1<<1)
 
 #endif /* _BUFFY_H */

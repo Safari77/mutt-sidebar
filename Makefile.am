@@ -3,7 +3,7 @@
 include $(top_srcdir)/flymake.am
 
 AUTOMAKE_OPTIONS = 1.6 foreign
-EXTRA_PROGRAMS = mutt_dotlock pgpring pgpewrap mutt_md5
+EXTRA_PROGRAMS = mutt_dotlock mutt_pgpring pgpewrap mutt_md5
 
 if BUILD_DOC
 DOC_SUBDIR = doc
@@ -26,7 +26,7 @@ BUILT_SOURCES = keymap_defs.h patchlist.c reldate.h conststrings.c $(HCVERSION)
 
 bin_PROGRAMS = mutt $(DOTLOCK_TARGET) $(PGPAUX_TARGET)
 mutt_SOURCES = \
-	addrbook.c alias.c attach.c base64.c browser.c buffy.c color.c \
+	addrbook.c alias.c attach.c base64.c browser.c buffer.c buffy.c color.c \
 	crypt.c cryptglue.c \
 	commands.c complete.c compose.c copy.c curs_lib.c curs_main.c date.c \
 	edit.c enter.c flags.c init.c filter.c from.c \
@@ -56,16 +56,17 @@ AM_CPPFLAGS=-I. -I$(top_srcdir) $(IMAP_INCLUDES) $(GPGME_CFLAGS) -Iintl
 
 EXTRA_mutt_SOURCES = account.c bcache.c compress.c crypt-gpgme.c crypt-mod-pgp-classic.c \
 	crypt-mod-pgp-gpgme.c crypt-mod-smime-classic.c \
-	crypt-mod-smime-gpgme.c dotlock.c gnupgparse.c hcache.c md5.c \
+	crypt-mod-smime-gpgme.c dotlock.c gnupgparse.c hcache.c md5.c monitor.c \
 	mutt_idna.c mutt_sasl.c mutt_socket.c mutt_ssl.c mutt_ssl_gnutls.c \
 	mutt_tunnel.c pgp.c pgpinvoke.c pgpkey.c pgplib.c pgpmicalg.c \
 	pgppacket.c pop.c pop_auth.c pop_lib.c remailer.c resize.c sha1.c \
 	smime.c smtp.c utf8.c wcwidth.c \
-	bcache.h browser.h hcache.h mbyte.h mutt_idna.h remailer.h url.h
+	bcache.h browser.h hcache.h mbyte.h monitor.h mutt_idna.h remailer.h url.h
 
 EXTRA_DIST = COPYRIGHT GPL OPS OPS.PGP OPS.CRYPT OPS.SMIME TODO UPDATING \
 	configure account.h \
-	attach.h buffy.h charset.h compress.h copy.h crypthash.h dotlock.h functions.h gen_defs \
+	attach.h buffer.h buffy.h charset.h compress.h copy.h crypthash.h \
+	dotlock.h functions.h gen_defs \
 	globals.h hash.h history.h init.h keymap.h mutt_crypt.h \
 	mailbox.h mapping.h md5.h mime.h mutt.h mutt_curses.h mutt_menu.h \
 	mutt_regex.h mutt_sasl.h mutt_socket.h mutt_ssl.h mutt_tunnel.h \
@@ -85,9 +86,9 @@ mutt_dotlock_SOURCES = mutt_dotlock.c
 mutt_dotlock_LDADD = $(LIBOBJS)
 mutt_dotlock_DEPENDENCIES = $(LIBOBJS)
 
-pgpring_SOURCES = pgppubring.c pgplib.c lib.c extlib.c sha1.c md5.c pgppacket.c ascii.c
-pgpring_LDADD = $(LIBOBJS) $(INTLLIBS)
-pgpring_DEPENDENCIES = $(LIBOBJS) $(INTLDEPS)
+mutt_pgpring_SOURCES = pgppubring.c pgplib.c lib.c extlib.c sha1.c md5.c pgppacket.c ascii.c
+mutt_pgpring_LDADD = $(LIBOBJS) $(INTLLIBS)
+mutt_pgpring_DEPENDENCIES = $(LIBOBJS) $(INTLDEPS)
 
 mutt_md5_SOURCES = md5.c
 mutt_md5_CFLAGS = -DMD5UTIL

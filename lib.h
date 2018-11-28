@@ -57,10 +57,10 @@
 # define TRUE 1
 # define FALSE 0
 
-# define HUGE_STRING     8192
-# define LONG_STRING     1024
-# define STRING          256
-# define SHORT_STRING    128
+# define HUGE_STRING        8192
+# define LONG_STRING        1024
+# define STRING             256
+# define SHORT_STRING       128
 
 /*
  * Create a format string to be used with scanf.
@@ -193,6 +193,7 @@ int mutt_atoi (const char *, int *);
 int mutt_atol (const char *, long *);
 int mutt_atoui (const char *, unsigned int *);
 int mutt_atoul (const char *, unsigned long *);
+int mutt_atoull (const char *, unsigned long long *);
 
 const char *mutt_stristr (const char *, const char *);
 const char *mutt_basename (const char *);

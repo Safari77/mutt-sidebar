@@ -29,7 +29,7 @@
 #include <ctype.h>
 #include <unistd.h>
 
-#define SORTCODE(x) (Sort & SORT_REVERSE) ? -(x) : x
+#define SORTCODE(x) ((option(OPTAUXSORT) ? SortAux : Sort) & SORT_REVERSE) ? -(x) : x
 
 /* function to use as discriminator when normal sort method is equal */
 static sort_t *AuxSort = NULL;
@@ -38,6 +38,8 @@ static sort_t *AuxSort = NULL;
   set_option(OPTAUXSORT); \
   code = AuxSort(a,b); \
   unset_option(OPTAUXSORT); \
+  if (code) \
+    return (code); \
 } \
 if (!code) \
   code = (*((HEADER **)a))->index - (*((HEADER **)b))->index;
@@ -203,8 +205,7 @@ static int compare_spam (const void *a, const void *b)
   if (result == 0)
   {
     result = strcmp(aptr, bptr);
-    if (result == 0)
-      AUXSORT(result, a, b);
+    AUXSORT(result, a, b);
   }
 
   return (SORTCODE(result));
@@ -289,6 +290,7 @@ void mutt_sort_headers (CONTEXT *ctx, int init)
      * in that routine, so we must make sure to zero the vcount member.
      */
     ctx->vcount = 0;
+    ctx->vsize = 0;
     mutt_clear_threads (ctx);
     return; /* nothing to do! */
   }

@@ -43,9 +43,9 @@
 #include "imap/imap.h"
 #endif
 
-static int eat_regexp (pattern_t *pat, BUFFER *, BUFFER *);
-static int eat_date (pattern_t *pat, BUFFER *, BUFFER *);
-static int eat_range (pattern_t *pat, BUFFER *, BUFFER *);
+static int eat_regexp (pattern_t *pat, int, BUFFER *, BUFFER *);
+static int eat_date (pattern_t *pat, int, BUFFER *, BUFFER *);
+static int eat_range (pattern_t *pat, int, BUFFER *, BUFFER *);
 static int patmatch (const pattern_t *pat, const char *buf);
 
 static const struct pattern_flags
@@ -53,7 +53,7 @@ static const struct pattern_flags
   int tag;	/* character used to represent this op */
   int op;	/* operation to perform */
   int class;
-  int (*eat_arg) (pattern_t *, BUFFER *, BUFFER *);
+  int (*eat_arg) (pattern_t *, int, BUFFER *, BUFFER *);
 }
 Flags[] =
 {
@@ -254,7 +254,7 @@ msg_search (CONTEXT *ctx, pattern_t* pat, int msgno)
   return match;
 }
 
-static int eat_regexp (pattern_t *pat, BUFFER *s, BUFFER *err)
+static int eat_regexp (pattern_t *pat, int flags, BUFFER *s, BUFFER *err)
 {
   BUFFER buf;
   char errmsg[STRING];
@@ -267,11 +267,13 @@ static int eat_regexp (pattern_t *pat, BUFFER *s, BUFFER *err)
       !buf.data)
   {
     snprintf (err->data, err->dsize, _("Error in expression: %s"), pexpr);
+    FREE (&buf.data);
     return (-1);
   }
   if (!*buf.data)
   {
     snprintf (err->data, err->dsize, "%s", _("Empty expression"));
+    FREE (&buf.data);
     return (-1);
   }
 
@@ -299,7 +301,7 @@ static int eat_regexp (pattern_t *pat, BUFFER *s, BUFFER *err)
     if (r)
     {
       regerror (r, pat->p.rx, errmsg, sizeof (errmsg));
-      mutt_buffer_printf (err, "'%s': %s", buf.data, errmsg);
+      mutt_buffer_add_printf (err, "'%s': %s", buf.data, errmsg);
       FREE (&buf.data);
       FREE (&pat->p.rx);
       return (-1);
@@ -310,7 +312,7 @@ static int eat_regexp (pattern_t *pat, BUFFER *s, BUFFER *err)
   return 0;
 }
 
-int eat_range (pattern_t *pat, BUFFER *s, BUFFER *err)
+static int eat_range (pattern_t *pat, int flags, BUFFER *s, BUFFER *err)
 {
   char *tmp;
   int do_exclusive = 0;
@@ -460,6 +462,15 @@ static const char *get_offset (struct tm *tm, const char *s, int sign)
     case 'd':
       tm->tm_mday += offset;
       break;
+    case 'H':
+      tm->tm_hour += offset;
+      break;
+    case 'M':
+      tm->tm_min += offset;
+      break;
+    case 'S':
+      tm->tm_sec += offset;
+      break;
     default:
       return s;
   }
@@ -575,25 +586,10 @@ static const char * parse_date_range (const char* pc, struct tm *min,
   return ((flag & MUTT_PDR_ERROR) ? NULL : pc);
 }
 
-static int eat_date (pattern_t *pat, BUFFER *s, BUFFER *err)
+static int eval_date_minmax (pattern_t *pat, const char *s, BUFFER *err)
 {
-  BUFFER buffer;
   struct tm min, max;
-  char *pexpr;
-
-  mutt_buffer_init (&buffer);
-  pexpr = s->dptr;
-  if (mutt_extract_token (&buffer, s, MUTT_TOKEN_COMMENT | MUTT_TOKEN_PATTERN) != 0
-      || !buffer.data)
-  {
-    snprintf (err->data, err->dsize, _("Error in expression: %s"), pexpr);
-    return (-1);
-  }
-  if (!*buffer.data)
-  {
-    snprintf (err->data, err->dsize, "%s", _("Empty expression"));
-    return (-1);
-  }
+  char *offset_type;
 
   memset (&min, 0, sizeof (min));
   /* the `0' time is Jan 1, 1970 UTC, so in order to prevent a negative time
@@ -614,7 +610,7 @@ static int eat_date (pattern_t *pat, BUFFER *s, BUFFER *err)
   max.tm_min = 59;
   max.tm_sec = 59;
 
-  if (strchr ("<>=", buffer.data[0]))
+  if (strchr ("<>=", s[0]))
   {
     /* offset from current time
        <3d	less than three days ago
@@ -624,7 +620,7 @@ static int eat_date (pattern_t *pat, BUFFER *s, BUFFER *err)
     struct tm *tm = localtime (&now);
     int exact = 0;
 
-    if (buffer.data[0] == '<')
+    if (s[0] == '<')
     {
       memcpy (&min, tm, sizeof (min));
       tm = &min;
@@ -634,14 +630,21 @@ static int eat_date (pattern_t *pat, BUFFER *s, BUFFER *err)
       memcpy (&max, tm, sizeof (max));
       tm = &max;
 
-      if (buffer.data[0] == '=')
+      if (s[0] == '=')
 	exact++;
     }
-    tm->tm_hour = 23;
-    tm->tm_min = tm->tm_sec = 59;
+
+    /* Reset the HMS unless we are relative matching using one of those
+     * offsets. */
+    strtol (s + 1, &offset_type, 0);
+    if (!(*offset_type && strchr ("HMS", *offset_type)))
+    {
+      tm->tm_hour = 23;
+      tm->tm_min = tm->tm_sec = 59;
+    }
 
     /* force negative offset */
-    get_offset (tm, buffer.data + 1, -1);
+    get_offset (tm, s + 1, -1);
 
     if (exact)
     {
@@ -652,7 +655,7 @@ static int eat_date (pattern_t *pat, BUFFER *s, BUFFER *err)
   }
   else
   {
-    const char *pc = buffer.data;
+    const char *pc = s;
 
     int haveMin = FALSE;
     int untilNow = FALSE;
@@ -661,7 +664,6 @@ static int eat_date (pattern_t *pat, BUFFER *s, BUFFER *err)
       /* minimum date specified */
       if ((pc = getDate (pc, &min, err)) == NULL)
       {
-	FREE (&buffer.data);
 	return (-1);
       }
       haveMin = TRUE;
@@ -687,7 +689,7 @@ static int eat_date (pattern_t *pat, BUFFER *s, BUFFER *err)
 	memcpy (&min, tm, sizeof (min));
 	min.tm_hour = min.tm_sec = min.tm_min = 0;
       }
-      
+
       /* preset max date for relative offsets,
 	 if nothing follows we search for messages on a specific day */
       max.tm_year = min.tm_year;
@@ -696,7 +698,6 @@ static int eat_date (pattern_t *pat, BUFFER *s, BUFFER *err)
 
       if (!parse_date_range (pc, &min, &max, haveMin, &baseMin, err))
       { /* bail out on any parsing error */
-	FREE (&buffer.data);
 	return (-1);
       }
     }
@@ -708,9 +709,41 @@ static int eat_date (pattern_t *pat, BUFFER *s, BUFFER *err)
   pat->min = mutt_mktime (&min, 1);
   pat->max = mutt_mktime (&max, 1);
 
+  return 0;
+}
+
+static int eat_date (pattern_t *pat, int flags, BUFFER *s, BUFFER *err)
+{
+  BUFFER buffer;
+  char *pexpr;
+  int rc = -1;
+
+  mutt_buffer_init (&buffer);
+  pexpr = s->dptr;
+  if (mutt_extract_token (&buffer, s, MUTT_TOKEN_COMMENT | MUTT_TOKEN_PATTERN) != 0
+      || !buffer.data)
+  {
+    snprintf (err->data, err->dsize, _("Error in expression: %s"), pexpr);
+    goto out;
+  }
+  if (!*buffer.data)
+  {
+    snprintf (err->data, err->dsize, "%s", _("Empty expression"));
+    goto out;
+  }
+
+  if (flags & MUTT_PATTERN_DYNAMIC)
+  {
+    pat->dynamic = 1;
+    pat->p.str = safe_strdup (buffer.data);
+  }
+
+  rc = eval_date_minmax (pat, buffer.data, err);
+
+out:
   FREE (&buffer.data);
 
-  return 0;
+  return rc;
 }
 
 static int patmatch (const pattern_t* pat, const char* buf)
@@ -761,7 +794,7 @@ void mutt_pattern_free (pattern_t **pat)
     tmp = *pat;
     *pat = (*pat)->next;
 
-    if (tmp->stringmatch)
+    if (tmp->stringmatch || tmp->dynamic)
       FREE (&tmp->p.str);
     else if (tmp->groupmatch)
       tmp->p.g = NULL;
@@ -948,7 +981,7 @@ pattern_t *mutt_pattern_comp (/* const */ char *s, int flags, BUFFER *err)
 	    mutt_pattern_free (&curlist);
 	    return NULL;
 	  }
-	  if (entry->eat_arg (tmp, &ps, err) == -1)
+	  if (entry->eat_arg (tmp, flags, &ps, err) == -1)
 	  {
 	    mutt_pattern_free (&curlist);
 	    return NULL;
@@ -1158,6 +1191,18 @@ static int match_content_type(const pattern_t* pat, BODY *b)
   return 0;
 }
 
+static int match_update_dynamic_date (pattern_t *pat)
+{
+  BUFFER err;
+  int rc;
+
+  mutt_buffer_init (&err);
+  rc = eval_date_minmax (pat, pat->p.str, &err);
+  FREE (&err.data);
+
+  return rc;
+}
+
 static int match_mime_content_type(const pattern_t *pat, CONTEXT *ctx, HEADER *hdr)
 {
   mutt_parse_mime_message(ctx, hdr);
@@ -1233,8 +1278,12 @@ mutt_pattern_exec (struct pattern_t *pat, pattern_exec_flag flags, CONTEXT *ctx,
       return (pat->not ^ (h->msgno >= pat->min - 1 && (pat->max == MUTT_MAXRANGE ||
 						   h->msgno <= pat->max - 1)));
     case MUTT_DATE:
+      if (pat->dynamic)
+        match_update_dynamic_date (pat);
       return (pat->not ^ (h->date_sent >= pat->min && h->date_sent <= pat->max));
     case MUTT_DATE_RECEIVED:
+      if (pat->dynamic)
+        match_update_dynamic_date (pat);
       return (pat->not ^ (h->received >= pat->min && h->received <= pat->max));
     case MUTT_BODY:
     case MUTT_HEADER:
@@ -1464,7 +1513,7 @@ int mutt_pattern_func (int op, char *prompt)
   pattern_t *pat = NULL;
   char buf[LONG_STRING] = "", *simple = NULL;
   BUFFER err;
-  int i, rv = -1;
+  int i, rv = -1, padding;
   progress_t progress;
 
   strfcpy (buf, NONULL (Context->pattern), sizeof (buf));
@@ -1494,13 +1543,12 @@ int mutt_pattern_func (int op, char *prompt)
 		      MUTT_PROGRESS_MSG, ReadInc,
 		      (op == MUTT_LIMIT) ? Context->msgcount : Context->vcount);
 
-#define THIS_BODY Context->hdrs[i]->content
-
   if (op == MUTT_LIMIT)
   {
     Context->vcount    = 0;
     Context->vsize     = 0;
     Context->collapsed = 0;
+    padding = mx_msg_padding_size (Context);
 
     for (i = 0; i < Context->msgcount; i++)
     {
@@ -1512,12 +1560,14 @@ int mutt_pattern_func (int op, char *prompt)
       Context->hdrs[i]->num_hidden = 0;
       if (mutt_pattern_exec (pat, MUTT_MATCH_FULL_ADDRESS, Context, Context->hdrs[i], NULL))
       {
+	BODY *this_body = Context->hdrs[i]->content;
+
 	Context->hdrs[i]->virtual = Context->vcount;
 	Context->hdrs[i]->limited = 1;
 	Context->v2r[Context->vcount] = i;
 	Context->vcount++;
-	Context->vsize+=THIS_BODY->length + THIS_BODY->offset -
-	  THIS_BODY->hdr_offset;
+	Context->vsize += this_body->length + this_body->offset -
+	                  this_body->hdr_offset + padding;
       }
     }
   }
@@ -1547,12 +1597,12 @@ int mutt_pattern_func (int op, char *prompt)
     }
   }
 
-#undef THIS_BODY
-
   mutt_clear_error ();
 
   if (op == MUTT_LIMIT)
   {
+    char *pbuf;
+
     /* drop previous limit pattern */
     FREE (&Context->pattern);
     if (Context->limit_pattern)
@@ -1562,7 +1612,10 @@ int mutt_pattern_func (int op, char *prompt)
       mutt_error _("No messages matched criteria.");
 
     /* record new limit pattern, unless match all */
-    if (mutt_strcmp (buf, "~A") != 0)
+    pbuf = buf;
+    while (*pbuf == ' ')
+      pbuf++;
+    if (mutt_strcmp (pbuf, "~A") != 0)
     {
       Context->pattern = simple;
       simple = NULL; /* don't clobber it */

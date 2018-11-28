@@ -56,6 +56,36 @@ BODY *mutt_new_body (void)
   return (p);
 }
 
+void mutt_buffer_adv_mktemp (BUFFER *buf)
+{
+  BUFFER *prefix = NULL;
+  char *suffix;
+  struct stat sb;
+
+  if (!(buf->data && buf->data[0]))
+  {
+    mutt_buffer_mktemp (buf);
+  }
+  else
+  {
+    prefix = mutt_buffer_pool_get ();
+    mutt_buffer_strcpy (prefix, buf->data);
+    mutt_sanitize_filename (prefix->data, 1);
+    mutt_buffer_printf (buf, "%s/%s", NONULL (Tempdir), mutt_b2s (prefix));
+    if (lstat (mutt_b2s (buf), &sb) == -1 && errno == ENOENT)
+      goto out;
+
+    if ((suffix = strrchr (prefix->data, '.')) != NULL)
+    {
+      *suffix = 0;
+      ++suffix;
+    }
+    mutt_buffer_mktemp_pfx_sfx (buf, mutt_b2s (prefix), suffix);
+
+out:
+    mutt_buffer_pool_release (&prefix);
+  }
+}
 
 /* Modified by blong to accept a "suggestion" for file name.  If
  * that file exists, then construct one with unique name but 
@@ -866,6 +896,19 @@ uint64_t mutt_rand64(void)
 
   mutt_randbuf(&ret, sizeof(ret));
   return ret;
+}
+
+void _mutt_buffer_mktemp (BUFFER *buf, const char *prefix, const char *suffix,
+                          const char *src, int line)
+{
+  mutt_buffer_printf (buf, "%s/%s-%s-%d-%d-%ld%ld%s%s",
+      NONULL (Tempdir), NONULL (prefix), NONULL (Hostname),
+      (int) getuid (), (int) getpid (), random (), random (),
+      suffix ? "." : "", NONULL (suffix));
+  dprint (3, (debugfile, "%s:%d: mutt_mktemp returns \"%s\".\n", src, line, mutt_b2s (buf)));
+  if (unlink (mutt_b2s (buf)) && errno != ENOENT)
+    dprint (1, (debugfile, "%s:%d: ERROR: unlink(\"%s\"): %s (errno %d)\n",
+                src, line, mutt_b2s (buf), strerror (errno), errno));
 }
 
 void _mutt_mktemp (char *s, size_t slen, const char *prefix, const char *suffix,
@@ -1856,124 +1899,6 @@ void mutt_sleep (short s)
     sleep(s);
 }
 
-/* creates and initializes a BUFFER */
-BUFFER *mutt_buffer_new(void) {
-  BUFFER *b;
-
-  b = safe_malloc(sizeof(BUFFER));
-
-  mutt_buffer_init(b);
-
-  return b;
-}
-
-/* initialize a new BUFFER */
-BUFFER *mutt_buffer_init (BUFFER *b) {
-  memset(b, 0, sizeof(BUFFER));
-  return b;
-}
-
-/*
- * Creates and initializes a BUFFER*. If passed an existing BUFFER*,
- * just initializes. Frees anything already in the buffer. Copies in
- * the seed string.
- *
- * Disregards the 'destroy' flag, which seems reserved for caller.
- * This is bad, but there's no apparent protocol for it.
- */
-BUFFER *mutt_buffer_from (char *seed) {
-  BUFFER *b;
-
-  if (!seed)
-    return NULL;
-
-  b = mutt_buffer_new ();
-  b->data = safe_strdup(seed);
-  b->dsize = mutt_strlen(seed);
-  b->dptr = (char *) b->data + b->dsize;
-  return b;
-}
-
-int mutt_buffer_printf (BUFFER* buf, const char* fmt, ...)
-{
-  va_list ap, ap_retry;
-  int len, blen, doff;
-  
-  va_start (ap, fmt);
-  va_copy (ap_retry, ap);
-
-  if (!buf->dptr)
-    buf->dptr = buf->data;
-
-  doff = buf->dptr - buf->data;
-  blen = buf->dsize - doff;
-  /* solaris 9 vsnprintf barfs when blen is 0 */
-  if (!blen)
-  {
-    blen = 128;
-    buf->dsize += blen;
-    safe_realloc (&buf->data, buf->dsize);
-    buf->dptr = buf->data + doff;
-  }
-  if ((len = vsnprintf (buf->dptr, blen, fmt, ap)) >= blen)
-  {
-    blen = ++len - blen;
-    if (blen < 128)
-      blen = 128;
-    buf->dsize += blen;
-    safe_realloc (&buf->data, buf->dsize);
-    buf->dptr = buf->data + doff;
-    len = vsnprintf (buf->dptr, len, fmt, ap_retry);
-  }
-  if (len > 0)
-    buf->dptr += len;
-
-  va_end (ap);
-  va_end (ap_retry);
-
-  return len;
-}
-
-void mutt_buffer_addstr (BUFFER* buf, const char* s)
-{
-  mutt_buffer_add (buf, s, mutt_strlen (s));
-}
-
-void mutt_buffer_addch (BUFFER* buf, char c)
-{
-  mutt_buffer_add (buf, &c, 1);
-}
-
-void mutt_buffer_free (BUFFER **p)
-{
-  if (!p || !*p) 
-    return;
-
-   FREE(&(*p)->data);
-   /* dptr is just an offset to data and shouldn't be freed */
-   FREE(p);		/* __FREE_CHECKED__ */
-}
-
-/* dynamically grows a BUFFER to accommodate s, in increments of 128 bytes.
- * Always one byte bigger than necessary for the null terminator, and
- * the buffer is always null-terminated */
-void mutt_buffer_add (BUFFER* buf, const char* s, size_t len)
-{
-  size_t offset;
-
-  if (buf->dptr + len + 1 > buf->data + buf->dsize)
-  {
-    offset = buf->dptr - buf->data;
-    buf->dsize += len < 128 ? 128 : len + 1;
-    /* suppress compiler aliasing warning */
-    safe_realloc ((void**) (void*) &buf->data, buf->dsize);
-    buf->dptr = buf->data + offset;
-  }
-  memcpy (buf->dptr, s, len);
-  buf->dptr += len;
-  *(buf->dptr) = '\0';
-}
-
 /* Decrease a file's modification time by 1 second */
 
 time_t mutt_decrease_mtime (const char *f, struct stat *st)
@@ -2022,6 +1947,66 @@ void mutt_touch_atime (int f)
   struct timespec times[2]={{0,UTIME_NOW},{0,UTIME_OMIT}};
   futimens(f, times);
 #endif
+}
+
+int mutt_timespec_compare (struct timespec *a, struct timespec *b)
+{
+  if (a->tv_sec < b->tv_sec)
+    return -1;
+  if (a->tv_sec > b->tv_sec)
+    return 1;
+
+  if (a->tv_nsec < b->tv_nsec)
+    return -1;
+  if (a->tv_nsec > b->tv_nsec)
+    return 1;
+  return 0;
+}
+
+void mutt_get_stat_timespec (struct timespec *dest, struct stat *sb, mutt_stat_type type)
+{
+  dest->tv_sec = 0;
+  dest->tv_nsec = 0;
+
+  switch (type)
+  {
+    case MUTT_STAT_ATIME:
+      dest->tv_sec = sb->st_atime;
+#ifdef HAVE_STRUCT_STAT_ST_ATIM_TV_NSEC
+      dest->tv_nsec = sb->st_atim.tv_nsec;
+#endif
+      break;
+    case MUTT_STAT_MTIME:
+      dest->tv_sec = sb->st_mtime;
+#ifdef HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC
+      dest->tv_nsec = sb->st_mtim.tv_nsec;
+#endif
+      break;
+    case MUTT_STAT_CTIME:
+      dest->tv_sec = sb->st_ctime;
+#ifdef HAVE_STRUCT_STAT_ST_CTIM_TV_NSEC
+      dest->tv_nsec = sb->st_ctim.tv_nsec;
+#endif
+      break;
+  }
+}
+
+int mutt_stat_timespec_compare (struct stat *sba, mutt_stat_type type, struct timespec *b)
+{
+  struct timespec a;
+
+  mutt_get_stat_timespec (&a, sba, type);
+  return mutt_timespec_compare (&a, b);
+}
+
+int mutt_stat_compare (struct stat *sba, mutt_stat_type sba_type,
+                       struct stat *sbb, mutt_stat_type sbb_type)
+{
+  struct timespec a, b;
+
+  mutt_get_stat_timespec (&a, sba, sba_type);
+  mutt_get_stat_timespec (&b, sbb, sbb_type);
+  return mutt_timespec_compare (&a, &b);
 }
 
 const char *mutt_make_version (void)

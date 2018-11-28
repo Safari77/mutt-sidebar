@@ -549,6 +549,8 @@ int mutt_fetch_recips (ENVELOPE *out, ENVELOPE *in, int flags)
         default_to (&out->cc, in, flags & SENDLISTREPLY, hmfupto) == -1)
       return (-1); /* abort */
   }
+  else if (flags & SENDTOSENDER)
+    rfc822_append (&out->to, in->from, 0);
   else
   {
     if (default_to (&out->to, in, flags & SENDGROUPREPLY, hmfupto) == -1)
@@ -716,7 +718,7 @@ envelope_defaults (ENVELOPE *env, CONTEXT *ctx, HEADER *cur, int flags)
   else
     curenv = cur->env;
 
-  if (flags & SENDREPLY)
+  if (flags & (SENDREPLY|SENDTOSENDER))
   {
     if (tag)
     {
@@ -738,8 +740,11 @@ envelope_defaults (ENVELOPE *env, CONTEXT *ctx, HEADER *cur, int flags)
       return (-1);
     }
 
-    mutt_make_misc_reply_headers (env, ctx, cur, curenv);
-    mutt_make_reference_headers (tag ? NULL : curenv, env, ctx);
+    if (flags & SENDREPLY)
+    {
+      mutt_make_misc_reply_headers (env, ctx, cur, curenv);
+      mutt_make_reference_headers (tag ? NULL : curenv, env, ctx);
+    }
   }
   else if (flags & SENDFORWARD)
     mutt_make_forward_subject (env, ctx, cur);
@@ -1136,7 +1141,8 @@ static int has_recips (ADDRESS *a)
 static int has_attach_keyword (char *filename)
 {
   int match = 0;
-  char buffer[LONG_STRING];
+  char *buf = NULL;
+  size_t blen = 0;
   FILE *fp;
 
   if ((fp = safe_fopen (filename, "r")) == NULL)
@@ -1145,15 +1151,17 @@ static int has_attach_keyword (char *filename)
     return 0;
   }
 
-  while (fgets (buffer, sizeof(buffer), fp) != NULL)
+  while ((buf = mutt_read_line (buf, &blen, fp, NULL, 0)) != NULL)
   {
-    if (regexec (AbortNoattachRegexp.rx, buffer, 0, NULL, 0) == 0)
+    if (!mutt_is_quote_line (buf, NULL) &&
+        regexec (AbortNoattachRegexp.rx, buf, 0, NULL, 0) == 0)
     {
       match = 1;
       break;
     }
   }
   safe_fclose (&fp);
+  FREE (&buf);
 
   return match;
 }
@@ -1312,7 +1320,7 @@ ci_send_message (int flags,		/* send mode */
   if (! (flags & (SENDPOSTPONED|SENDRESEND)) &&
       ! ((flags & SENDDRAFTFILE) && option (OPTRESUMEDRAFTFILES)))
   {
-    if ((flags & (SENDREPLY | SENDFORWARD)) && ctx &&
+    if ((flags & (SENDREPLY | SENDFORWARD | SENDTOSENDER)) && ctx &&
 	envelope_defaults (msg->env, ctx, cur, flags) == -1)
       goto cleanup;
 
@@ -1575,7 +1583,7 @@ ci_send_message (int flags,		/* send mode */
       }
     }
 
-    /* opportunistic encrypt relys on SMIME or PGP already being selected */
+    /* opportunistic encrypt relies on SMIME or PGP already being selected */
     if (option (OPTCRYPTOPPORTUNISTICENCRYPT))
     {
       /* If something has already enabled encryption, e.g. OPTCRYPTAUTOENCRYPT

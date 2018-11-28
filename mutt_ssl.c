@@ -296,7 +296,7 @@ int mutt_ssl_starttls (CONNECTION* conn)
  * Even though only OpenSSL 0.9.5 and later will complain about the
  * lack of entropy, we try to our best and fill the pool with older
  * versions also. (That's the reason for the ugly #ifdefs and macros,
- * otherwise I could have simply #ifdef'd the whole ssl_init funcion)
+ * otherwise I could have simply #ifdef'd the whole ssl_init function)
  */
 static int ssl_init (void)
 {
@@ -1186,7 +1186,7 @@ static int interactive_check_cert (X509 *cert, int idx, int len, SSL *ssl, int a
 
   mutt_push_current_menu (menu);
 
-  menu->max = mutt_array_size (part) * 2 + 10;
+  menu->max = mutt_array_size (part) * 2 + 11;
   menu->dialog = (char **) safe_calloc (1, menu->max * sizeof (char *));
   for (i = 0; i < menu->max; i++)
     menu->dialog[i] = (char *) safe_calloc (1, SHORT_STRING * sizeof (char));
@@ -1219,8 +1219,13 @@ static int interactive_check_cert (X509 *cert, int idx, int len, SSL *ssl, int a
   x509_fingerprint (buf, sizeof (buf), cert, EVP_sha1);
   snprintf (menu->dialog[row++], SHORT_STRING, _("SHA1 Fingerprint: %s"), buf);
   buf[0] = '\0';
-  x509_fingerprint (buf, sizeof (buf), cert, EVP_md5);
-  snprintf (menu->dialog[row++], SHORT_STRING, _("MD5 Fingerprint: %s"), buf);
+  buf[40] = '\0';  /* Ensure the second printed line is null terminated */
+  x509_fingerprint (buf, sizeof (buf), cert, EVP_sha256);
+  buf[39] = '\0';  /* Divide into two lines of output */
+  snprintf (menu->dialog[row++], SHORT_STRING, "%s%s",
+            _("SHA256 Fingerprint: "), buf);
+  snprintf (menu->dialog[row++], SHORT_STRING, "%*s%s",
+            (int)mutt_strlen (_("SHA256 Fingerprint: ")), "", buf + 40);
 
   snprintf (title, sizeof (title),
 	    _("SSL Certificate check (certificate %d of %d in chain)"),

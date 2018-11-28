@@ -1,4 +1,3 @@
-
 /*
  * Copyright (C) 1996-2002,2010,2013 Michael R. Elkins <me@mutt.org>
  * Copyright (C) 2004 g10 Code GmbH
@@ -63,6 +62,7 @@
 #include "rfc822.h"
 #include "hash.h"
 #include "charset.h"
+#include "buffer.h"
 
 #ifndef HAVE_WC_FUNCS
 # ifdef MB_LEN_MAX
@@ -83,6 +83,14 @@
 #  undef fgetc
 # endif
 # define fgetc fgetc_unlocked
+#endif
+
+#ifndef HAVE_STRUCT_TIMESPEC
+struct timespec
+{
+  time_t tv_sec;
+  long tv_nsec;
+};
 #endif
 
 /* nifty trick I stole from ELM 2.5alpha. */
@@ -120,20 +128,20 @@
 
 typedef struct
 {
-  char *data;	/* pointer to data */
-  char *dptr;	/* current read/write position */
-  size_t dsize;	/* length of data */
-  int destroy;	/* destroy `data' when done? */
-} BUFFER;
-
-typedef struct
-{
   int ch; /* raw key pressed */
   int op; /* function op */
 } event_t;
 
 /* flags for _mutt_system() */
 #define MUTT_DETACH_PROCESS	1	/* detach subprocess from group */
+
+/* flags for mutt_get_stat_timespec */
+typedef enum
+{
+  MUTT_STAT_ATIME,
+  MUTT_STAT_MTIME,
+  MUTT_STAT_CTIME
+} mutt_stat_type;
 
 /* flags for mutt_FormatString() */
 typedef enum
@@ -165,7 +173,8 @@ typedef enum
 #define MUTT_OPENHOOK    (1<<12)
 #define MUTT_APPENDHOOK  (1<<13)
 #define MUTT_CLOSEHOOK   (1<<14)
-#endif
+#endif /* USE_COMPRESSED */
+#define MUTT_IDXFMTHOOK  (1<<15)
 
 /* tree characters for linearize_tree and print_enriched_string */
 #define MUTT_TREE_LLCORNER      1
@@ -330,6 +339,7 @@ enum
 #define SENDPOSTPONEDFCC	(1<<9) /* used by mutt_get_postponed() to signal that the x-mutt-fcc header field was present */
 #define SENDNOFREEHEADER	(1<<10)   /* Used by the -E flag */
 #define SENDDRAFTFILE		(1<<11)   /* Used by the -H flag */
+#define SENDTOSENDER    (1<<12)
 
 /* flags for mutt_compose_menu() */
 #define MUTT_COMPOSE_NOFREEHEADER (1<<0)
@@ -401,10 +411,12 @@ enum
   OPTIGNORELISTREPLYTO,
 #ifdef USE_IMAP
   OPTIMAPCHECKSUBSCRIBED,
+  OPTIMAPCONDSTORE,
   OPTIMAPIDLE,
   OPTIMAPLSUB,
   OPTIMAPPASSIVE,
   OPTIMAPPEEK,
+  OPTIMAPQRESYNC,
   OPTIMAPSERVERNOISE,
 #endif
 #if defined(USE_SSL)
@@ -667,7 +679,7 @@ typedef struct parameter
   struct parameter *next;
 } PARAMETER;
 
-/* Information that helps in determing the Content-* of an attachment */
+/* Information that helps in determining the Content-* of an attachment */
 typedef struct content
 {
   long hibin;              /* 8-bit characters */
@@ -865,7 +877,8 @@ struct mutt_thread
 
 
 /* flag to mutt_pattern_comp() */
-#define MUTT_FULL_MSG	(1<<0)	/* enable body and header matching */
+#define MUTT_FULL_MSG           (1<<0)  /* enable body and header matching */
+#define MUTT_PATTERN_DYNAMIC    (1<<1)  /* enable runtime date range evaluation */
 
 typedef enum {
   MUTT_MATCH_FULL_ADDRESS = 1
@@ -893,6 +906,7 @@ typedef struct pattern_t
   unsigned int groupmatch : 1;
   unsigned int ign_case : 1;		/* ignore case for local stringmatch searches */
   unsigned int isalias : 1;
+  unsigned int dynamic : 1;  /* evaluate date ranges at run time */
   int min;
   int max;
   struct pattern_t *next;
@@ -964,6 +978,7 @@ struct mx_ops
   int (*close_msg) (struct _context *, struct _message *);
   int (*commit_msg) (struct _context *, struct _message *);
   int (*open_new_msg) (struct _message *, struct _context *, HEADER *);
+  int (*msg_padding_size) (struct _context *);
 };
 
 typedef struct _context
@@ -971,8 +986,8 @@ typedef struct _context
   char *path;
   char *realpath;               /* used for buffy comparison and the sidebar */
   FILE *fp;
-  time_t atime;
-  time_t mtime;
+  struct timespec atime;
+  struct timespec mtime;
   off_t size;
   off_t vsize;
   char *pattern;                /* limit pattern string */

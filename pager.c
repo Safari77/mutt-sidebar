@@ -179,7 +179,7 @@ static void
 resolve_color (struct line_t *lineInfo, int n, int cnt, int flags, int special,
     ansi_attr *a)
 {
-  int def_color;		/* color without syntax hilight */
+  int def_color;		/* color without syntax highlight */
   int color;			/* final color */
   static int last_color;	/* last color set */
   int search = 0, i, m;
@@ -707,13 +707,51 @@ static int brailleCol = -1;
 
 static int check_attachment_marker (char *);
 
+/* Checks if buf matches the QuoteRegexp and doesn't match Smileys.
+ * pmatch, if non-null, is populated with the regexec match against
+ * QuoteRegexp.  This is used by the pager for calling classify_quote.
+ */
+int
+mutt_is_quote_line (char *buf, regmatch_t *pmatch)
+{
+  int is_quote = 0;
+  regmatch_t pmatch_internal[1], smatch[1];
+  char c;
+
+  if (!pmatch)
+    pmatch = pmatch_internal;
+
+  if (QuoteRegexp.rx &&
+      regexec ((regex_t *) QuoteRegexp.rx, buf, 1, pmatch, 0) == 0)
+  {
+    if (Smileys.rx &&
+        regexec ((regex_t *) Smileys.rx, buf, 1, smatch, 0) == 0)
+    {
+      if (smatch[0].rm_so > 0)
+      {
+	c = buf[smatch[0].rm_so];
+	buf[smatch[0].rm_so] = 0;
+
+	if (regexec ((regex_t *) QuoteRegexp.rx, buf, 1, pmatch, 0) == 0)
+          is_quote = 1;
+
+	buf[smatch[0].rm_so] = c;
+      }
+    }
+    else
+      is_quote = 1;
+  }
+
+  return is_quote;
+}
+
 static void
 resolve_types (char *buf, char *raw, struct line_t *lineInfo, int n, int last,
 		struct q_class_t **QuoteList, int *q_level, int *force_redraw,
 		int q_classify)
 {
   COLOR_LINE *color_line;
-  regmatch_t pmatch[1], smatch[1];
+  regmatch_t pmatch[1];
   int found, offset, null_rx, i;
 
   if (n == 0 || ISHEADER (lineInfo[n-1].type))
@@ -807,43 +845,13 @@ resolve_types (char *buf, char *raw, struct line_t *lineInfo, int n, int last,
   }
   else if (check_sig (buf, lineInfo, n - 1) == 0)
     lineInfo[n].type = MT_COLOR_SIGNATURE;
-  else if (regexec ((regex_t *) QuoteRegexp.rx, buf, 1, pmatch, 0) == 0)
+  else if (mutt_is_quote_line (buf, pmatch))
   {
-    if (regexec ((regex_t *) Smileys.rx, buf, 1, smatch, 0) == 0)
-    {
-      if (smatch[0].rm_so > 0)
-      {
-	char c;
-
-	/* hack to avoid making an extra copy of buf */
-	c = buf[smatch[0].rm_so];
-	buf[smatch[0].rm_so] = 0;
-
-	if (regexec ((regex_t *) QuoteRegexp.rx, buf, 1, pmatch, 0) == 0)
-	{
-	  if (q_classify && lineInfo[n].quote == NULL)
-	    lineInfo[n].quote = classify_quote (QuoteList,
-				  buf + pmatch[0].rm_so,
-				  pmatch[0].rm_eo - pmatch[0].rm_so,
-				  force_redraw, q_level);
-	  lineInfo[n].type = MT_COLOR_QUOTED;
-	}
-	else
-	  lineInfo[n].type = MT_COLOR_NORMAL;
-
-	buf[smatch[0].rm_so] = c;
-      }
-      else
-	lineInfo[n].type = MT_COLOR_NORMAL;
-    }
-    else
-    {
-      if (q_classify && lineInfo[n].quote == NULL)
-	lineInfo[n].quote = classify_quote (QuoteList, buf + pmatch[0].rm_so,
-			      pmatch[0].rm_eo - pmatch[0].rm_so,
-			      force_redraw, q_level);
-      lineInfo[n].type = MT_COLOR_QUOTED;
-    }
+    if (q_classify && lineInfo[n].quote == NULL)
+      lineInfo[n].quote = classify_quote (QuoteList, buf + pmatch[0].rm_so,
+                                          pmatch[0].rm_eo - pmatch[0].rm_so,
+                                          force_redraw, q_level);
+    lineInfo[n].type = MT_COLOR_QUOTED;
   }
   else
     lineInfo[n].type = MT_COLOR_NORMAL;
@@ -1025,31 +1033,6 @@ static int grok_ansi(unsigned char *buf, int pos, ansi_attr *a)
   return pos;
 }
 
-/* trim tail of buf so that it contains complete multibyte characters */
-static int
-trim_incomplete_mbyte(unsigned char *buf, size_t len)
-{
-  mbstate_t mbstate;
-  size_t k;
-
-  memset (&mbstate, 0, sizeof (mbstate));
-  for (; len > 0; buf += k, len -= k)
-  {
-    k = mbrtowc (NULL, (char *) buf, len, &mbstate);
-    if (k == (size_t)(-2)) 
-      break; 
-    else if (k == (size_t)(-1) || k == 0)
-    {
-      if (k == (size_t)(-1))
-        memset (&mbstate, 0, sizeof (mbstate));
-      k = 1;
-    }
-  }
-  *buf = '\0';
-
-  return len;
-}
-
 static int
 fill_buffer (FILE *f, LOFF_T *last_pos, LOFF_T offset, unsigned char **buf,
 	     unsigned char **fmt, size_t *blen, int *buf_ready)
@@ -1073,11 +1056,6 @@ fill_buffer (FILE *f, LOFF_T *last_pos, LOFF_T offset, unsigned char **buf,
 
     safe_realloc (fmt, *blen);
 
-    /* incomplete mbyte characters trigger a segfault in regex processing for
-     * certain versions of glibc. Trim them if necessary. */
-    if (b_read == *blen - 2)
-      b_read -= trim_incomplete_mbyte(*buf, b_read);
-    
     /* copy "buf" to "fmt", but without bold and underline controls */
     p = *buf;
     q = *fmt;
@@ -1238,13 +1216,6 @@ static int format_line (struct line_t **lineInfo, int n, unsigned char *buf,
     {
       if (wc == ' ')
 	space = ch;
-      else if (Charset_is_utf8 && wc == 0x00A0)
-      {
-	/* Convert non-breaking space to normal space. The local variable
-	 * `space' is not set here so that the caller of this function won't
-	 * attempt to wrap at this character. */
-	wc = ' ';
-      }
       t = wcwidth (wc);
       if (col + t > wrap_cols)
 	break;
@@ -2493,7 +2464,18 @@ search_next:
 	  rc = OP_CHECK_TRADITIONAL;
 	}
         break;
-      
+
+      case OP_COMPOSE_TO_SENDER:
+	CHECK_MODE(IsHeader (extra) || IsMsgAttach (extra));
+        CHECK_ATTACH;
+        if (IsMsgAttach (extra))
+	  mutt_attach_mail_sender (extra->fp, extra->hdr, extra->actx,
+                                   extra->bdy);
+	else
+	  ci_send_message (SENDTOSENDER, NULL, NULL, extra->ctx, extra->hdr);
+	pager_menu->redraw = REDRAW_FULL;
+	break;
+
       case OP_CREATE_ALIAS:
 	CHECK_MODE(IsHeader (extra) || IsMsgAttach (extra));
         if (IsMsgAttach (extra))
@@ -2882,6 +2864,10 @@ search_next:
 
       case OP_WHAT_KEY:
 	mutt_what_key ();
+	break;
+
+      case OP_CHECK_STATS:
+	mutt_check_stats ();
 	break;
 
 #ifdef USE_SIDEBAR

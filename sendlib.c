@@ -2645,7 +2645,7 @@ int mutt_bounce_message (FILE *fp, HEADER *h, ADDRESS *to)
   const char *fqdn = mutt_fqdn (1);
   char resent_from[STRING];
   int ret;
-  char *err;
+  char *err = NULL;
 
   resent_from[0] = '\0';
   from = mutt_default_from ();
@@ -2668,6 +2668,7 @@ int mutt_bounce_message (FILE *fp, HEADER *h, ADDRESS *to)
   {
     mutt_error (_("Bad IDN %s while preparing resent-from."),
 		err);
+    FREE (&err);
     rfc822_free_address (&from);
     return -1;
   }
@@ -2801,7 +2802,7 @@ int mutt_write_fcc (const char *path, HEADER *hdr, const char *msgid, int post, 
    * */
   mutt_write_rfc822_header (msg->fp, hdr->env, hdr->content, post ? -post : 0, 0);
 
-  /* (postponment) if this was a reply of some sort, <msgid> contians the
+  /* (postponment) if this was a reply of some sort, <msgid> contains the
    * Message-ID: of message replied to.  Save it using a special X-Mutt-
    * header so it can be picked up if the message is recalled at a later
    * point in time.  This will allow the message to be marked as replied if

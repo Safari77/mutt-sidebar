@@ -112,11 +112,14 @@ enum
   ACRAM_MD5,			/* RFC 2195: CRAM-MD5 authentication */
   AGSSAPI,			/* RFC 1731: GSSAPI authentication */
   AUTH_ANON,			/* AUTH=ANONYMOUS */
+  AUTH_OAUTHBEARER,		/* RFC 7628: AUTH=OAUTHBEARER */
   STARTTLS,			/* RFC 2595: STARTTLS */
   LOGINDISABLED,		/*           LOGINDISABLED */
   IDLE,                         /* RFC 2177: IDLE */
   SASL_IR,                      /* SASL initial response draft */
   ENABLE,			/* RFC 5161 */
+  CONDSTORE,			/* RFC 7162 */
+  QRESYNC,			/* RFC 7162 */
   X_GM_EXT1,			/* X-GM-RAW https://developers.google.com/gmail/imap_extensions?csw=1 */
 
   CAPMAX
@@ -142,6 +145,7 @@ typedef struct
   unsigned int uidnext;
   unsigned int uidvalidity;
   unsigned int unseen;
+  unsigned long long modseq;  /* Used by CONDSTORE. 1 <= modseq < 2^63 */
 } IMAP_STATUS;
 
 typedef struct
@@ -193,6 +197,8 @@ typedef struct
    * than mUTF7 */
   int unicode;
 
+  int qresync;  /* Set to 1 if QRESYNC is successfully ENABLE'd */
+
   /* if set, the response parser will store results for complicated commands
    * here. */
   IMAP_COMMAND_TYPE cmdtype;
@@ -219,6 +225,7 @@ typedef struct
   HASH *uid_hash;
   unsigned int uid_validity;
   unsigned int uidnext;
+  unsigned long long modseq;
   HEADER **msn_index;          /* look up headers by (MSN-1) */
   unsigned int msn_index_size; /* allocation size */
   unsigned int max_msn;        /* the largest MSN fetched so far */
@@ -231,6 +238,16 @@ typedef struct
 #endif
 } IMAP_DATA;
 /* I wish that were called IMAP_CONTEXT :( */
+
+typedef struct
+{
+  char *full_seqset;
+  char *eostr;
+  int in_range;
+  int down;
+  unsigned int range_cur, range_end;
+  char *substr_cur, *substr_end;
+} SEQSET_ITERATOR;
 
 /* -- macros -- */
 #define CTX_DATA ((IMAP_DATA *) ctx->data)
@@ -269,7 +286,8 @@ int imap_cmd_idle (IMAP_DATA* idata);
 /* message.c */
 void imap_add_keywords (char* s, HEADER* keywords, LIST* mailbox_flags, size_t slen);
 void imap_free_header_data (IMAP_HEADER_DATA** data);
-int imap_read_headers (IMAP_DATA* idata, unsigned int msn_begin, unsigned int msn_end);
+int imap_read_headers (IMAP_DATA* idata, unsigned int msn_begin, unsigned int msn_end,
+                       int initial_download);
 char* imap_set_flags (IMAP_DATA* idata, HEADER* h, char* s, int *server_changes);
 int imap_cache_del (IMAP_DATA* idata, HEADER* h);
 int imap_cache_clean (IMAP_DATA* idata);
@@ -285,6 +303,9 @@ void imap_hcache_close (IMAP_DATA* idata);
 HEADER* imap_hcache_get (IMAP_DATA* idata, unsigned int uid);
 int imap_hcache_put (IMAP_DATA* idata, HEADER* h);
 int imap_hcache_del (IMAP_DATA* idata, unsigned int uid);
+int imap_hcache_store_uid_seqset (IMAP_DATA *idata);
+int imap_hcache_clear_uid_seqset (IMAP_DATA *idata);
+char *imap_hcache_get_uid_seqset (IMAP_DATA *idata);
 #endif
 
 int imap_continue (const char* msg, const char* resp);
@@ -308,6 +329,9 @@ void imap_unquote_string (char* s);
 void imap_munge_mbox_name (IMAP_DATA *idata, char *dest, size_t dlen, const char *src);
 void imap_unmunge_mbox_name (IMAP_DATA *idata, char *s);
 int imap_wordcasecmp(const char *a, const char *b);
+SEQSET_ITERATOR *mutt_seqset_iterator_new (const char *seqset);
+int mutt_seqset_iterator_next (SEQSET_ITERATOR *iter, unsigned int *next);
+void mutt_seqset_iterator_free (SEQSET_ITERATOR **p_iter);
 
 /* utf7.c */
 void imap_utf_encode (IMAP_DATA *idata, char **s);

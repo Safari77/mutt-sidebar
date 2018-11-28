@@ -90,7 +90,7 @@ int pgp_valid_passphrase (void)
 
   if (mutt_get_password (_("Enter PGP passphrase:"), PgpPass, sizeof (PgpPass)) == 0)
     {
-      PgpExptime = time (NULL) + PgpTimeout;
+      PgpExptime = mutt_add_timeout (time (NULL), PgpTimeout);
       return (1);
     }
   else
@@ -662,6 +662,10 @@ int pgp_application_pgp_handler (BODY *m, STATE *s)
 	  if (could_not_decrypt || (decrypt_okay_rc <= -3))
 	    mutt_error _("Could not decrypt PGP message");
 	  else if (decrypt_okay_rc < 0)
+            /* L10N: You will see this error message if (1) you are decrypting
+               (not encrypting) something and (2) it is a plaintext. So the
+               message does not mean "You failed to encrypt the message."
+            */
 	    mutt_error _("PGP message was not encrypted.");
 	  else
 	    mutt_message _("PGP message successfully decrypted.");

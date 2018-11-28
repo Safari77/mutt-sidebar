@@ -41,6 +41,10 @@
 #include "imap_private.h"
 #endif
 
+#ifdef USE_INOTIFY
+#include "monitor.h"
+#endif
+
 #include "mutt_crypt.h"
 
 
@@ -347,62 +351,53 @@ static int mx_toggle_write (CONTEXT *ctx)
   return 0;
 }
 
-static void update_index (MUTTMENU *menu, CONTEXT *ctx, int check,
-			  int oldcount, int index_hint)
+static void update_index_threaded (CONTEXT *ctx, int check, int oldcount)
 {
-  /* store pointers to the newly added messages */
-  HEADER  **save_new = NULL;
+  HEADER **save_new = NULL;
   int j;
 
-  /* take note of the current message */
-  if (oldcount)
-  {
-    if (menu->current < ctx->vcount)
-      menu->oldcurrent = index_hint;
-    else
-      oldcount = 0; /* invalid message number! */
-  }
-
-  /* We are in a limited view. Check if the new message(s) satisfy
-   * the limit criteria. If they do, set their virtual msgno so that
-   * they will be visible in the limited view */
-  if (ctx->pattern)
-  {
-#define THIS_BODY ctx->hdrs[j]->content
-    for (j = (check == MUTT_REOPENED) ? 0 : oldcount; j < ctx->msgcount; j++)
-    {
-      if (!j)
-	ctx->vcount = 0;
-
-      if (mutt_pattern_exec (ctx->limit_pattern,
-			     MUTT_MATCH_FULL_ADDRESS,
-			     ctx, ctx->hdrs[j], NULL))
-      {
-	assert (ctx->vcount < ctx->msgcount);
-	ctx->hdrs[j]->virtual = ctx->vcount;
-	ctx->v2r[ctx->vcount] = j;
-	ctx->hdrs[j]->limited = 1;
-	ctx->vcount++;
-	ctx->vsize += THIS_BODY->length + THIS_BODY->offset - THIS_BODY->hdr_offset;
-      }
-    }
-#undef THIS_BODY
-  }
-
   /* save the list of new messages */
-  if (option(OPTUNCOLLAPSENEW) && oldcount && check != MUTT_REOPENED
-      && ((Sort & SORT_MASK) == SORT_THREADS))
+  if ((check != MUTT_REOPENED) && oldcount &&
+      (ctx->pattern || option (OPTUNCOLLAPSENEW)))
   {
     save_new = (HEADER **) safe_malloc (sizeof (HEADER *) * (ctx->msgcount - oldcount));
     for (j = oldcount; j < ctx->msgcount; j++)
       save_new[j-oldcount] = ctx->hdrs[j];
   }
 
-  /* if the mailbox was reopened, need to rethread from scratch */
+  /* Sort first to thread the new messages, because some patterns
+   * require the threading information.
+   *
+   * If the mailbox was reopened, need to rethread from scratch. */
   mutt_sort_headers (ctx, (check == MUTT_REOPENED));
 
+  if (ctx->pattern)
+  {
+    for (j = (check == MUTT_REOPENED) ? 0 : oldcount; j < ctx->msgcount; j++)
+    {
+      HEADER *h;
+
+      if ((check != MUTT_REOPENED) && oldcount)
+        h = save_new[j-oldcount];
+      else
+        h = ctx->hdrs[j];
+
+      if (mutt_pattern_exec (ctx->limit_pattern,
+			     MUTT_MATCH_FULL_ADDRESS,
+			     ctx, h, NULL))
+      {
+        /* virtual will get properly set by mutt_set_virtual(), which
+         * is called by mutt_sort_headers() just below. */
+        h->virtual = 1;
+        h->limited = 1;
+      }
+    }
+    /* Need a second sort to set virtual numbers and redraw the tree */
+    mutt_sort_headers (ctx, 0);
+  }
+
   /* uncollapse threads with new mail */
-  if (option(OPTUNCOLLAPSENEW) && ((Sort & SORT_MASK) == SORT_THREADS))
+  if (option(OPTUNCOLLAPSENEW))
   {
     if (check == MUTT_REOPENED)
     {
@@ -421,20 +416,72 @@ static void update_index (MUTTMENU *menu, CONTEXT *ctx, int check,
     else if (oldcount)
     {
       for (j = 0; j < ctx->msgcount - oldcount; j++)
-      {
-	int k;
-
-	for (k = 0; k < ctx->msgcount; k++)
-	{
-	  HEADER *h = ctx->hdrs[k];
-	  if (h == save_new[j] && (!ctx->pattern || h->limited))
-	    mutt_uncollapse_thread (ctx, h);
-	}
-      }
-      FREE (&save_new);
+        if (!ctx->pattern || save_new[j]->limited)
+          mutt_uncollapse_thread (ctx, save_new[j]);
       mutt_set_virtual (ctx);
     }
   }
+
+  FREE (&save_new);
+}
+
+static void update_index_unthreaded (CONTEXT *ctx, int check, int oldcount)
+{
+  int j, padding;
+
+  /* We are in a limited view. Check if the new message(s) satisfy
+   * the limit criteria. If they do, set their virtual msgno so that
+   * they will be visible in the limited view */
+  if (ctx->pattern)
+  {
+    padding = mx_msg_padding_size (ctx);
+    for (j = (check == MUTT_REOPENED) ? 0 : oldcount; j < ctx->msgcount; j++)
+    {
+      if (!j)
+      {
+	ctx->vcount = 0;
+	ctx->vsize = 0;
+      }
+
+      if (mutt_pattern_exec (ctx->limit_pattern,
+			     MUTT_MATCH_FULL_ADDRESS,
+			     ctx, ctx->hdrs[j], NULL))
+      {
+	BODY *this_body = ctx->hdrs[j]->content;
+
+	assert (ctx->vcount < ctx->msgcount);
+	ctx->hdrs[j]->virtual = ctx->vcount;
+	ctx->v2r[ctx->vcount] = j;
+	ctx->hdrs[j]->limited = 1;
+	ctx->vcount++;
+	ctx->vsize += this_body->length + this_body->offset -
+                      this_body->hdr_offset + padding;
+      }
+    }
+  }
+
+  /* if the mailbox was reopened, need to rethread from scratch */
+  mutt_sort_headers (ctx, (check == MUTT_REOPENED));
+}
+
+static void update_index (MUTTMENU *menu, CONTEXT *ctx, int check,
+			  int oldcount, int index_hint)
+{
+  int j;
+
+  /* take note of the current message */
+  if (oldcount)
+  {
+    if (menu->current < ctx->vcount)
+      menu->oldcurrent = index_hint;
+    else
+      oldcount = 0; /* invalid message number! */
+  }
+
+  if ((Sort & SORT_MASK) == SORT_THREADS)
+    update_index_threaded (ctx, check, oldcount);
+  else
+    update_index_unthreaded (ctx, check, oldcount);
 
   menu->current = -1;
   if (oldcount)
@@ -452,7 +499,6 @@ static void update_index (MUTTMENU *menu, CONTEXT *ctx, int check,
 
   if (menu->current < 0)
     menu->current = ci_first_message ();
-
 }
 
 static void resort_index (MUTTMENU *menu)
@@ -575,8 +621,13 @@ int mutt_index_menu (void)
   menu->custom_menu_redraw = index_menu_redraw;
   mutt_push_current_menu (menu);
 
-  if (!attach_msg)
-    mutt_buffy_check(1); /* force the buffy check after we enter the folder */
+  if (!attach_msg) {
+    mutt_buffy_check(MUTT_BUFFY_CHECK_FORCE); /* force the buffy check after we
+						 enter the folder */
+  }
+#ifdef USE_INOTIFY
+  mutt_monitor_add (NULL);
+#endif
 
   FOREVER
   {
@@ -1110,8 +1161,12 @@ int mutt_index_menu (void)
       case OP_MAIN_IMAP_LOGOUT_ALL:
 	if (Context && Context->magic == MUTT_IMAP)
 	{
-	  if (mx_close_mailbox (Context, &index_hint) != 0)
+          int check;
+
+	  if ((check = mx_close_mailbox (Context, &index_hint)) != 0)
 	  {
+            if (check == MUTT_NEW_MAIL || check == MUTT_REOPENED)
+              update_index (menu, Context, check, oldcount, index_hint);
 	    set_option (OPTSEARCHINVALID);
 	    menu->redraw = REDRAW_FULL;
 	    break;
@@ -1270,7 +1325,11 @@ int mutt_index_menu (void)
         {
 	  int check;
           char *new_last_folder;
+#ifdef USE_INOTIFY
+          int monitor_remove_rc;
 
+          monitor_remove_rc = mutt_monitor_remove (NULL);
+#endif
 #ifdef USE_COMPRESSED
 	  if (Context->compress_info && Context->realpath)
 	    new_last_folder = safe_strdup (Context->realpath);
@@ -1281,6 +1340,10 @@ int mutt_index_menu (void)
 
 	  if ((check = mx_close_mailbox (Context, &index_hint)) != 0)
 	  {
+#ifdef USE_INOTIFY
+            if (!monitor_remove_rc)
+              mutt_monitor_add (NULL);
+#endif
 	    if (check == MUTT_NEW_MAIL || check == MUTT_REOPENED)
 	      update_index (menu, Context, check, oldcount, index_hint);
 
@@ -1312,6 +1375,9 @@ int mutt_index_menu (void)
 					MUTT_READONLY : 0, NULL)) != NULL)
 	{
 	  menu->current = ci_first_message ();
+#ifdef USE_INOTIFY
+          mutt_monitor_add (NULL);
+#endif
 	}
 	else
 	  menu->current = 0;
@@ -1321,8 +1387,9 @@ int mutt_index_menu (void)
 #endif
 
 	mutt_clear_error ();
-	mutt_buffy_check(1); /* force the buffy check after we have changed
-			      the folder */
+	mutt_buffy_check(MUTT_BUFFY_CHECK_FORCE); /* force the buffy check after
+						     we have changed the
+						     folder */
 	menu->redraw = REDRAW_FULL;
 	set_option (OPTSEARCHINVALID);
 	break;
@@ -1989,6 +2056,15 @@ int mutt_index_menu (void)
 	ci_bounce_message (tag ? NULL : CURHDR);
 	break;
 
+      case OP_COMPOSE_TO_SENDER:
+
+	CHECK_ATTACH;
+	CHECK_MSGCOUNT;
+        CHECK_VISIBLE;
+	ci_send_message (SENDTOSENDER, NULL, NULL, Context, tag ? NULL : CURHDR);
+	menu->redraw = REDRAW_FULL;
+	break;
+
       case OP_CREATE_ALIAS:
 
         mutt_create_alias (Context && Context->vcount ? CURHDR->env : NULL, NULL);
@@ -2447,6 +2523,10 @@ int mutt_index_menu (void)
 
       case OP_WHAT_KEY:
 	mutt_what_key();
+	break;
+
+      case OP_CHECK_STATS:
+	mutt_check_stats();
 	break;
 
 #ifdef USE_SIDEBAR

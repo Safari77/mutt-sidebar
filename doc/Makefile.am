@@ -5,6 +5,10 @@ AUTOMAKE_OPTIONS = 1.6 foreign
 
 subdir = doc
 
+if BUILD_INFO
+INFO_DOCFILES = mutt.info
+endif
+
 DEFS = -DSYSCONFDIR=\"$(sysconfdir)\" -DBINDIR=\"$(bindir)\" -DHAVE_CONFIG_H=1
 AM_CPPFLAGS = -I. -I.. -I$(includedir) -I$(top_srcdir)
 
@@ -40,7 +44,7 @@ CHUNKED_DOCFILES = index.html intro.html gettingstarted.html \
 
 HTML_DOCFILES = manual.html $(CHUNKED_DOCFILES)
 
-BUILT_DISTFILES = stamp-doc-xml stamp-doc-chunked manual.txt $(HTML_DOCFILES)
+BUILT_DISTFILES = stamp-doc-xml stamp-doc-chunked manual.txt $(HTML_DOCFILES) $(INFO_DOCFILES)
 
 srcdir_DOCFILES = PGP-Notes.txt applying-patches.txt	\
 	devel-notes.txt patch-notes.txt smime-notes.txt
@@ -50,7 +54,7 @@ topsrcdir_DOCFILES = COPYRIGHT GPL INSTALL ChangeLog	\
 
 all: makedoc-all
 
-makedoc-all: mutt.1 smime_keys.1 muttrc.man manual.html stamp-doc-rc stamp-doc-chunked manual.txt pgpewrap.1 pgpring.1
+makedoc-all: mutt.1 smime_keys.1 muttrc.man manual.html stamp-doc-rc stamp-doc-chunked manual.txt pgpewrap.1 mutt_pgpring.1 $(INFO_DOCFILES)
 
 install-data-local: makedoc-all instdoc
 	$(MKDIR_P) $(DESTDIR)$(mandir)/man1
@@ -59,7 +63,7 @@ install-data-local: makedoc-all instdoc
 	./instdoc mutt.1 $(DESTDIR)$(mandir)/man1/mutt.1
 	./instdoc smime_keys.1 $(DESTDIR)$(mandir)/man1/smime_keys.1
 	./instdoc pgpewrap.1 $(DESTDIR)$(mandir)/man1/pgpewrap.1
-	./instdoc pgpring.1 $(DESTDIR)$(mandir)/man1/pgpring.1
+	./instdoc mutt_pgpring.1 $(DESTDIR)$(mandir)/man1/mutt_pgpring.1
 	test x$(DOTLOCK_TARGET) = x || ./instdoc $(srcdir)/dotlock.man \
 		$(DESTDIR)$(mandir)/man1/mutt_dotlock.1
 	./instdoc muttrc.man $(DESTDIR)$(mandir)/man5/muttrc.5
@@ -84,9 +88,16 @@ install-data-local: makedoc-all instdoc
 	elif [ ! -f $(DESTDIR)$(sysconfdir)/Muttrc ] ; then \
 		$(INSTALL) -m 644 Muttrc $(DESTDIR)$(sysconfdir) ; \
 	fi
+	-if [ -f mutt.info ] ; then \
+	  $(MKDIR_P) $(DESTDIR)$(infodir) ; \
+	  $(INSTALL) -m 644 mutt.info $(DESTDIR)$(infodir) ; \
+	  if command -v install-info >/dev/null 2>&1 ; then \
+	    install-info $(DESTDIR)$(infodir)/mutt.info $(DESTDIR)$(infodir)/dir ; \
+	  fi \
+	fi
 
 uninstall-local:
-	for f in mutt.1 mutt_dotlock.1 smime_keys.1 pgpewrap.1 pgpring.1; do \
+	for f in mutt.1 mutt_dotlock.1 smime_keys.1 pgpewrap.1 mutt_pgpring.1; do \
 		rm -f $(DESTDIR)$(mandir)/man1/$$f ; \
 	done
 	for f in muttrc.5 mbox.5 mmdf.5 ; do \
@@ -99,10 +110,16 @@ uninstall-local:
 	-rm -f $(DESTDIR)$(docdir)/manual.txt
 	for i in Muttrc ; do \
 	  if cmp -s $(DESTDIR)$(sysconfdir)/$$i.dist $(DESTDIR)$(sysconfdir)/$$i ; then \
-		rm $(DESTDIR)$(sysconfdir)/$$i ; \
+		rm -f $(DESTDIR)$(sysconfdir)/$$i ; \
 	  fi ; \
-	  rm $(DESTDIR)$(sysconfdir)/$${i}.dist ; \
+	  rm -f $(DESTDIR)$(sysconfdir)/$${i}.dist ; \
 	done
+	-if [ -f $(DESTDIR)$(infodir)/mutt.info ] ; then \
+	  if command -v install-info >/dev/null 2>&1 ; then \
+	    install-info --delete $(DESTDIR)$(infodir)/mutt.info $(DESTDIR)$(infodir)/dir ; \
+	  fi ; \
+	  rm -f $(DESTDIR)$(infodir)/mutt.info ; \
+	fi
 
 check:
 manual.txt: manual.html
@@ -129,12 +146,29 @@ stamp-doc-chunked: $(srcdir)/chunk.xsl $(srcdir)/mutt.xsl stamp-doc-xml $(srcdir
 $(CHUNKED_DOCFILES): stamp-doc-chunked
 
 manual.pdf: manual.tex
-	-if test -f manual.tex; then pdfjadetex manual.tex; fi
+	-if test -f manual.tex; then pdfjadetex manual.tex; pdfjadetex manual.tex; pdfjadetex manual.tex; fi
 
+# Note / Request For Help:
+# On Debian, the below invocation of openjade is not working for me.
+# I was able to generate manual.tex by instead running:
+#     openjade -t tex -D $(DSLROOT) -d print/docbook.dsl \
+#       -i xml /usr/share/xml/declaration/xml.dcl manual.xml
+# However, being completely unfamiliar with these tools, am unsure how to
+# make this portable.
 manual.tex: stamp-doc-xml
 	-if test -n "$(DSLROOT)"; then \
 	  openjade -t tex -D $(DSLROOT) -d print/docbook.dsl dtds/decls/xml.dcl manual.xml; \
 	fi
+
+mutt.texi: stamp-doc-xml
+	docbook2x-texi --encoding=utf-8 \
+	    --string-param output-file=mutt \
+	    --string-param 'directory-category=Email-software' \
+	    --string-param 'directory-description=Text based mail reader' \
+	    manual.xml
+
+mutt.info: mutt.texi
+	makeinfo --no-split -o mutt.info mutt.texi
 
 validate: stamp-doc-xml
 	xmllint --noout --noblanks --postvalid manual.xml
@@ -151,8 +185,8 @@ sortcheck: manual.xml
 	rm -rf vars.tmp.1 vars.tmp.2
 
 clean-local:
-	rm -f *~ *.html *.orig *.rej  stamp-doc-* *.ps mutt.1 smime_keys.1 muttrc.man pgpewrap.1 pgpring.1
-	rm -f *.aux *.log *.tex *.out
+	rm -f *~ *.html *.orig *.rej  stamp-doc-* *.ps mutt.1 smime_keys.1 muttrc.man pgpewrap.1 mutt_pgpring.1
+	rm -f *.aux *.log *.tex *.out mutt.texi $(INFO_DOCFILES)
 
 DISTCLEANFILES=manual.txt manual.html manual.xml manual.pdf html \
 	       instdoc Muttrc
@@ -178,7 +212,7 @@ mutt.1: $(srcdir)/mutt.man
 pgpewrap.1: $(srcdir)/pgpewrap.man
 	$(EDIT) $(srcdir)/pgpewrap.man > $@
 
-pgpring.1: $(srcdir)/pgpring.man
+mutt_pgpring.1: $(srcdir)/pgpring.man
 	$(EDIT) $(srcdir)/pgpring.man > $@
 
 smime_keys.1: $(srcdir)/smime_keys.man

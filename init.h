@@ -27,9 +27,10 @@
 #include "buffy.h"
 
 #ifndef _MAKEDOC
+/* If you add a data type, be sure to update doc/makedoc.c */
 #define DT_MASK		0x0f
 #define DT_BOOL		1 /* boolean option */
-#define DT_NUM		2 /* a number */
+#define DT_NUM		2 /* a number (short) */
 #define DT_STR		3 /* a string */
 #define DT_PATH		4 /* a pathname */
 #define DT_QUAD		5 /* quad-option (yes/no/ask-yes/ask-no) */
@@ -39,6 +40,7 @@
 #define DT_SYN		9 /* synonym for another variable */
 #define DT_ADDR	       10 /* e-mail address */
 #define DT_MBCHARTBL   11 /* multibyte char table */
+#define DT_LNUM        12 /* a number (long) */
 
 #define DTYPE(x) ((x) & DT_MASK)
 
@@ -1272,6 +1274,18 @@ struct option_t MuttVars[] = {
    ** it polls for new mail just as if you had issued individual ``$mailboxes''
    ** commands.
    */
+  { "imap_condstore",  DT_BOOL, R_NONE, OPTIMAPCONDSTORE, 0 },
+  /*
+   ** .pp
+   ** When \fIset\fP, mutt will use the CONDSTORE extension (RFC 7162)
+   ** if advertised by the server.  Mutt's current implementation is basic,
+   ** used only for initial message fetching and flag updates.
+   ** .pp
+   ** For some IMAP servers, enabling this will slightly speed up
+   ** downloading initial messages.  Unfortunately, Gmail is not one
+   ** those, and displays worse performance when enabled.  Your
+   ** mileage may vary.
+   */
   { "imap_delim_chars",		DT_STR, R_NONE, UL &ImapDelimChars, UL "/." },
   /*
   ** .pp
@@ -1327,6 +1341,14 @@ struct option_t MuttVars[] = {
   ** .pp
   ** This variable defaults to the value of $$imap_user.
   */
+  { "imap_oauth_refresh_command", DT_STR, R_NONE, UL &ImapOauthRefreshCmd, UL "" },
+  /*
+  ** .pp
+  ** The command to run to generate an OAUTH refresh token for
+  ** authorizing your connection to your IMAP server.  This command will be
+  ** run on every connection attempt that uses the OAUTHBEARER authentication
+  ** mechanism.  See ``$oauth'' for details.
+  */
   { "imap_pass", 	DT_STR,  R_NONE, UL &ImapPass, UL 0 },
   /*
   ** .pp
@@ -1343,7 +1365,7 @@ struct option_t MuttVars[] = {
   ** .pp
   ** When \fIset\fP, mutt will not open new IMAP connections to check for new
   ** mail.  Mutt will only check for new mail over existing IMAP
-  ** connections.  This is useful if you don't want to be prompted to
+  ** connections.  This is useful if you don't want to be prompted for
   ** user/password pairs on mutt invocation, or if opening the connection
   ** is slow.
   */
@@ -1374,6 +1396,17 @@ struct option_t MuttVars[] = {
   ** for new mail, before timing out and closing the connection.  Set
   ** to 0 to disable timing out.
   */
+  { "imap_qresync",  DT_BOOL, R_NONE, OPTIMAPQRESYNC, 0 },
+  /*
+   ** .pp
+   ** When \fIset\fP, mutt will use the QRESYNC extension (RFC 7162)
+   ** if advertised by the server.  Mutt's current implementation is basic,
+   ** used only for initial message fetching and flag updates.
+   ** .pp
+   ** Note: this feature is currently experimental.  If you experience
+   ** strange behavior, such as duplicate or missing messages please
+   ** file a bug report to let us know.
+   */
   { "imap_servernoise",		DT_BOOL, R_NONE, OPTIMAPSERVERNOISE, 1 },
   /*
   ** .pp
@@ -1488,6 +1521,8 @@ struct option_t MuttVars[] = {
   **            the second is deleted or encryption flags (``D''/``d''/``S''/``P''/``s''/``K'').
   **            the third is either tagged/flagged (``\(as''/``!''), or one of the characters
   **            listed in $$to_chars.
+  ** .dt %@name@ .dd insert and evaluate format-string from the matching
+  **                 ``$index-format-hook'' command
   ** .dt %{fmt} .dd the date and time of the message is converted to sender's
   **                time zone, and ``fmt'' is expanded by the library function
   **                \fCstrftime(3)\fP; a leading bang disables locales
@@ -1513,7 +1548,13 @@ struct option_t MuttVars[] = {
   ** rightward text.
   ** .pp
   ** Note that these expandos are supported in
-  ** ``$save-hook'', ``$fcc-hook'' and ``$fcc-save-hook'', too.
+  ** ``$save-hook'', ``$fcc-hook'', ``$fcc-save-hook'', and
+  ** ``$index-format-hook''.
+  ** .pp
+  ** They are also supported in the configuration variables $$attribution,
+  ** $$forward_attribution_intro, $$forward_attribution_trailer,
+  ** $$forward_format, $$indent_string, $$message_format, $$pager_format,
+  ** and $$post_indent_string.
   */
   { "ispell",		DT_PATH, R_NONE, UL &Ispell, UL ISPELL },
   /*
@@ -1553,6 +1594,10 @@ struct option_t MuttVars[] = {
   ** this operation is more performance intensive, it defaults to
   ** \fIunset\fP, and has a separate option, $$mail_check_stats_interval, to
   ** control how often to update these counts.
+  ** .pp
+  ** Message statistics can also be explicitly calculated by invoking the
+  ** \fC<check-stats>\fP
+  ** function.
   */
   { "mail_check_stats_interval", DT_NUM, R_NONE, UL &BuffyCheckStatsInterval, 60 },
   /*
@@ -2129,7 +2174,7 @@ struct option_t MuttVars[] = {
   ** gpg --list-keys --with-colons --with-fingerprint
   ** .te
   ** .pp
-  ** This format is also generated by the \fCpgpring\fP utility which comes
+  ** This format is also generated by the \fCmutt_pgpring\fP utility which comes
   ** with mutt.
   ** .pp
   ** Note: gpg's \fCfixed-list-mode\fP option should not be used.  It
@@ -2149,7 +2194,7 @@ struct option_t MuttVars[] = {
   ** gpg --list-keys --with-colons --with-fingerprint
   ** .te
   ** .pp
-  ** This format is also generated by the \fCpgpring\fP utility which comes
+  ** This format is also generated by the \fCmutt_pgpring\fP utility which comes
   ** with mutt.
   ** .pp
   ** Note: gpg's \fCfixed-list-mode\fP option should not be used.  It
@@ -2274,7 +2319,7 @@ struct option_t MuttVars[] = {
   ** this if you know what you are doing.
   ** (PGP only)
   */
-  { "pgp_timeout",	DT_NUM,	 R_NONE, UL &PgpTimeout, 300 },
+  { "pgp_timeout",	DT_LNUM,	 R_NONE, UL &PgpTimeout, 300 },
   /*
   ** .pp
   ** The number of seconds after which a cached passphrase will expire if
@@ -2388,6 +2433,14 @@ struct option_t MuttVars[] = {
   ** for retrieving only unread messages from the POP server when using
   ** the \fC$<fetch-mail>\fP function.
   */
+  { "pop_oauth_refresh_command", DT_STR, R_NONE, UL &PopOauthRefreshCmd, UL "" },
+  /*
+  ** .pp
+  ** The command to run to generate an OAUTH refresh token for
+  ** authorizing your connection to your POP server.  This command will be
+  ** run on every connection attempt that uses the OAUTHBEARER authentication
+  ** mechanism.  See ``$oauth'' for details.
+  */
   { "pop_pass",		DT_STR,	 R_NONE, UL &PopPass, UL "" },
   /*
   ** .pp
@@ -2417,6 +2470,8 @@ struct option_t MuttVars[] = {
   ** .pp
   ** Similar to the $$attribution variable, Mutt will append this
   ** string after the inclusion of a message which is being replied to.
+  ** For a full listing of defined \fCprintf(3)\fP-like sequences see
+  ** the section on $$index_format.
   */
   { "post_indent_str",  DT_SYN,  R_NONE, UL "post_indent_string", 0 },
   /*
@@ -2627,7 +2682,7 @@ struct option_t MuttVars[] = {
   ** command to create a ``Bcc:'' field with your email address in it.)
   ** .pp
   ** The value of \fI$$record\fP is overridden by the $$force_name and
-  ** $$save_name variables, and the ``$fcc-hook'' command.
+  ** $$save_name variables, and the ``$fcc-hook'' command.  Also see $$copy.
   */
   { "reflow_space_quotes",	DT_BOOL, R_NONE, OPTREFLOWSPACEQUOTES, 1 },
   /*
@@ -3315,7 +3370,7 @@ struct option_t MuttVars[] = {
   ** possible \fCprintf(3)\fP-like sequences.
   ** (S/MIME only)
   */
-  { "smime_timeout",		DT_NUM,	 R_NONE, UL &SmimeTimeout, 300 },
+  { "smime_timeout",		DT_LNUM,	 R_NONE, UL &SmimeTimeout, 300 },
   /*
   ** .pp
   ** The number of seconds after which a cached passphrase will expire if
@@ -3342,7 +3397,6 @@ struct option_t MuttVars[] = {
   ** (S/MIME only)
   */
 #ifdef USE_SMTP
-# ifdef USE_SASL
   { "smtp_authenticators", DT_STR, R_NONE, UL &SmtpAuthenticators, UL 0 },
   /*
   ** .pp
@@ -3359,7 +3413,14 @@ struct option_t MuttVars[] = {
   ** set smtp_authenticators="digest-md5:cram-md5"
   ** .te
   */
-# endif /* USE_SASL */
+  { "smtp_oauth_refresh_command", DT_STR, R_NONE, UL &SmtpOauthRefreshCmd, UL "" },
+  /*
+  ** .pp
+  ** The command to run to generate an OAUTH refresh token for
+  ** authorizing your connection to your SMTP server.  This command will be
+  ** run on every connection attempt that uses the OAUTHBEARER authentication
+  ** mechanism.  See ``$oauth'' for details.
+  */
   { "smtp_pass", 	DT_STR,  R_NONE, UL &SmtpPass, UL 0 },
   /*
   ** .pp
@@ -3420,6 +3481,9 @@ struct option_t MuttVars[] = {
   { "sort_aux",		DT_SORT|DT_SORT_AUX, R_INDEX|R_RESORT_BOTH, UL &SortAux, SORT_DATE },
   /*
   ** .pp
+  ** This provides a secondary sort for messages in the ``index'' menu, used
+  ** when the $$sort value is equal for two messages.
+  ** .pp
   ** When sorting by threads, this variable controls how threads are sorted
   ** in relation to other threads, and how the branches of the thread trees
   ** are sorted.  This can be set to any value that $$sort can, except
@@ -3436,8 +3500,8 @@ struct option_t MuttVars[] = {
   ** thread, that thread becomes the last one displayed (or the first, if
   ** you have ``\fCset sort=reverse-threads\fP''.)
   ** .pp
-  ** Note: For reversed $$sort
-  ** order $$sort_aux is reversed again (which is not the right thing to do,
+  ** Note: For reversed-threads $$sort
+  ** order, $$sort_aux is reversed again (which is not the right thing to do,
   ** but kept to not break any existing configuration setting).
   */
   { "sort_browser",	DT_SORT|DT_SORT_BROWSER, R_NONE, UL &BrowserSort, SORT_ALPHA },
@@ -4193,6 +4257,7 @@ const struct command_t Commands[] = {
   { "iconv-hook",	mutt_parse_hook,	MUTT_ICONVHOOK },
 #endif
   { "ignore",		parse_ignore,		0 },
+  { "index-format-hook",mutt_parse_idxfmt_hook, MUTT_IDXFMTHOOK },
   { "lists",		parse_lists,		0 },
   { "macro",		mutt_parse_macro,	0 },
   { "mailboxes",	mutt_parse_mailboxes,	MUTT_MAILBOXES },

@@ -917,7 +917,10 @@ static int menu_dialog_dokey (MUTTMENU *menu, int *ip)
   event_t ch;
   char *p;
 
-  ch = mutt_getch ();
+  do
+  {
+    ch = mutt_getch();
+  } while (ch.ch == -2);
 
   if (ch.ch < 0)
   {
@@ -1199,6 +1202,10 @@ int mutt_menuLoop (MUTTMENU *menu)
 
       case OP_WHAT_KEY:
 	mutt_what_key ();
+	break;
+
+      case OP_CHECK_STATS:
+	mutt_check_stats ();
 	break;
 
       case OP_REDRAW:

@@ -65,6 +65,7 @@ WHERE char *ImapAuthenticators INITVAL (NULL);
 WHERE char *ImapDelimChars INITVAL (NULL);
 WHERE char *ImapHeaders;
 WHERE char *ImapLogin INITVAL (NULL);
+WHERE char *ImapOauthRefreshCmd INITVAL (NULL);
 WHERE char *ImapPass INITVAL (NULL);
 WHERE char *ImapUser INITVAL (NULL);
 #endif
@@ -108,6 +109,7 @@ WHERE char *PipeSep;
 WHERE char *PopAuthenticators INITVAL (NULL);
 WHERE short PopCheckTimeout;
 WHERE char *PopHost;
+WHERE char *PopOauthRefreshCmd INITVAL (NULL);
 WHERE char *PopPass INITVAL (NULL);
 WHERE char *PopUser INITVAL (NULL);
 #endif
@@ -135,6 +137,7 @@ WHERE char *SimpleSearch;
 #if USE_SMTP
 WHERE char *SmtpAuthenticators INITVAL (NULL);
 WHERE char *SmtpPass INITVAL (NULL);
+WHERE char *SmtpOauthRefreshCmd INITVAL (NULL);
 WHERE char *SmtpUrl INITVAL (NULL);
 #endif /* USE_SMTP */
 WHERE char *Spoolfile;
@@ -253,7 +256,7 @@ WHERE REGEXP PgpGoodSign;
 WHERE REGEXP PgpDecryptionOkay;
 WHERE char *PgpDefaultKey;
 WHERE char *PgpSignAs;
-WHERE short PgpTimeout;
+WHERE long  PgpTimeout;
 WHERE char *PgpEntryFormat;
 WHERE char *PgpClearSignCommand;
 WHERE char *PgpDecodeCommand;
@@ -272,7 +275,7 @@ WHERE char *PgpGetkeysCommand;
 /*-- formerly in smime.h --*/
 WHERE char *SmimeDefaultKey;
 WHERE char *SmimeSignAs;
-WHERE short SmimeTimeout;
+WHERE long  SmimeTimeout;
 WHERE char *SmimeCertificates;
 WHERE char *SmimeKeys;
 WHERE char *SmimeCryptAlg;

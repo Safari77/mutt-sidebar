@@ -334,7 +334,7 @@ per-folder basis and much more.
 
 <para>
 Besides an interactive mode, Mutt can also be used as a command-line
-tool only send messages. It also supports a
+tool to send messages. It also supports a
 <literal>mailx(1)</literal>-compatible interface, see <xref
 linkend="tab-commandline-options"/> for a complete list of command-line
 options.
@@ -952,6 +952,20 @@ In addition, the <emphasis>index</emphasis> and
 </para>
 
 <variablelist>
+
+<varlistentry>
+<term>
+<literal>&lt;check-stats&gt;</literal><anchor id="check-stats"/>
+</term>
+<listitem>
+<para>
+Calculate statistics for all monitored mailboxes declared using the
+<command>mailboxes</command> command.
+It will calculate statistics despite
+<link linkend="mail-check-stats">$mail_check_stats</link> being unset.
+</para>
+</listitem>
+</varlistentry>
 
 <varlistentry>
 <term>
@@ -2131,12 +2145,21 @@ the named <emphasis>group</emphasis>.
 </para>
 
 <para>
-To remove an alias or aliases (<quote>*</quote> means all aliases):
+To add an alias:
 </para>
 
 <screen>
 alias muttdude me@cs.hmc.edu (Michael Elkins)
 alias theguys manny, moe, jack
+</screen>
+
+<para>
+To remove an alias or aliases (<quote>*</quote> means all aliases):
+</para>
+
+<screen>
+unalias muttdude
+unalias *
 </screen>
 
 <para>
@@ -2441,7 +2464,7 @@ specified key sequence.
 <replaceable class="parameter">charset</replaceable>
 </arg>
 
-<command>iconv-hook<anchor id="iconv-hook"/></command>
+<command>iconv-hook</command>
 <arg choice="plain">
 <replaceable class="parameter">charset</replaceable>
 </arg>
@@ -2722,11 +2745,11 @@ specify one or the other).
 
 <para>
 <emphasis>header</emphasis> and <emphasis>body</emphasis> match
-<emphasis>regexp</emphasis> in the header/body of a message,
-<emphasis>index</emphasis> matches <emphasis>pattern</emphasis> (see
-<xref linkend="patterns"/>) in the message index.  Note that IMAP
-server-side searches (=b, =B, =h) are not supported for color index
-patterns.
+<emphasis><link linkend="regexp">regexp</link></emphasis> in the
+header/body of a message, <emphasis>index</emphasis> matches
+<emphasis><link linkend="patterns">pattern</link></emphasis> in the
+message index.  Note that IMAP server-side searches (=b, =B, =h) are
+not supported for color index patterns.
 </para>
 
 <para>
@@ -3704,7 +3727,8 @@ language of the attributions and signatures based upon the recipients.
 <note>
 <para>
 <command>send-hook</command>'s are only executed once after getting the
-initial list of recipients.  Adding a recipient after replying or
+initial list of recipients.  They are not executed when resuming a postponed
+draft.  Adding a recipient after replying or
 editing the message will not cause any <command>send-hook</command> to
 be executed, similarly if <link linkend="autoedit">$autoedit</link> is
 set (as then the initial list of recipients is empty). Also note that
@@ -3795,6 +3819,70 @@ context: You can either put a numerical key ID or fingerprint here, an
 e-mail address, or even just a real name.
 </para>
 
+</sect1>
+
+<sect1 id="index-format-hook">
+<title>Dynamically Changing $index_format using Patterns</title>
+
+<para>Usage:</para>
+
+<cmdsynopsis>
+<command>index-format-hook</command>
+<arg choice="plain">
+<replaceable class="parameter">name</replaceable>
+</arg>
+<arg choice="plain">
+<replaceable class="parameter">[!]pattern</replaceable>
+</arg>
+<arg choice="plain">
+<replaceable class="parameter">format-string</replaceable>
+</arg>
+</cmdsynopsis>
+
+<para>
+This command is used to inject format strings dynamically into <link
+linkend="index-format">$index_format</link> based on pattern matching
+against the current message.
+</para>
+
+<para>
+The <link linkend="index-format">$index_format</link> expando
+<emphasis>%@name@</emphasis> specifies a placeholder for the
+injection.  Index-format-hooks with the same <emphasis>name</emphasis>
+are matched using <link
+linkend="patterns"><emphasis>pattern</emphasis></link> against the
+current message.  Matching is done in the order specified in the
+.muttrc, with the first match being used.  The hook's
+<emphasis>format-string</emphasis> is then substituted and evaluated.
+</para>
+
+<para>
+Because the first match is used, best practice is to put a catch-all
+<emphasis>~A</emphasis> pattern as the last hook.  Here is an example
+showing how to implement dynamic date formatting:
+</para>
+
+<screen>
+set index_format="%4C %-6@date@ %-15.15F %Z (%4c) %s"
+
+index-format-hook  date  "~d&lt;1d"    "%[%H:%M]"
+index-format-hook  date  "~d&lt;1m"    "%[%a %d]"
+index-format-hook  date  "~d&lt;1y"    "%[%b %d]"
+index-format-hook  date  "~A"       "%[%m/%y]"
+</screen>
+
+<para>
+Another example, showing a way to prepend to the subject.  Note that
+without a catch-all ~A pattern, no match results in the expando
+being replaced with an empty string.
+</para>
+
+<screen>
+set index_format="%4C %@subj_flags@%s"
+
+index-format-hook  subj_flags  "~f boss@example.com"    "** BOSS ** "
+index-format-hook  subj_flags  "~f spouse@example.com"  ":-) "
+</screen>
 </sect1>
 
 <sect1 id="push">
@@ -4140,6 +4228,14 @@ A boolean expression, either <quote>yes</quote> or <quote>no</quote>.
 <listitem>
 <para>
 A signed integer number in the range -32768 to 32767.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>number (long)</term>
+<listitem>
+<para>
+A signed integer number in the range -2147483648 to 2147483647.
 </para>
 </listitem>
 </varlistentry>
@@ -5267,7 +5363,7 @@ coloring.
 </para>
 
 <para>
-Special attention has to be payed when using regular expressions inside
+Special attention has to be paid when using regular expressions inside
 of patterns.  Specifically, Mutt's parser for these patterns will strip
 one level of backslash (<quote>\</quote>), which is normally used for
 quoting.  If it is your intention to use a backslash in the regular
@@ -5578,8 +5674,26 @@ as:
 
 <para>
 <emphasis>offset</emphasis> is specified as a positive number with one
-of the units from <xref linkend="tab-date-units"/>.
+of the units from <xref linkend="tab-rel-date-units"/>.
 </para>
+
+<table id="tab-rel-date-units">
+<title>Relative date units</title>
+<tgroup cols="2">
+<thead>
+<row><entry>Unit</entry><entry>Description</entry></row>
+</thead>
+<tbody>
+<row><entry>y</entry><entry>Years</entry></row>
+<row><entry>m</entry><entry>Months</entry></row>
+<row><entry>w</entry><entry>Weeks</entry></row>
+<row><entry>d</entry><entry>Days</entry></row>
+<row><entry>H</entry><entry>Hours</entry></row>
+<row><entry>M</entry><entry>Minutes</entry></row>
+<row><entry>S</entry><entry>Seconds</entry></row>
+</tbody>
+</tgroup>
+</table>
 
 <para>
 Example: to select messages less than 1 month old, you would use
@@ -5717,7 +5831,13 @@ option/command.  See:
 
 <listitem>
 <para>
-<link linkend="iconv-hook"><command>iconv-hook</command></link>
+<link linkend="charset-hook"><command>iconv-hook</command></link>
+</para>
+</listitem>
+
+<listitem>
+<para>
+<link linkend="index-format-hook"><command>index-format-hook</command></link>
 </para>
 </listitem>
 
@@ -5794,7 +5914,8 @@ From: header is changed to <literal>&lt;c@c.c&gt;</literal>.
 Hooks that act upon messages (<command>message-hook</command>,
 <command>reply-hook</command>, <command>send-hook</command>,
 <command>send2-hook</command>, <command>save-hook</command>,
-<command>fcc-hook</command>) are evaluated in a slightly different
+<command>fcc-hook</command>, <command>index-format-hook</command>)
+are evaluated in a slightly different
 manner. For the other types of hooks, a <link linkend="regexp">regular
 expression</link> is sufficient.  But in dealing with messages a finer
 grain of control is needed for matching since for different purposes you
@@ -6383,6 +6504,40 @@ mail.  The (by default unbound) function
 <literal>&lt;next-unread-mailbox&gt;</literal> in the index can be used
 to immediately open the next folder with unread mail (if any).
 </para>
+
+</sect2>
+
+<sect2 id="new-mail-monitoring">
+<title>Monitoring New Mail</title>
+
+<para>
+When the <emphasis>Inotify</emphasis> mechanism for monitoring of
+files is supported (Linux only) and not disabled at compilation time,
+Mutt immediately notifies about new mail for all folders configured via
+the <link linkend="mailboxes"><command>mailboxes</command></link>
+command.  Dependent on
+<link linkend="mailbox-formats">mailbox format</link> also added
+<emphasis>old</emphasis> mails are tracked (not for Maildir).
+</para>
+
+<para>
+No configuration variables are available.  Trace output is given when
+debugging is enabled via <link linkend="tab-commandline-options">command
+line option</link> <literal>-d3</literal>.  The lower level 2 only shows
+errors, the higher level 5 all including raw Inotify events.
+</para>
+
+<note>
+<para>
+Getting events about new mail is limited to the capabilities of the
+underlying mechanism.  <emphasis>Inotify</emphasis> only reports local
+changes, i. e. new mail notification works for mails delivered by an
+agent on the same machine as Mutt, but not when delivered remotely on
+a network file system as NFS.  Also the monitoring handles might fail
+in rare conditions, so you better don't completely rely on this
+feature.
+</para>
+</note>
 
 </sect2>
 
@@ -8144,6 +8299,45 @@ most-secure to least-secure.
 
 </sect1>
 
+<sect1 id="oauth">
+<title>OAUTHBEARER Support</title>
+
+<para>
+Preliminary OAUTH support for IMAP, POP, and SMTP is provided via
+external scripts.
+</para>
+
+<para>
+At least for Gmail, you can use the <literal>oauth2.py</literal>
+script from Google's gmail-oauth2-tools: <ulink
+url="https://github.com/google/gmail-oauth2-tools/blob/master/python/oauth2.py"
+>https://github.com/google/gmail-oauth2-tools/blob/master/python/oauth2.py</ulink>
+</para>
+
+<para>
+You'll need to get your own oauth client credentials for Gmail here:
+<ulink url="https://console.developers.google.com/apis/credentials"
+>https://console.developers.google.com/apis/credentials</ulink>
+</para>
+
+<para>
+Then, you'd use <literal>oauth2.py</literal> with
+<literal>--generate_oauth2_token</literal> to get a refresh token, and
+configure mutt with:
+</para>
+
+<screen>
+set imap_authenticators="oauthbearer"
+set imap_oauth_refresh_command="/path/to/oauth2.py --quiet --user=[email_address]\
+    --client_id=[client_id] --client_secret=[client_secret]\
+    --refresh_token=[refresh_token]"
+</screen>
+
+<para>
+Substitute pop or smtp for imap in the above example to configure for those.
+</para>
+</sect1>
+
 <sect1 id="account-hook">
 <title>Managing Multiple Accounts</title>
 
@@ -8572,10 +8766,10 @@ please have a look at the mixmaster documentation.
     </table>
   </sect2>
 
-  <sect2 id="sidebar-commands">
+  <sect2 id="sidebar-whitelist">
     <title>Commands</title>
     <cmdsynopsis>
-      <command>sidebar_whitelist<anchor id="sidebar-whitelist"/></command>
+      <command>sidebar_whitelist</command>
       <arg choice="plain">
 	<replaceable class="parameter">mailbox</replaceable>
       </arg>
@@ -8583,7 +8777,7 @@ please have a look at the mixmaster documentation.
 	<replaceable class="parameter">mailbox</replaceable>
       </arg>
 
-      <command>unsidebar_whitelist<anchor id="unsidebar-whitelist"/></command>
+      <command>unsidebar_whitelist</command>
       <group choice="req">
       <arg choice="plain">
 	<replaceable class="parameter">*</replaceable>
@@ -8863,7 +9057,7 @@ please have a look at the mixmaster documentation.
         then you can use <literal>.</literal> as the regexp.
       </para>
 
-      <sect4 id="compress-open-hook-example">
+      <example id="compress-open-hook-example">
         <title>Example of open-hook</title>
 
         <screen>open-hook '\.gz$' &quot;gzip -cd '%f' &gt; '%t'&quot;</screen>
@@ -8878,7 +9072,7 @@ please have a look at the mixmaster documentation.
               to create a temporary file that it <emphasis>can</emphasis>
               read</para></listitem>
         </itemizedlist>
-      </sect4>
+      </example>
     </sect3>
 
     <sect3 id="close-hook">
@@ -8899,7 +9093,7 @@ please have a look at the mixmaster documentation.
         </para>
       </note>
 
-      <sect4 id="compress-close-hook-example">
+      <example id="compress-close-hook-example">
         <title>Example of close-hook</title>
 
         <screen>close-hook '\.gz$' &quot;gzip -c '%t' &gt; '%f'&quot;</screen>
@@ -8913,7 +9107,7 @@ please have a look at the mixmaster documentation.
           <listitem><para>Mutt uses the command <literal>gzip -c</literal>
               to create a new compressed file</para></listitem>
         </itemizedlist>
-      </sect4>
+      </example>
     </sect3>
 
     <sect3 id="append-hook">
@@ -8952,7 +9146,7 @@ please have a look at the mixmaster documentation.
         </para>
       </note>
 
-      <sect4 id="compress-append-hook-example">
+      <example id="compress-append-hook-example">
         <title>Example of append-hook</title>
 
         <screen>append-hook '\.gz$' &quot;gzip -c '%t' &gt;&gt; '%f'&quot;</screen>
@@ -8967,7 +9161,7 @@ please have a look at the mixmaster documentation.
           <listitem><para>Mutt uses the command <literal>gzip -c</literal>
               to append to an existing compressed file</para></listitem>
         </itemizedlist>
-      </sect4>
+      </example>
 
     </sect3>
 
@@ -9584,7 +9778,7 @@ The following are the commands understood by Mutt:
 
 <listitem>
 <cmdsynopsis>
-<command><link linkend="iconv-hook">iconv-hook</link></command>
+<command><link linkend="charset-hook">iconv-hook</link></command>
 <arg choice="plain">
 <replaceable class="parameter">charset</replaceable>
 </arg>
@@ -9826,6 +10020,21 @@ The following are the commands understood by Mutt:
 <replaceable>pattern</replaceable>
 </arg>
 </group>
+</cmdsynopsis>
+</listitem>
+
+<listitem>
+<cmdsynopsis>
+<command><link linkend="index-format-hook">index-format-hook</link></command>
+<arg choice="plain">
+<replaceable class="parameter">name</replaceable>
+</arg>
+<arg choice="plain">
+<replaceable class="parameter">[!]pattern</replaceable>
+</arg>
+<arg choice="plain">
+<replaceable class="parameter">format-string</replaceable>
+</arg>
 </cmdsynopsis>
 </listitem>
 
@@ -10208,7 +10417,7 @@ The following are the commands understood by Mutt:
 <replaceable class="parameter">mailbox</replaceable>
 </arg>
 
-<command><link linkend="unsidebar-whitelist">unsidebar_whitelist</link></command>
+<command><link linkend="sidebar-whitelist">unsidebar_whitelist</link></command>
 <group choice="req">
 <arg choice="plain">
 <replaceable class="parameter">*</replaceable>

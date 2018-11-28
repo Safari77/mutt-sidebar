@@ -1077,9 +1077,11 @@ static int parse_group (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *err)
 	  if ((addr = mutt_parse_adrlist (NULL, buf->data)) == NULL)
 	    goto bail;
 	  if (mutt_addrlist_to_intl (addr, &estr))
-	  { 
+	  {
 	    snprintf (err->data, err->dsize, _("%sgroup: warning: bad IDN '%s'.\n"),
 		      data == 1 ? "un" : "", estr);
+            FREE (&estr);
+            rfc822_free_address (&addr);
 	    goto bail;
 	  }
 	  if (data == MUTT_GROUP)
@@ -1543,6 +1545,7 @@ static int parse_alias (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *err)
   {
     snprintf (err->data, err->dsize, _("Warning: Bad IDN '%s' in alias '%s'.\n"),
 	      estr, tmp->name);
+    FREE (&estr);
     goto bail;
   }
 
@@ -1766,6 +1769,9 @@ static void mutt_restore_default (struct option_t *p)
     case DT_MAGIC:
       *((short *) p->data) = p->init;
       break;
+    case DT_LNUM:
+      *((long *) p->data) = p->init;
+      break;
     case DT_RX:
       {
 	REGEXP *pp = (REGEXP *) p->data;
@@ -1889,6 +1895,18 @@ static int check_charset (struct option_t *opt, const char *val)
   char *p, *q = NULL, *s = safe_strdup (val);
   int rc = 0, strict = strcmp (opt->option, "send_charset") == 0;
 
+  /* $charset should be nonempty, and a single value - not a colon
+   * delimited list */
+  if (mutt_strcmp (opt->option, "charset") == 0)
+  {
+    if (!s || (strchr (s, ':') != NULL))
+    {
+      FREE (&s);
+      return -1;
+    }
+  }
+
+  /* other values can be empty */
   if (!s)
     return rc;
 
@@ -2274,10 +2292,8 @@ static int parse_set (BUFFER *tmp, BUFFER *s, unsigned long data, BUFFER *err)
         }
         else if (DTYPE (MuttVars[idx].type) == DT_STR)
         {
-	  if ((strstr (MuttVars[idx].option, "charset") &&
-	       check_charset (&MuttVars[idx], tmp->data) < 0) |
-	      /* $charset can't be empty, others can */
-	      (strcmp(MuttVars[idx].option, "charset") == 0 && ! *tmp->data))
+	  if (strstr (MuttVars[idx].option, "charset") &&
+              check_charset (&MuttVars[idx], tmp->data) < 0)
 	  {
 	    snprintf (err->data, err->dsize, _("Invalid value for option %s: \"%s\""),
 		      MuttVars[idx].option, tmp->data);
@@ -2492,6 +2508,38 @@ static int parse_set (BUFFER *tmp, BUFFER *s, unsigned long data, BUFFER *err)
           *ptr = 0;
       }
 #endif
+    }
+    else if (DTYPE(MuttVars[idx].type) == DT_LNUM)
+    {
+      long *ptr = (long *) MuttVars[idx].data;
+      long val;
+      int rc;
+
+      if (query || *s->dptr != '=')
+      {
+	val = *ptr;
+
+	/* user requested the value of this variable */
+	snprintf (err->data, err->dsize, "%s=%ld", MuttVars[idx].option, val);
+	break;
+      }
+
+      CHECK_PAGER;
+      s->dptr++;
+
+      mutt_extract_token (tmp, s, 0);
+      rc = mutt_atol (tmp->data, (long *) &val);
+
+      if (rc < 0 || !*tmp->data)
+      {
+	snprintf (err->data, err->dsize, _("%s: invalid value (%s)"), tmp->data,
+		  rc == -1 ? _("format error") : _("number overflow"));
+	r = -1;
+	break;
+      }
+      else
+	*ptr = val;
+
     }
     else if (DTYPE (MuttVars[idx].type) == DT_QUAD)
     {
@@ -3065,6 +3113,12 @@ static int var_to_string (int idx, char* val, size_t len)
 
     snprintf (tmp, sizeof (tmp), "%d", sval);
   }
+  else if (DTYPE (MuttVars[idx].type) == DT_LNUM)
+  {
+    long sval = *((long *) MuttVars[idx].data);
+
+    snprintf (tmp, sizeof (tmp), "%ld", sval);
+  }
   else if (DTYPE (MuttVars[idx].type) == DT_SORT)
   {
     const struct mapping_t *map;
@@ -3328,6 +3382,7 @@ void mutt_init (int skip_sys_rc, LIST *commands)
                               MUTT_HASH_ALLOW_DUPS);
   
   mutt_menu_init ();
+  mutt_buffer_pool_init ();
 
   snprintf (AttachmentMarker, sizeof (AttachmentMarker),
 	    "\033]9;%" PRIu64 "\a", mutt_rand64());
@@ -3550,7 +3605,7 @@ void mutt_init (int skip_sys_rc, LIST *commands)
     AliasFile = safe_strdup (Muttrc);
   }
 
-  /* Process the global rc file if it exists and the user hasn't explicity
+  /* Process the global rc file if it exists and the user hasn't explicitly
      requested not to via "-n".  */
   if (!skip_sys_rc)
   {
@@ -3611,7 +3666,8 @@ int mutt_get_hook_type (const char *name)
   const struct command_t *c;
 
   for (c = Commands ; c->name ; c++)
-    if (c->func == mutt_parse_hook && ascii_strcasecmp (c->name, name) == 0)
+    if ((c->func == mutt_parse_hook || c->func == mutt_parse_idxfmt_hook) &&
+        ascii_strcasecmp (c->name, name) == 0)
       return c->data;
   return 0;
 }

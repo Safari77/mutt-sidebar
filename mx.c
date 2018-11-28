@@ -422,7 +422,11 @@ int mx_get_magic (const char *path)
   }
   else if ((f = fopen (path, "r")) != NULL)
   {
+#ifdef HAVE_UTIMENSAT
+    struct timespec ts[2];
+#else
     struct utimbuf times;
+#endif /* HAVE_UTIMENSAT */
     int ch;
 
     /* Some mailbox creation tools erroneously append a blank line to
@@ -452,9 +456,15 @@ int mx_get_magic (const char *path)
        * only the type was accessed.  This is important, because detection
        * of "new mail" depends on those times set correctly.
        */
+#ifdef HAVE_UTIMENSAT
+      mutt_get_stat_timespec (&ts[0], &st, MUTT_STAT_ATIME);
+      mutt_get_stat_timespec (&ts[1], &st, MUTT_STAT_MTIME);
+      utimensat (0, path, ts, 0);
+#else
       times.actime = st.st_atime;
       times.modtime = st.st_mtime;
       utime (path, &times);
+#endif
     }
   }
   else
@@ -661,16 +671,28 @@ CONTEXT *mx_open_mailbox (const char *path, int flags, CONTEXT *pctx)
 void mx_fastclose_mailbox (CONTEXT *ctx)
 {
   int i;
-  struct utimbuf ut;
+#ifdef HAVE_UTIMENSAT
+    struct timespec ts[2];
+#else
+    struct utimbuf ut;
+#endif /* HAVE_UTIMENSAT */
 
   if(!ctx) 
     return;
 
   /* fix up the times so buffy won't get confused */
-  if (ctx->peekonly && ctx->path && (ctx->mtime > ctx->atime)) {
-    ut.actime  = ctx->atime;
-    ut.modtime = ctx->mtime;
+  if (ctx->peekonly && ctx->path &&
+      (mutt_timespec_compare (&ctx->mtime, &ctx->atime) > 0))
+  {
+#ifdef HAVE_UTIMENSAT
+    ts[0] = ctx->atime;
+    ts[1] = ctx->mtime;
+    utimensat (0, ctx->path, ts, 0);
+#else
+    ut.actime  = ctx->atime.tv_sec;
+    ut.modtime = ctx->mtime.tv_sec;
     utime (ctx->path, &ut);
+#endif /* HAVE_UTIMENSAT */
   }
 
   /* never announce that a mailbox we've just left has new mail. #3290
@@ -707,13 +729,25 @@ void mx_fastclose_mailbox (CONTEXT *ctx)
 /* save changes to disk */
 static int sync_mailbox (CONTEXT *ctx, int *index_hint)
 {
+  int rc;
+
   if (!ctx->mx_ops || !ctx->mx_ops->sync)
     return -1;
 
   if (!ctx->quiet)
+  {
+    /* L10N: Displayed before/as a mailbox is being synced */
     mutt_message (_("Writing %s..."), ctx->path);
+  }
 
-  return ctx->mx_ops->sync (ctx, index_hint);
+  rc = ctx->mx_ops->sync (ctx, index_hint);
+  if (rc != 0 && !ctx->quiet)
+  {
+    /* L10N: Displayed if a mailbox sync fails */
+    mutt_error (_("Unable to write %s!"), ctx->path);
+  }
+
+  return rc;
 }
 
 /* move deleted mails to the trash folder */
@@ -1020,7 +1054,7 @@ int mx_close_mailbox (CONTEXT *ctx, int *index_hint)
 
 void mx_update_tables(CONTEXT *ctx, int committing)
 {
-  int i, j;
+  int i, j, padding;
   
   /* update memory to reflect the new state of the mailbox */
   ctx->vcount = 0;
@@ -1031,6 +1065,7 @@ void mx_update_tables(CONTEXT *ctx, int committing)
   ctx->unread = 0;
   ctx->changed = 0;
   ctx->flagged = 0;
+  padding = mx_msg_padding_size (ctx);
 #define this_body ctx->hdrs[j]->content
   for (i = 0, j = 0; i < ctx->msgcount; i++)
   {
@@ -1049,7 +1084,7 @@ void mx_update_tables(CONTEXT *ctx, int committing)
 	ctx->v2r[ctx->vcount] = j;
 	ctx->hdrs[j]->virtual = ctx->vcount++;
 	ctx->vsize += this_body->length + this_body->offset -
-	  this_body->hdr_offset;
+	              this_body->hdr_offset + padding;
       }
 
       if (committing)
@@ -1475,11 +1510,39 @@ int mx_check_empty (const char *path)
       return mh_check_empty (path);
     case MUTT_MAILDIR:
       return maildir_check_empty (path);
+#ifdef USE_IMAP
+    case MUTT_IMAP:
+    {
+      int passive, rv;
+
+      passive = option (OPTIMAPPASSIVE);
+      if (passive)
+        unset_option (OPTIMAPPASSIVE);
+      rv = imap_status (path, 0);
+      if (passive)
+        set_option (OPTIMAPPASSIVE);
+      return (rv <= 0);
+    }
+#endif
     default:
       errno = EINVAL;
       return -1;
   }
   /* not reached */
+}
+
+/* mx_msg_padding_size: Returns the padding size between messages for the
+ * mailbox type pointed to by ctx.
+ *
+ * mmdf and mbox add separators, which leads a small discrepancy when computing
+ * vsize for a limited view.
+ */
+int mx_msg_padding_size (CONTEXT *ctx)
+{
+  if (!ctx->mx_ops || !ctx->mx_ops->msg_padding_size)
+    return 0;
+
+  return ctx->mx_ops->msg_padding_size (ctx);
 }
 
 /* vim: set sw=2: */

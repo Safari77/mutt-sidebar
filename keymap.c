@@ -29,6 +29,9 @@
 #ifdef USE_IMAP
 #include "imap/imap.h"
 #endif
+#ifdef USE_INOTIFY
+#include "monitor.h"
+#endif
 
 #include <stdlib.h>
 #include <string.h>
@@ -443,14 +446,18 @@ int km_dokey (int menu)
       else
 	while (ImapKeepalive && ImapKeepalive < i)
 	{
-	  timeout (ImapKeepalive * 1000);
+	  mutt_getch_timeout (ImapKeepalive * 1000);
 	  tmp = mutt_getch ();
-	  timeout (-1);
+	  mutt_getch_timeout (-1);
 	  /* If a timeout was not received, or the window was resized, exit the
 	   * loop now.  Otherwise, continue to loop until reaching a total of
 	   * $timeout seconds.
 	   */
+#ifdef USE_INOTIFY
+	  if (tmp.ch != -2 || SigWinch || MonitorFilesChanged)
+#else
 	  if (tmp.ch != -2 || SigWinch)
+#endif
 	    goto gotkey;
 	  i -= ImapKeepalive;
 	  imap_keepalive ();
@@ -458,9 +465,9 @@ int km_dokey (int menu)
     }
 #endif
 
-    timeout (i * 1000);
+    mutt_getch_timeout (i * 1000);
     tmp = mutt_getch();
-    timeout (-1);
+    mutt_getch_timeout (-1);
 
 #ifdef USE_IMAP
   gotkey:

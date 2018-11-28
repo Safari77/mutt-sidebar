@@ -351,6 +351,7 @@ enum
   DT_NONE = 0,
   DT_BOOL,
   DT_NUM,
+  DT_LNUM,
   DT_STR,
   DT_PATH,
   DT_QUAD,
@@ -372,6 +373,7 @@ types[] =
   { "DT_NONE",	"-none-" 	},
   { "DT_BOOL",  "boolean"	},
   { "DT_NUM",   "number"	},
+  { "DT_LNUM",  "number (long)"	},
   { "DT_STR",	"string"	},
   { "DT_PATH",	"path"		},
   { "DT_QUAD",	"quadoption"	},
@@ -392,8 +394,10 @@ static int buff2type (const char *s)
   for (type = DT_NONE; types[type].machine; type++)
     if (!strcmp (types[type].machine, s))
 	return type;
-  
-  return DT_NONE;
+
+  fprintf (stderr, "%s: Unknown type %s.  Please update makedoc.c\n",
+           Progname, s);
+  exit (1);
 }
 
 static const char *type2human (int type)

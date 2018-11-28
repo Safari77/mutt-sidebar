@@ -450,12 +450,37 @@ int safe_symlink(const char *oldpath, const char *newpath)
 int safe_rename (const char *src, const char *target)
 {
   struct stat ssb, tsb;
+  int link_errno;
 
   if (!src || !target)
     return -1;
 
   if (link (src, target) != 0)
   {
+    link_errno = errno;
+
+    /*
+     * It is historically documented that link can return -1 if NFS
+     * dies after creating the link.  In that case, we are supposed
+     * to use stat to check if the link was created.
+     *
+     * Derek Martin notes that some implementations of link() follow a
+     * source symlink.  It might be more correct to use stat() on src.
+     * I am not doing so to minimize changes in behavior: the function
+     * used lstat() further below for 20 years without issue, and I
+     * believe was never intended to be used on a src symlink.
+     */
+    if ((lstat (src, &ssb) == 0) &&
+        (lstat (target, &tsb) == 0) &&
+        (compare_stat (&ssb, &tsb) == 0))
+    {
+      dprint (1, (debugfile,
+                  "safe_rename: link (%s, %s) reported failure: %s (%d) but actually succeded\n",
+                  src, target, strerror (errno), errno));
+      goto success;
+    }
+
+    errno = link_errno;
 
     /*
      * Coda does not allow cross-directory links, but tells
@@ -499,16 +524,23 @@ int safe_rename (const char *src, const char *target)
   }
 
   /*
+   * Remove the compare_stat() check, because it causes problems with maildir on
+   * filesystems that don't properly support hard links, such as
+   * sshfs.  The filesystem creates the link, but the resulting file
+   * is given a different inode number by the sshfs layer.  This
+   * results in an infinite loop creating links.
+   */
+#if 0
+  /*
    * Stat both links and check if they are equal.
    */
-  
   if (lstat (src, &ssb) == -1)
   {
     dprint (1, (debugfile, "safe_rename: can't stat %s: %s (%d)\n",
 		src, strerror (errno), errno));
     return -1;
   }
-  
+
   if (lstat (target, &tsb) == -1)
   {
     dprint (1, (debugfile, "safe_rename: can't stat %s: %s (%d)\n",
@@ -520,19 +552,19 @@ int safe_rename (const char *src, const char *target)
    * pretend that the link failed because the target file
    * did already exist.
    */
-
   if (compare_stat (&ssb, &tsb) == -1)
   {
     dprint (1, (debugfile, "safe_rename: stat blocks for %s and %s diverge; pretending EEXIST.\n", src, target));
     errno = EEXIST;
     return -1;
   }
+#endif
 
+success:
   /*
    * Unlink the original link.  Should we really ignore the return
    * value here? XXX
    */
-
   if (unlink (src) == -1) 
   {
     dprint (1, (debugfile, "safe_rename: unlink (%s) failed: %s (%d)\n",
@@ -1081,10 +1113,12 @@ int mutt_atol (const char *str, long *dst)
     return 0;
   }
 
+  errno = 0;
   *res = strtol (str, &e, 10);
-  if ((*res == LONG_MAX && errno == ERANGE) ||
-      (e && *e != '\0'))
+  if (e && *e != '\0')
     return -1;
+  if (errno == ERANGE)
+    return -2;
   return 0;
 }
 
@@ -1138,6 +1172,34 @@ int mutt_atoul (const char *str, unsigned long *dst)
   errno = 0;
   *res = strtoul (str, &e, 10);
   if (*res == ULONG_MAX && errno == ERANGE)
+    return -1;
+  if (e && *e != '\0')
+    return 1;
+  return 0;
+}
+
+/* NOTE: this function's return value is different from mutt_atol.
+ *
+ * returns: 1 - successful conversion, with trailing characters
+ *          0 - successful conversion
+ *         -1 - invalid input
+ */
+int mutt_atoull (const char *str, unsigned long long *dst)
+{
+  unsigned long long r;
+  unsigned long long *res = dst ? dst : &r;
+  char *e = NULL;
+
+  /* no input: 0 */
+  if (!str || !*str)
+  {
+    *res = 0;
+    return 0;
+  }
+
+  errno = 0;
+  *res = strtoull (str, &e, 10);
+  if (*res == ULLONG_MAX && errno == ERANGE)
     return -1;
   if (e && *e != '\0')
     return 1;
