@@ -2634,7 +2634,7 @@ int maildir_check_empty (const char *path)
      * find old messages without having to scan both subdirs
      */
     mutt_buffer_printf (trypath, "%s/%s", path, iter == 0 ? "cur" : "new");
-    if ((dp = opendir (mutt_b2a (trypath))) == NULL)
+    if ((dp = opendir (mutt_b2s (trypath))) == NULL)
     {
       r = -1;
       goto out;
