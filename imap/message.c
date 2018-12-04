@@ -652,6 +652,18 @@ static int read_headers_condstore_qresync_updates (IMAP_DATA *idata,
   {
     imap_hcache_close (idata);
     imap_expunge_mailbox (idata);
+
+    /* undo expunge count updates.
+     * mx_update_context() will do this at the end of the header fetch. */
+    ctx->vcount = 0;
+    ctx->vsize = 0;
+    ctx->tagged = 0;
+    ctx->deleted = 0;
+    ctx->new = 0;
+    ctx->unread = 0;
+    ctx->changed = 0;
+    ctx->flagged = 0;
+
     idata->hcache = imap_hcache_open (idata, NULL);
     idata->reopen &= ~IMAP_EXPUNGE_PENDING;
   }
@@ -675,7 +687,7 @@ static int read_headers_fetch_new (IMAP_DATA *idata, unsigned int msn_begin,
   FILE *fp = NULL;
   IMAP_HEADER h;
   BUFFER *b;
-  static const char * const want_headers = "DATE FROM SUBJECT TO CC MESSAGE-ID REFERENCES CONTENT-TYPE CONTENT-DESCRIPTION IN-REPLY-TO REPLY-TO LINES LIST-POST X-LABEL";
+  static const char * const want_headers = "DATE FROM SENDER SUBJECT TO CC MESSAGE-ID REFERENCES CONTENT-TYPE CONTENT-DESCRIPTION IN-REPLY-TO REPLY-TO LINES LIST-POST X-LABEL";
 
   ctx = idata->ctx;
   idx = ctx->msgcount;
