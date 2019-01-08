@@ -2012,7 +2012,7 @@ static BODY *smime_handle_entity (BODY *m, STATE *s, FILE *outFile)
       m->goodsig = 1;
     FREE (&line);
   }
-  else
+  else if (p)
   {
     m->goodsig = p->goodsig;
     m->badsig  = p->badsig;
@@ -2097,7 +2097,16 @@ bail:
 
 int smime_application_smime_handler (BODY *m, STATE *s)
 {
-  return smime_handle_entity (m, s, NULL) ? 0 : -1;
+  int rv = -1;
+  BODY *tattach;
+
+  tattach = smime_handle_entity (m, s, NULL);
+  if (tattach)
+  {
+    rv = 0;
+    mutt_free_body (&tattach);
+  }
+  return rv;
 }
 
 int smime_send_menu (HEADER *msg)
