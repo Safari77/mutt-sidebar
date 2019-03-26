@@ -37,7 +37,6 @@
 #include <string.h>
 #include <ctype.h>
 #include <unistd.h>
-#include <sys/syscall.h>
 #include <stdlib.h>
 #include <sys/wait.h>
 #include <errno.h>
@@ -46,6 +45,10 @@
 #include <time.h>
 #include <sys/types.h>
 #include <utime.h>
+
+#ifdef HAVE_GETRANDOM
+#include <sys/random.h>
+#endif
 
 BODY *mutt_new_body (void)
 {
@@ -834,16 +837,17 @@ static FILE *frandom;
 
 void mutt_randbuf(void *out, size_t len)
 {
-  if (len > 1048576) {
-    mutt_error (_("mutt_randbuf len=%zu"), len);
+  if (len > 256) {
+    mutt_error (_("mutt_randbuf oversize request %zu"), len);
     exit(1);
   }
-  /* XXX switch to HAVE_GETRANDOM and getrandom() in about 2017 */
-#if defined(SYS_getrandom) && defined(__linux__)
+#if defined(HAVE_GETRANDOM) && \
+        (defined(__linux__) || \
+        (defined(__FreeBSD__) && __FreeBSD_version >= 1200000))
   static int whined;
   long ret;
   do {
-    ret = syscall(SYS_getrandom, out, len, 0, 0, 0, 0);
+    ret = getrandom(out, len, 0);
   } while ((ret == -1) && (errno == EINTR));
   if (ret == len) return;
   if (!whined) {
