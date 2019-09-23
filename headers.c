@@ -1,16 +1,16 @@
-/* 
+/*
  * Copyright (C) 1996-2009,2012 Michael R. Elkins <me@mutt.org>
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
@@ -51,9 +51,9 @@ void mutt_edit_headers (const char *editor,
     mutt_perror (path);
     return;
   }
-  
+
   mutt_env_to_local (msg->env);
-  mutt_write_rfc822_header (ofp, msg->env, NULL, 1, 0);
+  mutt_write_rfc822_header (ofp, msg->env, NULL, MUTT_WRITE_HEADER_EDITHDRS, 0, 0);
   fputc ('\n', ofp);	/* tie off the header. */
 
   /* now copy the body of the message. */
@@ -95,7 +95,7 @@ void mutt_edit_headers (const char *editor,
     mutt_perror (path);
     return;
   }
-  
+
   if ((ofp = safe_fopen (body, "w")) == NULL)
   {
     /* intentionally leak a possible temporary file here */
@@ -103,7 +103,7 @@ void mutt_edit_headers (const char *editor,
     mutt_perror (body);
     return;
   }
-  
+
   n = mutt_read_rfc822_header (ifp, NULL, 1, 0);
   while ((i = fread (buffer, 1, sizeof (buffer), ifp)) > 0)
     fwrite (buffer, 1, i, ofp);
@@ -130,7 +130,7 @@ void mutt_edit_headers (const char *editor,
 
   mutt_expand_aliases_env (msg->env);
 
-  /* search through the user defined headers added to see if 
+  /* search through the user defined headers added to see if
    * fcc: or attach: or pgp: was specified
    */
 
@@ -267,7 +267,9 @@ static int label_message(CONTEXT *ctx, HEADER *hdr, char *new)
   if (hdr->env->x_label != NULL)
     label_ref_inc(ctx, hdr->env->x_label);
 
-  return hdr->changed = hdr->xlabel_changed = 1;
+  hdr->changed = 1;
+  hdr->env->changed |= MUTT_ENV_CHANGED_XLABEL;
+  return 1;
 }
 
 int mutt_label_message(HEADER *hdr)
@@ -280,7 +282,8 @@ int mutt_label_message(HEADER *hdr)
     return 0;
 
   *buf = '\0';
-  if (hdr != NULL && hdr->env->x_label != NULL) {
+  if (hdr != NULL && hdr->env->x_label != NULL)
+  {
     strncpy(buf, hdr->env->x_label, LONG_STRING);
   }
 
@@ -300,14 +303,18 @@ int mutt_label_message(HEADER *hdr)
       ++changed;
       mutt_set_header_color (Context, hdr);
     }
-  } else {
+  }
+  else
+  {
 #define HDR_OF(index) Context->hdrs[Context->v2r[(index)]]
-    for (i = 0; i < Context->vcount; ++i) {
+    for (i = 0; i < Context->vcount; ++i)
+    {
       if (HDR_OF(i)->tagged)
-        if (label_message(Context, HDR_OF(i), new)) {
+        if (label_message(Context, HDR_OF(i), new))
+        {
           ++changed;
           mutt_set_flag(Context, HDR_OF(i),
-            MUTT_TAG, 0);
+                        MUTT_TAG, 0);
           /* mutt_set_flag re-evals the header color */
         }
     }

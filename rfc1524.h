@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 1996-2000 Michael R. Elkins <me@mutt.org>
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */
 
 #ifndef _RFC1524_H
 #define _RFC1524_H
@@ -36,14 +36,9 @@ typedef struct rfc1524_mailcap_entry {
 
 rfc1524_entry *rfc1524_new_entry (void);
 void rfc1524_free_entry (rfc1524_entry **);
-int rfc1524_expand_command (BODY *, const char *, const char *, char *, int);
-int rfc1524_expand_filename (const char *, const char *, char *, size_t);
+int mutt_rfc1524_expand_command (BODY *, const char *, const char *, BUFFER *);
+int mutt_rfc1524_expand_filename (const char *, const char *, BUFFER *);
 int rfc1524_mailcap_lookup (BODY *, char *, rfc1524_entry *, int);
 int mutt_rename_file (const char *, const char *);
-
-
-/* Temporary BUFFER transition functions */
-int mutt_buffer_rfc1524_expand_command (BODY *, const char *, const char *, BUFFER *);
-int mutt_buffer_rfc1524_expand_filename (const char *, const char *, BUFFER *);
 
 #endif /* _RFC1524_H */

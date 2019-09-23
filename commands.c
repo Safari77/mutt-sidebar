@@ -1,26 +1,27 @@
 /*
  * Copyright (C) 1996-2000 Michael R. Elkins <me@mutt.org>
  * Copyright (C) 2000-2004,2006 Thomas Roessler <roessler@does-not-exist.org>
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */
 
 #if HAVE_CONFIG_H
 # include "config.h"
 #endif
 
+#include "version.h"
 #include "mutt.h"
 #include "mutt_curses.h"
 #include "mutt_menu.h"
@@ -56,6 +57,82 @@ static const char *ExtPagerProgress = "all";
 /* The folder the user last saved to.  Used by ci_save_message() */
 static char LastSaveFolder[_POSIX_PATH_MAX] = "";
 
+static void update_protected_headers (HEADER *cur)
+{
+  ENVELOPE *prot_headers = NULL;
+  regmatch_t pmatch[1];
+
+  if (!option (OPTCRYPTPROTHDRSREAD))
+    return;
+
+  /* Grab protected headers to update in the index */
+  if (cur->security & SIGN)
+  {
+    /* Don't update on a bad signature.
+     *
+     * This is a simplification.  It's possible the headers are in the
+     * encrypted part of a nested encrypt/signed.  But properly handling that
+     * case would require more complexity in the decryption handlers, which
+     * I'm not sure is worth it. */
+    if (!(cur->security & GOODSIGN))
+      return;
+
+    if (mutt_is_multipart_signed (cur->content) &&
+        cur->content->parts)
+    {
+      prot_headers = cur->content->parts->mime_headers;
+    }
+    else if ((WithCrypto & APPLICATION_SMIME) &&
+             mutt_is_application_smime (cur->content))
+    {
+      prot_headers = cur->content->mime_headers;
+    }
+  }
+  if (!prot_headers && (cur->security & ENCRYPT))
+  {
+    if ((WithCrypto & APPLICATION_PGP) &&
+        (mutt_is_valid_multipart_pgp_encrypted (cur->content) ||
+         mutt_is_malformed_multipart_pgp_encrypted (cur->content)))
+    {
+      prot_headers = cur->content->mime_headers;
+    }
+    else if ((WithCrypto & APPLICATION_SMIME) &&
+             mutt_is_application_smime (cur->content))
+    {
+      prot_headers = cur->content->mime_headers;
+    }
+  }
+
+  /* Update protected headers in the index and header cache. */
+  if (prot_headers &&
+      prot_headers->subject &&
+      mutt_strcmp (cur->env->subject, prot_headers->subject))
+  {
+    if (Context->subj_hash && cur->env->real_subj)
+      hash_delete (Context->subj_hash, cur->env->real_subj, cur, NULL);
+
+    mutt_str_replace (&cur->env->subject, prot_headers->subject);
+    FREE (&cur->env->disp_subj);
+    if (regexec (ReplyRegexp.rx, cur->env->subject, 1, pmatch, 0) == 0)
+      cur->env->real_subj = cur->env->subject + pmatch[0].rm_eo;
+    else
+      cur->env->real_subj = cur->env->subject;
+
+    if (Context->subj_hash)
+      hash_insert (Context->subj_hash, cur->env->real_subj, cur);
+
+    mx_save_to_header_cache (Context, cur);
+
+    /* Also persist back to the message headers if this is set */
+    if (option (OPTCRYPTPROTHDRSSAVE))
+    {
+      cur->env->changed |= MUTT_ENV_CHANGED_SUBJECT;
+      cur->changed = 1;
+      Context->changed = 1;
+    }
+  }
+}
+
 int mutt_display_message (HEADER *cur)
 {
   char tempfile[_POSIX_PATH_MAX], buf[LONG_STRING];
@@ -79,7 +156,7 @@ int mutt_display_message (HEADER *cur)
     {
       if (cur->security & APPLICATION_SMIME)
 	crypt_smime_getkeys (cur->env);
-      if(!crypt_valid_passphrase(cur->security))
+      if (!crypt_valid_passphrase(cur->security))
 	return 0;
 
       cmflags |= MUTT_CM_VERIFY;
@@ -94,14 +171,14 @@ int mutt_display_message (HEADER *cur)
       }
     }
   }
-  
+
   if (cmflags & MUTT_CM_VERIFY || cur->security & ENCRYPT)
   {
     if (cur->security & APPLICATION_PGP)
     {
       if (cur->env->from)
         crypt_pgp_invoke_getkeys (cur->env->from);
-      
+
       crypt_invoke_message (APPLICATION_PGP);
     }
 
@@ -117,7 +194,7 @@ int mutt_display_message (HEADER *cur)
     return (0);
   }
 
-  if (DisplayFilter && *DisplayFilter) 
+  if (DisplayFilter && *DisplayFilter)
   {
     fpfilterout = fpout;
     fpout = NULL;
@@ -141,13 +218,14 @@ int mutt_display_message (HEADER *cur)
     hfi.ctx = Context;
     hfi.pager_progress = ExtPagerProgress;
     hfi.hdr = cur;
-    mutt_make_string_info (buf, sizeof (buf), MuttIndexWindow->cols, NONULL(PagerFmt), &hfi, MUTT_FORMAT_MAKEPRINT);
+    mutt_make_string_info (buf, sizeof (buf), MuttIndexWindow->cols, NONULL(PagerFmt), &hfi, 0);
     fputs (buf, fpout);
     fputs ("\n\n", fpout);
   }
 
   res = mutt_copy_message (fpout, Context, cur, cmflags,
-       	(option (OPTWEED) ? (CH_WEED | CH_REORDER) : 0) | CH_DECODE | CH_FROM | CH_DISPLAY);
+                           (option (OPTWEED) ? (CH_WEED | CH_REORDER) : 0) |
+                           CH_DECODE | CH_FROM | CH_DISPLAY);
   if ((safe_fclose (&fpout) != 0 && errno != EPIPE) || res < 0)
   {
     mutt_error (_("Could not copy message"));
@@ -165,23 +243,25 @@ int mutt_display_message (HEADER *cur)
 
   safe_fclose (&fpfilterout);	/* XXX - check result? */
 
-  
   if (WithCrypto)
   {
     /* update crypto information for this message */
     cur->security &= ~(GOODSIGN|BADSIGN);
     cur->security |= crypt_query (cur->content);
-  
+
     /* Remove color cache for this message, in case there
        are color patterns for both ~g and ~V */
     cur->pair = 0;
+
+    /* Grab protected headers and update the header and index */
+    update_protected_headers (cur);
   }
 
   if (builtin)
   {
     pager_t info;
 
-    if (WithCrypto 
+    if (WithCrypto
         && (cur->security & APPLICATION_SMIME) && (cmflags & MUTT_CM_VERIFY))
     {
       if (cur->security & GOODSIGN)
@@ -197,7 +277,7 @@ int mutt_display_message (HEADER *cur)
 	mutt_error ( _("S/MIME signature could NOT be verified."));
     }
 
-    if (WithCrypto 
+    if (WithCrypto
         && (cur->security & APPLICATION_PGP) && (cmflags & MUTT_CM_VERIFY))
     {
       if (cur->security & GOODSIGN)
@@ -241,15 +321,15 @@ int mutt_display_message (HEADER *cur)
 
 void ci_bounce_message (HEADER *h)
 {
-  char prompt[SHORT_STRING];
+  char prompt[SHORT_STRING+1];
   char scratch[SHORT_STRING];
   char buf[HUGE_STRING] = { 0 };
   ADDRESS *adr = NULL;
   char *err = NULL;
   int rc;
 
- /* RfC 5322 mandates a From: header, so warn before bouncing
-  * messages without one */
+  /* RfC 5322 mandates a From: header, so warn before bouncing
+   * messages without one */
   if (h)
   {
     if (!h->env->from)
@@ -271,11 +351,11 @@ void ci_bounce_message (HEADER *h)
     }
   }
 
-  if(h)
+  if (h)
     strfcpy(prompt, _("Bounce message to: "), sizeof(prompt));
   else
     strfcpy(prompt, _("Bounce tagged messages to: "), sizeof(prompt));
-  
+
   rc = mutt_get_field (prompt, buf, sizeof (buf), MUTT_ALIAS);
   if (rc || !buf[0])
     return;
@@ -301,7 +381,7 @@ void ci_bounce_message (HEADER *h)
 
 #define extra_space (15 + 7 + 2)
   snprintf (scratch, sizeof (scratch),
-           (h ? _("Bounce message to %s") : _("Bounce messages to %s")), buf);
+            (h ? _("Bounce message to %s") : _("Bounce messages to %s")), buf);
 
   if (mutt_strwidth (prompt) > MuttMessageWindow->cols - extra_space)
   {
@@ -322,7 +402,7 @@ void ci_bounce_message (HEADER *h)
   }
 
   mutt_window_clearline (MuttMessageWindow, 0);
-  
+
   rc = mutt_bounce_message (NULL, h, adr);
   rfc822_free_address (&adr);
   /* If no error, or background, display message. */
@@ -336,29 +416,29 @@ static void pipe_set_flags (int decode, int print, int *cmflags, int *chflags)
   {
     *cmflags |= MUTT_CM_DECODE | MUTT_CM_CHARCONV;
     *chflags |= CH_DECODE | CH_REORDER;
-    
+
     if (option (OPTWEED))
     {
       *chflags |= CH_WEED;
       *cmflags |= MUTT_CM_WEED;
     }
   }
-  
+
   if (print)
     *cmflags |= MUTT_CM_PRINTING;
-  
+
 }
 
 static void pipe_msg (HEADER *h, FILE *fp, int decode, int print)
 {
   int cmflags = 0;
   int chflags = CH_FROM;
-  
+
   pipe_set_flags (decode, print, &cmflags, &chflags);
 
   if (WithCrypto && decode && h->security & ENCRYPT)
   {
-    if(!crypt_valid_passphrase(h->security))
+    if (!crypt_valid_passphrase(h->security))
       return;
     endwin ();
   }
@@ -378,14 +458,14 @@ static int _mutt_pipe_message (HEADER *h, char *cmd,
 			       int split,
 			       char *sep)
 {
-  
+
   int i, rc = 0;
   pid_t thepid;
   FILE *fpout;
-  
-/*   mutt_endwin (NULL); 
 
-     is this really needed here ? 
+/*   mutt_endwin (NULL);
+
+     is this really needed here ?
      it makes the screen flicker on pgp and s/mime messages,
      before asking for a passphrase...
                                      Oliver Ehli */
@@ -397,7 +477,7 @@ static int _mutt_pipe_message (HEADER *h, char *cmd,
     if (WithCrypto && decode)
     {
       mutt_parse_mime_message (Context, h);
-      if(h->security & ENCRYPT && !crypt_valid_passphrase(h->security))
+      if (h->security & ENCRYPT && !crypt_valid_passphrase(h->security))
 	return 1;
     }
     mutt_endwin (NULL);
@@ -420,7 +500,7 @@ static int _mutt_pipe_message (HEADER *h, char *cmd,
     if (WithCrypto && decode)
     {
       for (i = 0; i < Context->vcount; i++)
-	if(Context->hdrs[Context->v2r[i]]->tagged)
+	if (Context->hdrs[Context->v2r[i]]->tagged)
 	{
 	  mutt_message_hook (Context, Context->hdrs[Context->v2r[i]], MUTT_MESSAGEHOOK);
 	  mutt_parse_mime_message(Context, Context->hdrs[Context->v2r[i]]);
@@ -429,7 +509,7 @@ static int _mutt_pipe_message (HEADER *h, char *cmd,
 	    return 1;
 	}
     }
-    
+
     if (split)
     {
       for (i = 0; i < Context->vcount; i++)
@@ -497,7 +577,7 @@ void mutt_pipe_message (HEADER *h)
   mutt_expand_path (buffer, sizeof (buffer));
   _mutt_pipe_message (h, buffer,
 		      option (OPTPIPEDECODE),
-		      0, 
+		      0,
 		      option (OPTPIPESPLIT),
 		      PipeSep);
 }
@@ -510,10 +590,10 @@ void mutt_print_message (HEADER *h)
     mutt_message (_("No printing command has been defined."));
     return;
   }
-  
+
   if (query_quadoption (OPT_PRINT,
 			h ? _("Print message?") : _("Print tagged messages?"))
-		  	!= MUTT_YES)
+      != MUTT_YES)
     return;
 
   if (_mutt_pipe_message (h, PrintCmd,
@@ -542,52 +622,52 @@ int mutt_select_sort (int reverse)
 	_("Sort Date/Frm/Recv/Subj/tO/Thread/Unsort/siZe/sCore/sPam/Label?: "),
 	_("dfrsotuzcpl")))
   {
-  case -1: /* abort - don't resort */
-    return -1;
+    case -1: /* abort - don't resort */
+      return -1;
 
-  case 1: /* (d)ate */
-    Sort = SORT_DATE;
-    break;
+    case 1: /* (d)ate */
+      Sort = SORT_DATE;
+      break;
 
-  case 2: /* (f)rm */
-    Sort = SORT_FROM;
-    break;
-  
-  case 3: /* (r)ecv */
-    Sort = SORT_RECEIVED;
-    break;
-  
-  case 4: /* (s)ubj */
-    Sort = SORT_SUBJECT;
-    break;
-  
-  case 5: /* t(o) */
-    Sort = SORT_TO;
-    break;
-  
-  case 6: /* (t)hread */
-    Sort = SORT_THREADS;
-    break;
-  
-  case 7: /* (u)nsort */
-    Sort = SORT_ORDER;
-    break;
-  
-  case 8: /* si(z)e */
-    Sort = SORT_SIZE;
-    break;
-  
-  case 9: /* s(c)ore */ 
-    Sort = SORT_SCORE;
-    break;
+    case 2: /* (f)rm */
+      Sort = SORT_FROM;
+      break;
 
-  case 10: /* s(p)am */
-    Sort = SORT_SPAM;
-    break;
+    case 3: /* (r)ecv */
+      Sort = SORT_RECEIVED;
+      break;
 
-  case 11: /* (l)abel */
-    Sort = SORT_LABEL;
-    break;
+    case 4: /* (s)ubj */
+      Sort = SORT_SUBJECT;
+      break;
+
+    case 5: /* t(o) */
+      Sort = SORT_TO;
+      break;
+
+    case 6: /* (t)hread */
+      Sort = SORT_THREADS;
+      break;
+
+    case 7: /* (u)nsort */
+      Sort = SORT_ORDER;
+      break;
+
+    case 8: /* si(z)e */
+      Sort = SORT_SIZE;
+      break;
+
+    case 9: /* s(c)ore */
+      Sort = SORT_SCORE;
+      break;
+
+    case 10: /* s(p)am */
+      Sort = SORT_SPAM;
+      break;
+
+    case 11: /* (l)abel */
+      Sort = SORT_LABEL;
+      break;
   }
   if (reverse)
     Sort |= SORT_REVERSE;
@@ -605,7 +685,7 @@ void mutt_shell_escape (void)
   {
     if (!buf[0] && Shell)
       strfcpy (buf, Shell, sizeof (buf));
-    if(buf[0])
+    if (buf[0])
     {
       mutt_window_clearline (MuttMessageWindow, 0);
       mutt_endwin (NULL);
@@ -655,14 +735,14 @@ void mutt_display_address (ENVELOPE *env)
   adr = mutt_get_address (env, &pfx);
 
   if (!adr) return;
-  
-  /* 
+
+  /*
    * Note: We don't convert IDNA to local representation this time.
    * That is intentional, so the user has an opportunity to copy &
    * paste the on-the-wire form of the address to other, IDN-unable
-   * software. 
+   * software.
    */
-  
+
   buf[0] = 0;
   rfc822_write_address (buf, sizeof (buf), adr, 0);
   mutt_message ("%s: %s", pfx, buf);
@@ -672,7 +752,7 @@ static void set_copy_flags (HEADER *hdr, int decode, int decrypt, int *cmflags, 
 {
   *cmflags = 0;
   *chflags = CH_UPDATE_LEN;
-  
+
   if (WithCrypto && !decode && decrypt && (hdr->security & ENCRYPT))
   {
     if ((WithCrypto & APPLICATION_PGP)
@@ -682,7 +762,7 @@ static void set_copy_flags (HEADER *hdr, int decode, int decrypt, int *cmflags, 
       *cmflags = MUTT_CM_DECODE_PGP;
     }
     else if ((WithCrypto & APPLICATION_PGP)
-              && mutt_is_application_pgp (hdr->content) & ENCRYPT)
+             && mutt_is_application_pgp (hdr->content) & ENCRYPT)
       decode = 1;
     else if ((WithCrypto & APPLICATION_SMIME)
              && mutt_is_application_smime(hdr->content) & ENCRYPT)
@@ -714,7 +794,7 @@ int _mutt_save_message (HEADER *h, CONTEXT *ctx, int delete, int decode, int dec
 {
   int cmflags, chflags;
   int rc;
-  
+
   set_copy_flags (h, decode, decrypt, &cmflags, &chflags);
 
   if (decode || decrypt)
@@ -730,7 +810,7 @@ int _mutt_save_message (HEADER *h, CONTEXT *ctx, int delete, int decode, int dec
     if (option (OPTDELETEUNTAG))
       mutt_set_flag (Context, h, MUTT_TAG, 0);
   }
-  
+
   return 0;
 }
 
@@ -750,7 +830,7 @@ int mutt_save_message (HEADER *h, int delete, int decode, int decrypt)
 			_("Decrypt-copy%s to mailbox")) :
 	     (delete ? _("Save%s to mailbox") : _("Copy%s to mailbox"))),
 	    h ? "" : _(" tagged"));
-  
+
 
   if (h)
   {
@@ -795,7 +875,7 @@ int mutt_save_message (HEADER *h, int delete, int decode, int decrypt)
 
   if (!buf[0])
     return (-1);
- 
+
   /* This is an undocumented feature of ELM pointed out to me by Felix von
    * Leitner <leitner@prz.fu-berlin.de>
    */
@@ -813,11 +893,11 @@ int mutt_save_message (HEADER *h, int delete, int decode, int decrypt)
   if (WithCrypto && need_passphrase && (decode || decrypt)
       && !crypt_valid_passphrase(app))
     return -1;
-  
+
   mutt_message (_("Copying to %s..."), buf);
-  
+
 #ifdef USE_IMAP
-  if (Context->magic == MUTT_IMAP && 
+  if (Context->magic == MUTT_IMAP &&
       !(decode || decrypt) && mx_is_imap (buf))
   {
     switch (imap_copy_messages (Context, h, buf, delete))
@@ -850,7 +930,7 @@ int mutt_save_message (HEADER *h, int delete, int decode, int decrypt)
 	{
 	  mutt_message_hook (Context, Context->hdrs[Context->v2r[i]], MUTT_MESSAGEHOOK);
 	  if (_mutt_save_message(Context->hdrs[Context->v2r[i]],
-			     &ctx, delete, decode, decrypt) != 0)
+                                 &ctx, delete, decode, decrypt) != 0)
           {
             mx_close_mailbox (&ctx, NULL);
             return -1;
@@ -869,7 +949,7 @@ int mutt_save_message (HEADER *h, int delete, int decode, int decrypt)
     mutt_clear_error ();
     return (0);
   }
-  
+
   return -1;
 }
 
@@ -898,7 +978,7 @@ int mutt_edit_content_type (HEADER *h, BODY *b, FILE *fp)
   short charset_changed = 0;
   short type_changed = 0;
   short structure_changed = 0;
-  
+
   cp = mutt_get_parameter ("charset", b->parameter);
   strfcpy (charset, NONULL (cp), sizeof (charset));
 
@@ -907,7 +987,7 @@ int mutt_edit_content_type (HEADER *h, BODY *b, FILE *fp)
   if (b->parameter)
   {
     size_t l;
-    
+
     for (p = b->parameter; p; p = p->next)
     {
       l = strlen (buf);
@@ -916,18 +996,18 @@ int mutt_edit_content_type (HEADER *h, BODY *b, FILE *fp)
       snprintf (buf + l, sizeof (buf) - l, "; %s=%s", p->attribute, tmp);
     }
   }
-  
+
   if (mutt_get_field ("Content-Type: ", buf, sizeof (buf), 0) != 0 ||
       buf[0] == 0)
     return 0;
-  
+
   /* clean up previous junk */
   mutt_free_parameter (&b->parameter);
   FREE (&b->subtype);
-  
+
   mutt_parse_content_type (buf, b);
 
-  
+
   snprintf (tmp, sizeof (tmp), "%s/%s", TYPE (b), NONULL (b->subtype));
   type_changed = ascii_strcasecmp (tmp, obuf);
   charset_changed = ascii_strcasecmp (charset, mutt_get_parameter ("charset", b->parameter));
@@ -944,7 +1024,7 @@ int mutt_edit_content_type (HEADER *h, BODY *b, FILE *fp)
   }
 
   /* inform the user */
-  
+
   snprintf (tmp, sizeof (tmp), "%s/%s", TYPE (b), NONULL (b->subtype));
   if (type_changed)
     mutt_message (_("Content-Type changed to %s."), tmp);
@@ -976,7 +1056,7 @@ int mutt_edit_content_type (HEADER *h, BODY *b, FILE *fp)
     structure_changed = 1;
     mutt_parse_part (fp, b);
   }
-  
+
   if (WithCrypto && h)
   {
     if (h->content == b)
@@ -993,9 +1073,9 @@ static int _mutt_check_traditional_pgp (HEADER *h, int *redraw)
 {
   MESSAGE *msg;
   int rv = 0;
-  
+
   h->security |= PGP_TRADITIONAL_CHECKED;
-  
+
   mutt_parse_mime_message (Context, h);
   if ((msg = mx_open_message (Context, h->msgno)) == NULL)
     return 0;
@@ -1005,7 +1085,7 @@ static int _mutt_check_traditional_pgp (HEADER *h, int *redraw)
     *redraw |= REDRAW_FULL;
     rv = 1;
   }
-  
+
   h->security |= PGP_TRADITIONAL_CHECKED;
   mx_close_message (Context, &msg);
   return rv;
@@ -1020,7 +1100,7 @@ int mutt_check_traditional_pgp (HEADER *h, int *redraw)
   else
   {
     for (i = 0; i < Context->vcount; i++)
-      if (Context->hdrs[Context->v2r[i]]->tagged && 
+      if (Context->hdrs[Context->v2r[i]]->tagged &&
 	  !(Context->hdrs[Context->v2r[i]]->security & PGP_TRADITIONAL_CHECKED))
 	rv = _mutt_check_traditional_pgp (Context->hdrs[Context->v2r[i]], redraw)
 	  || rv;

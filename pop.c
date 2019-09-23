@@ -1,21 +1,21 @@
 /*
  * Copyright (C) 2000-2002 Vsevolod Volkov <vvv@mutt.org.ua>
  * Copyright (C) 2006-2007,2009 Rocco Rutte <pdmef@gmx.net>
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */
 
 #if HAVE_CONFIG_H
 # include "config.h"
@@ -118,7 +118,7 @@ static int pop_read_header (POP_DATA *pop_data, HEADER *h)
 
 	dprint (1, (debugfile, "pop_read_header: unset TOP capability\n"));
 	snprintf (pop_data->err_msg, sizeof (pop_data->err_msg), "%s",
-		_("Command TOP is not supported by server."));
+                  _("Command TOP is not supported by server."));
       }
     }
   }
@@ -166,9 +166,9 @@ static int fetch_uidl (char *line, void *data)
   errno = 0;
   index = strtol(line, &endp, 10);
   if (errno)
-      return -1;
+    return -1;
   while (*endp == ' ')
-      endp++;
+    endp++;
   memmove(line, endp, strlen(endp) + 1);
 
   /* uid must be at least be 1 byte */
@@ -296,7 +296,7 @@ static int pop_fetch_headers (CONTEXT *ctx)
 
       dprint (1, (debugfile, "pop_fetch_headers: unset UIDL capability\n"));
       snprintf (pop_data->err_msg, sizeof (pop_data->err_msg), "%s",
-	      _("Command UIDL is not supported by server."));
+                _("Command UIDL is not supported by server."));
     }
   }
 
@@ -351,13 +351,13 @@ static int pop_fetch_headers (CONTEXT *ctx)
       }
       else
 #endif
-      if ((ret = pop_read_header (pop_data, ctx->hdrs[i])) < 0)
-	break;
+        if ((ret = pop_read_header (pop_data, ctx->hdrs[i])) < 0)
+          break;
 #if USE_HCACHE
-      else
-      {
-	mutt_hcache_store (hc, ctx->hdrs[i]->data, ctx->hdrs[i], 0, strlen, MUTT_GENERATE_UIDVALIDITY);
-      }
+        else
+        {
+          mutt_hcache_store (hc, ctx->hdrs[i]->data, ctx->hdrs[i], 0, strlen, MUTT_GENERATE_UIDVALIDITY);
+        }
 
       mutt_hcache_free (&data);
 #endif
@@ -398,7 +398,7 @@ static int pop_fetch_headers (CONTEXT *ctx)
   }
 
 #if USE_HCACHE
-    mutt_hcache_close (hc);
+  mutt_hcache_close (hc);
 #endif
 
   if (ret < 0)
@@ -567,7 +567,7 @@ static int pop_fetch_message (CONTEXT* ctx, MESSAGE* msg, int msgno)
       msg->fp = fopen (cache->path, "r");
       if (msg->fp)
 	return 0;
-      
+
       mutt_perror (cache->path);
       mutt_sleep (2);
       return -1;
@@ -798,6 +798,22 @@ static int pop_check_mailbox (CONTEXT *ctx, int *index_hint)
   return 0;
 }
 
+static int pop_save_to_header_cache (CONTEXT *ctx, HEADER *h)
+{
+  int rc = 0;
+#ifdef USE_HCACHE
+  POP_DATA *pop_data;
+  header_cache_t *hc;
+
+  pop_data = (POP_DATA *)ctx->data;
+  hc = pop_hcache_open (pop_data, ctx->path);
+  rc = mutt_hcache_store (hc, h->data, h, 0, strlen, MUTT_GENERATE_UIDVALIDITY);
+  mutt_hcache_close (hc);
+#endif
+
+  return rc;
+}
+
 /* Fetch messages and save them in $spoolfile */
 void pop_fetch_mail (void)
 {
@@ -970,4 +986,5 @@ struct mx_ops mx_pop_ops = {
   .commit_msg = NULL,
   .open_new_msg = NULL,
   .sync = pop_sync_mailbox,
+  .save_to_header_cache = pop_save_to_header_cache,
 };

@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 1996-2002,2010,2016 Michael R. Elkins <me@mutt.org>
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */
 
 WHERE void (*mutt_error) (const char *, ...);
 WHERE void (*mutt_message) (const char *, ...);
@@ -23,6 +23,7 @@ WHERE CONTEXT *Context;
 
 WHERE char Errorbuf[STRING];
 WHERE char AttachmentMarker[STRING];
+WHERE char ProtectedHeaderMarker[STRING];
 
 #if defined(DL_STANDALONE) && defined(USE_DOTLOCK)
 WHERE char *MuttDotlock;
@@ -118,6 +119,7 @@ WHERE char *Postponed;
 WHERE char *PostponeEncryptAs;
 WHERE char *Prefix;
 WHERE char *PrintCmd;
+WHERE char *ProtHdrSubject;
 WHERE char *NewMailCmd;
 WHERE char *QueryCmd;
 WHERE char *QueryFormat;
@@ -171,6 +173,7 @@ WHERE const char *ReleaseDate;
 
 WHERE HASH *Groups;
 WHERE HASH *ReverseAlias;
+WHERE HASH *AutoSubscribeCache;
 
 WHERE LIST *AutoViewList INITVAL(0);
 WHERE LIST *AlternativeOrderList INITVAL(0);
@@ -236,6 +239,7 @@ WHERE LIST *SidebarWhitelist INITVAL(0);
 #endif
 
 #ifdef USE_IMAP
+WHERE long  ImapFetchChunkSize;
 WHERE short ImapKeepalive;
 WHERE short ImapPipelineDepth;
 WHERE short ImapPollTimeout;
@@ -308,7 +312,7 @@ extern const char * const Months[];
 #endif
 
 #ifdef MAIN_C
-/* so that global vars get included */ 
+/* so that global vars get included */
 #include "mx.h"
 #include "mutt_regex.h"
 #include "buffy.h"

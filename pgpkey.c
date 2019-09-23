@@ -1,19 +1,19 @@
 /*
  * Copyright (C) 1996-1997,2007 Michael R. Elkins <me@mutt.org>
  * Copyright (c) 1998-2003 Thomas Roessler <roessler@does-not-exist.org>
- * 
+ *
  *     This program is free software; you can redistribute it
  *     and/or modify it under the terms of the GNU General Public
  *     License as published by the Free Software Foundation; either
  *     version 2 of the License, or (at your option) any later
  *     version.
- * 
+ *
  *     This program is distributed in the hope that it will be
  *     useful, but WITHOUT ANY WARRANTY; without even the implied
  *     warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
  *     PURPOSE.  See the GNU General Public License for more
  *     details.
- * 
+ *
  *     You should have received a copy of the GNU General Public
  *     License along with this program; if not, write to the Free
  *     Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
@@ -87,7 +87,7 @@ static char pgp_flags (int flags)
     return 'd';
   else if (flags & KEYFLAG_CRITICAL)
     return 'c';
-  else 
+  else
     return ' ';
 }
 
@@ -101,7 +101,7 @@ static pgp_key_t pgp_principal_key (pgp_key_t key)
 
 /*
  * Format an entry on the PGP key selection menu.
- * 
+ *
  * %n	number
  * %k	key id		%K 	key id of the principal key
  * %u	user id
@@ -153,63 +153,63 @@ static const char *pgp_entry_fmt (char *dest,
   {
     case '[':
 
+    {
+      const char *cp;
+      char buf2[SHORT_STRING], *p;
+      int do_locales;
+      struct tm *tm;
+      size_t len;
+
+      p = dest;
+
+      cp = src;
+      if (*cp == '!')
       {
-	const char *cp;
-	char buf2[SHORT_STRING], *p;
-	int do_locales;
-	struct tm *tm;
-	size_t len;
-
-	p = dest;
-
-	cp = src;
-	if (*cp == '!')
-	{
-	  do_locales = 0;
-	  cp++;
-	}
-	else
-	  do_locales = 1;
-
-	len = destlen - 1;
-	while (len > 0 && *cp != ']')
-	{
-	  if (*cp == '%')
-	  {
-	    cp++;
-	    if (len >= 2)
-	    {
-	      *p++ = '%';
-	      *p++ = *cp;
-	      len -= 2;
-	    }
-	    else
-	      break; /* not enough space */
-	    cp++;
-	  }
-	  else
-	  {
-	    *p++ = *cp++;
-	    len--;
-	  }
-	}
-	*p = 0;
-
-
-	tm = localtime (&key->gen_time);
-
-        if (!do_locales)
-          setlocale (LC_TIME, "C");
-        strftime (buf2, sizeof (buf2), dest, tm);
-        if (!do_locales)
-          setlocale (LC_TIME, "");
-
-	snprintf (fmt, sizeof (fmt), "%%%ss", prefix);
-	snprintf (dest, destlen, fmt, buf2);
-	if (len > 0)
-	  src = cp + 1;
+        do_locales = 0;
+        cp++;
       }
-      break;
+      else
+        do_locales = 1;
+
+      len = destlen - 1;
+      while (len > 0 && *cp != ']')
+      {
+        if (*cp == '%')
+        {
+          cp++;
+          if (len >= 2)
+          {
+            *p++ = '%';
+            *p++ = *cp;
+            len -= 2;
+          }
+          else
+            break; /* not enough space */
+          cp++;
+        }
+        else
+        {
+          *p++ = *cp++;
+          len--;
+        }
+      }
+      *p = 0;
+
+
+      tm = localtime (&key->gen_time);
+
+      if (!do_locales)
+        setlocale (LC_TIME, "C");
+      strftime (buf2, sizeof (buf2), dest, tm);
+      if (!do_locales)
+        setlocale (LC_TIME, "");
+
+      snprintf (fmt, sizeof (fmt), "%%%ss", prefix);
+      snprintf (dest, destlen, fmt, buf2);
+      if (len > 0)
+        src = cp + 1;
+    }
+    break;
     case 'n':
       if (!optional)
       {
@@ -292,7 +292,7 @@ static void pgp_entry (char *s, size_t l, MUTTMENU * menu, int num)
   entry.uid = KeyTable[num];
   entry.num = num + 1;
 
-  mutt_FormatString (s, l, 0, MuttIndexWindow->cols, NONULL (PgpEntryFormat), pgp_entry_fmt, 
+  mutt_FormatString (s, l, 0, MuttIndexWindow->cols, NONULL (PgpEntryFormat), pgp_entry_fmt,
 		     (unsigned long) &entry, MUTT_FORMAT_ARROWCURSOR);
 }
 
@@ -313,7 +313,7 @@ static int _pgp_compare_address (const void *a, const void *b)
 static int pgp_compare_address (const void *a, const void *b)
 {
   return ((PgpSortKeys & SORT_REVERSE) ? !_pgp_compare_address (a, b)
-				       : _pgp_compare_address (a, b));
+          : _pgp_compare_address (a, b));
 }
 
 
@@ -325,7 +325,7 @@ static int _pgp_compare_keyid (const void *a, const void *b)
   pgp_uid_t **s = (pgp_uid_t **) a;
   pgp_uid_t **t = (pgp_uid_t **) b;
 
-  if ((r = mutt_strcasecmp (pgp_fpr_or_lkeyid ((*s)->parent), 
+  if ((r = mutt_strcasecmp (pgp_fpr_or_lkeyid ((*s)->parent),
 			    pgp_fpr_or_lkeyid ((*t)->parent))))
     return r > 0;
   else
@@ -335,7 +335,7 @@ static int _pgp_compare_keyid (const void *a, const void *b)
 static int pgp_compare_keyid (const void *a, const void *b)
 {
   return ((PgpSortKeys & SORT_REVERSE) ? !_pgp_compare_keyid (a, b)
-				       : _pgp_compare_keyid (a, b));
+          : _pgp_compare_keyid (a, b));
 }
 
 static int _pgp_compare_date (const void *a, const void *b)
@@ -352,7 +352,7 @@ static int _pgp_compare_date (const void *a, const void *b)
 static int pgp_compare_date (const void *a, const void *b)
 {
   return ((PgpSortKeys & SORT_REVERSE) ? !_pgp_compare_date (a, b)
-				       : _pgp_compare_date (a, b));
+          : _pgp_compare_date (a, b));
 }
 
 static int _pgp_compare_trust (const void *a, const void *b)
@@ -373,14 +373,14 @@ static int _pgp_compare_trust (const void *a, const void *b)
     return r < 0;
   if ((r = mutt_strcasecmp ((*s)->addr, (*t)->addr)))
     return r > 0;
-  return (mutt_strcasecmp (pgp_fpr_or_lkeyid ((*s)->parent), 
+  return (mutt_strcasecmp (pgp_fpr_or_lkeyid ((*s)->parent),
 			   pgp_fpr_or_lkeyid ((*t)->parent))) > 0;
 }
 
 static int pgp_compare_trust (const void *a, const void *b)
 {
   return ((PgpSortKeys & SORT_REVERSE) ? !_pgp_compare_trust (a, b)
-				       : _pgp_compare_trust (a, b));
+          : _pgp_compare_trust (a, b));
 }
 
 static int pgp_key_is_valid (pgp_key_t k)
@@ -546,108 +546,108 @@ static pgp_key_t pgp_select_key (pgp_key_t keys,
     switch (mutt_menuLoop (menu))
     {
 
-    case OP_VERIFY_KEY:
+      case OP_VERIFY_KEY:
 
-      mutt_mktemp (tempfile, sizeof (tempfile));
-      if ((devnull = fopen ("/dev/null", "w")) == NULL)	/* __FOPEN_CHECKED__ */
-      {
-	mutt_perror _("Can't open /dev/null");
-	break;
-      }
-      if ((fp = safe_fopen (tempfile, "w")) == NULL)
-      {
-	safe_fclose (&devnull);
-	mutt_perror _("Can't create temporary file");
-	break;
-      }
+        mutt_mktemp (tempfile, sizeof (tempfile));
+        if ((devnull = fopen ("/dev/null", "w")) == NULL)	/* __FOPEN_CHECKED__ */
+        {
+          mutt_perror _("Can't open /dev/null");
+          break;
+        }
+        if ((fp = safe_fopen (tempfile, "w")) == NULL)
+        {
+          safe_fclose (&devnull);
+          mutt_perror _("Can't create temporary file");
+          break;
+        }
 
-      mutt_message _("Invoking PGP...");
+        mutt_message _("Invoking PGP...");
 
-      snprintf (tmpbuf, sizeof (tmpbuf), "0x%s",
-          pgp_fpr_or_lkeyid (pgp_principal_key (KeyTable[menu->current]->parent)));
+        snprintf (tmpbuf, sizeof (tmpbuf), "0x%s",
+                  pgp_fpr_or_lkeyid (pgp_principal_key (KeyTable[menu->current]->parent)));
 
-      if ((thepid = pgp_invoke_verify_key (NULL, NULL, NULL, -1,
-		    fileno (fp), fileno (devnull), tmpbuf)) == -1)
-      {
-	mutt_perror _("Can't create filter");
-	unlink (tempfile);
-	safe_fclose (&fp);
-	safe_fclose (&devnull);
-      }
+        if ((thepid = pgp_invoke_verify_key (NULL, NULL, NULL, -1,
+                                             fileno (fp), fileno (devnull), tmpbuf)) == -1)
+        {
+          mutt_perror _("Can't create filter");
+          unlink (tempfile);
+          safe_fclose (&fp);
+          safe_fclose (&devnull);
+        }
 
-      mutt_wait_filter (thepid);
-      safe_fclose (&fp);
-      safe_fclose (&devnull);
-      mutt_clear_error ();
-      snprintf (cmd, sizeof (cmd), _("Key ID: 0x%s"), 
-		pgp_keyid (pgp_principal_key (KeyTable[menu->current]->parent)));
-      mutt_do_pager (cmd, tempfile, 0, NULL);
-      menu->redraw = REDRAW_FULL;
+        mutt_wait_filter (thepid);
+        safe_fclose (&fp);
+        safe_fclose (&devnull);
+        mutt_clear_error ();
+        snprintf (cmd, sizeof (cmd), _("Key ID: 0x%s"),
+                  pgp_keyid (pgp_principal_key (KeyTable[menu->current]->parent)));
+        mutt_do_pager (cmd, tempfile, 0, NULL);
+        menu->redraw = REDRAW_FULL;
 
-      break;
+        break;
 
-    case OP_VIEW_ID:
+      case OP_VIEW_ID:
 
-      mutt_message ("%s", NONULL (KeyTable[menu->current]->addr));
-      break;
+        mutt_message ("%s", NONULL (KeyTable[menu->current]->addr));
+        break;
 
-    case OP_GENERIC_SELECT_ENTRY:
+      case OP_GENERIC_SELECT_ENTRY:
 
 
-      /* XXX make error reporting more verbose */
+        /* XXX make error reporting more verbose */
 
-      if (option (OPTPGPCHECKTRUST))
-	if (!pgp_key_is_valid (KeyTable[menu->current]->parent))
-	{
-	  mutt_error _("This key can't be used: expired/disabled/revoked.");
-	  break;
-	}
+        if (option (OPTPGPCHECKTRUST))
+          if (!pgp_key_is_valid (KeyTable[menu->current]->parent))
+          {
+            mutt_error _("This key can't be used: expired/disabled/revoked.");
+            break;
+          }
 
-      if (option (OPTPGPCHECKTRUST) &&
-	  (!pgp_id_is_valid (KeyTable[menu->current])
-	   || !pgp_id_is_strong (KeyTable[menu->current])))
-      {
-	char *s = "";
-	char buff[LONG_STRING];
-	
-	if (KeyTable[menu->current]->flags & KEYFLAG_CANTUSE)
-	  s = N_("ID is expired/disabled/revoked.");
-	else switch (KeyTable[menu->current]->trust & 0x03)
-	{
-	  case 0:
-	    s = N_("ID has undefined validity.");
-	    break;
-	  case 1:
-	    s = N_("ID is not valid.");
-	    break;
-	  case 2:
-	    s = N_("ID is only marginally valid.");
-	    break;
-	}
+        if (option (OPTPGPCHECKTRUST) &&
+            (!pgp_id_is_valid (KeyTable[menu->current])
+             || !pgp_id_is_strong (KeyTable[menu->current])))
+        {
+          char *s = "";
+          char buff[LONG_STRING];
 
-	snprintf (buff, sizeof (buff), _("%s Do you really want to use the key?"),
-		  _(s));
+          if (KeyTable[menu->current]->flags & KEYFLAG_CANTUSE)
+            s = N_("ID is expired/disabled/revoked.");
+          else switch (KeyTable[menu->current]->trust & 0x03)
+               {
+                 case 0:
+                   s = N_("ID has undefined validity.");
+                   break;
+                 case 1:
+                   s = N_("ID is not valid.");
+                   break;
+                 case 2:
+                   s = N_("ID is only marginally valid.");
+                   break;
+               }
 
-	if (mutt_yesorno (buff, MUTT_NO) != MUTT_YES)
-	{
-	  mutt_clear_error ();
-	  break;
-	}
-      }
+          snprintf (buff, sizeof (buff), _("%s Do you really want to use the key?"),
+                    _(s));
+
+          if (mutt_yesorno (buff, MUTT_NO) != MUTT_YES)
+          {
+            mutt_clear_error ();
+            break;
+          }
+        }
 
 # if 0
-      kp = pgp_principal_key (KeyTable[menu->current]->parent);
+        kp = pgp_principal_key (KeyTable[menu->current]->parent);
 # else
-      kp = KeyTable[menu->current]->parent;
+        kp = KeyTable[menu->current]->parent;
 # endif
-      done = 1;
-      break;
+        done = 1;
+        break;
 
-    case OP_EXIT:
+      case OP_EXIT:
 
-      kp = NULL;
-      done = 1;
-      break;
+        kp = NULL;
+        done = 1;
+        break;
     }
   }
 
@@ -753,9 +753,9 @@ BODY *pgp_make_key_attachment (char *tempf)
   mutt_message _("Invoking PGP...");
 
 
-  if ((thepid = 
+  if ((thepid =
        pgp_invoke_export (NULL, NULL, NULL, -1,
-			   fileno (tempfp), fileno (devnull), tmp)) == -1)
+                          fileno (tempfp), fileno (devnull), tmp)) == -1)
   {
     mutt_perror _("Can't create filter");
     unlink (tempf);
@@ -794,7 +794,7 @@ static LIST *pgp_add_string_to_hints (LIST *hints, const char *str)
     return hints;
 
   for (t = strtok (scratch, " ,.:\"()<>\n"); t;
-       		t = strtok (NULL, " ,.:\"()<>\n"))
+       t = strtok (NULL, " ,.:\"()<>\n"))
   {
     if (strlen (t) > 3)
       hints = mutt_add_list (hints, t);
@@ -924,15 +924,15 @@ pgp_key_t pgp_getkeybyaddr (ADDRESS * a, short abilities, pgp_ring_t keyring,
     {
       /*
        * There was precisely one strong match on a valid ID.
-       * 
+       *
        * Proceed without asking the user.
        */
       pgp_remove_key (&matches, the_strong_valid_key);
       k = the_strong_valid_key;
     }
-    else 
+    else
     {
-      /* 
+      /*
        * Else: Ask the user.
        */
       if ((k = pgp_select_key (matches, a, NULL)))

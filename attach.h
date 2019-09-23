@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 1996-2000 Michael R. Elkins <me@mutt.org>
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */
 
 /* common protos for compose / attach menus */
 
@@ -80,5 +80,9 @@ void mutt_actx_add_fp (ATTACH_CONTEXT *actx, FILE *new_fp);
 void mutt_actx_add_body (ATTACH_CONTEXT *actx, BODY *new_body);
 void mutt_actx_free_entries (ATTACH_CONTEXT *actx);
 void mutt_free_attach_context (ATTACH_CONTEXT **pactx);
+
+/* This function is also used in send.c for inline-forwarding attachments */
+void mutt_generate_recvattach_list (ATTACH_CONTEXT *actx, HEADER *hdr, BODY *parts,
+                                    FILE *fp, int parent_type, int level, int decrypted);
 
 #endif /* _ATTACH_H_ */

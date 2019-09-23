@@ -177,11 +177,11 @@ static void print_enriched_string (int attr, unsigned char *s, int do_color)
   }
 }
 
-static void menu_make_entry (char *s, int l, MUTTMENU *menu, int i) 
+static void menu_make_entry (char *s, int l, MUTTMENU *menu, int i)
 {
-  if (menu->dialog) 
+  if (menu->dialog)
   {
-    strncpy (s, menu->dialog[i], l);
+    strncpy (s, NONULL (menu->dialog[i]), l);
     menu->current = -1; /* hide menubar */
   }
   else
@@ -269,15 +269,15 @@ void menu_redraw_index (MUTTMENU *menu)
 
       if (i == menu->current)
       {
-	  SETCOLOR(MT_COLOR_INDICATOR);
-	  if (option(OPTARROWCURSOR))
-	  {
-	    addstr ("->");
-	    ATTRSET(attr);
-	    addch (' ');
-	  }
-	  else
-	    do_color = 0;
+        SETCOLOR(MT_COLOR_INDICATOR);
+        if (option(OPTARROWCURSOR))
+        {
+          addstr ("->");
+          ATTRSET(attr);
+          addch (' ');
+        }
+        else
+          do_color = 0;
       }
       else if (option(OPTARROWCURSOR))
 	addstr("   ");
@@ -299,7 +299,7 @@ void menu_redraw_motion (MUTTMENU *menu)
   char buf[LONG_STRING];
   int old_color, cur_color;
 
-  if (menu->dialog) 
+  if (menu->dialog)
   {
     menu->redraw &= ~REDRAW_MOTION;
     return;
@@ -375,9 +375,9 @@ void menu_redraw_current (MUTTMENU *menu)
 
 static void menu_redraw_prompt (MUTTMENU *menu)
 {
-  if (menu->dialog) 
+  if (menu->dialog)
   {
-    if (option (OPTMSGERR)) 
+    if (option (OPTMSGERR))
     {
       mutt_sleep (1);
       unset_option (OPTMSGERR);
@@ -398,13 +398,13 @@ void menu_check_recenter (MUTTMENU *menu)
 
   if (!option (OPTMENUMOVEOFF) && menu->max <= menu->pagelen) /* less entries than lines */
   {
-    if (menu->top != 0) 
+    if (menu->top != 0)
     {
       menu->top = 0;
       menu->redraw |= REDRAW_INDEX;
     }
   }
-  else 
+  else
   {
     if (option (OPTMENUSCROLL) || (menu->pagelen <= 0) || (c < MenuContext))
     {
@@ -418,7 +418,7 @@ void menu_check_recenter (MUTTMENU *menu)
       if (menu->current < menu->top + c)
 	menu->top -= (menu->pagelen - c) * ((menu->top + menu->pagelen - 1 - menu->current) / (menu->pagelen - c)) - c;
       else if ((menu->current >= menu->top + menu->pagelen - c))
-	menu->top += (menu->pagelen - c) * ((menu->current - menu->top) / (menu->pagelen - c)) - c;	
+	menu->top += (menu->pagelen - c) * ((menu->current - menu->top) / (menu->pagelen - c)) - c;
     }
   }
 
@@ -461,8 +461,9 @@ void menu_next_line (MUTTMENU *menu)
   {
     int c = MIN (MenuContext, menu->pagelen / 2);
 
-    if (menu->top + 1 < menu->max - c
-      && (option(OPTMENUMOVEOFF) || (menu->max > menu->pagelen && menu->top < menu->max - menu->pagelen)))
+    if ((menu->top + 1 < menu->max - c) &&
+        (option(OPTMENUMOVEOFF) ||
+         (menu->max > menu->pagelen && menu->top < menu->max - menu->pagelen)))
     {
       menu->top++;
       if (menu->current < menu->top + c && menu->current < menu->max - 1)
@@ -491,7 +492,7 @@ void menu_prev_line (MUTTMENU *menu)
     mutt_error _("You cannot scroll up farther.");
 }
 
-/* 
+/*
  * pageup:   jumplen == -pagelen
  * pagedown: jumplen == pagelen
  * halfup:   jumplen == -pagelen/2
@@ -520,7 +521,7 @@ static void menu_length_jump (MUTTMENU *menu, int jumplen)
       if ((DIRECTION *
 	   (tmp = (menu->current -
 		   (menu->top + (neg ? (menu->pagelen - 1) - c : c))
-	  ))) < 0)
+             ))) < 0)
 	menu->current -= tmp;
 
       menu->redraw = REDRAW_INDEX;
@@ -532,7 +533,7 @@ static void menu_length_jump (MUTTMENU *menu, int jumplen)
     }
     else
       mutt_error (neg ? _("You are on the first page.")
-		      : _("You are on the last page."));
+                  : _("You are on the last page."));
 
     menu->current = MIN (menu->current, menu->max - 1);
     menu->current = MAX (menu->current, 0);
@@ -683,7 +684,7 @@ static void menu_prev_entry (MUTTMENU *menu)
 
 static int default_color (int i)
 {
-   return ColorDefs[MT_COLOR_NORMAL];
+  return ColorDefs[MT_COLOR_NORMAL];
 }
 
 static int menu_search_generic (MUTTMENU *m, regex_t *re, int n)
@@ -738,6 +739,16 @@ void mutt_menuDestroy (MUTTMENU **p)
   }
 
   FREE (p);		/* __FREE_CHECKED__ */
+}
+
+void mutt_menu_add_dialog_row (MUTTMENU *m, const char *row)
+{
+  if (m->dsize <= m->max)
+  {
+    m->dsize += 10;
+    safe_realloc (&m->dialog, m->dsize * sizeof (char *));
+  }
+  m->dialog[m->max++] = safe_strdup (row);
 }
 
 static MUTTMENU *get_current_menu (void)
@@ -819,11 +830,11 @@ void mutt_current_menu_redraw ()
   if (current_menu)
   {
     if (menu_redraw (current_menu) == OP_REDRAW)
-    /* On a REDRAW_FULL with a non-customized redraw, menu_redraw()
-     * will return OP_REDRAW to give the calling menu-loop a chance to
-     * customize output.
-     */
-       menu_redraw (current_menu);
+      /* On a REDRAW_FULL with a non-customized redraw, menu_redraw()
+       * will return OP_REDRAW to give the calling menu-loop a chance to
+       * customize output.
+       */
+      menu_redraw (current_menu);
   }
 }
 
@@ -838,7 +849,7 @@ static int menu_search (MUTTMENU *menu, int op)
   regex_t re;
   char buf[SHORT_STRING];
   char* searchBuf = menu->menu >= 0 && menu->menu < MENU_MAX ?
-                    SearchBuffers[menu->menu] : NULL;
+    SearchBuffers[menu->menu] : NULL;
 
   if (!(searchBuf && *searchBuf) ||
       (op != OP_SEARCH_NEXT && op != OP_SEARCH_OPPOSITE))
@@ -854,7 +865,7 @@ static int menu_search (MUTTMENU *menu, int op)
       searchBuf = SearchBuffers[menu->menu];
     }
     menu->searchDir = (op == OP_SEARCH || op == OP_SEARCH_NEXT) ?
-		       MUTT_SEARCH_DOWN : MUTT_SEARCH_UP;
+      MUTT_SEARCH_DOWN : MUTT_SEARCH_UP;
   }
 
   searchDir = (menu->searchDir == MUTT_SEARCH_UP) ? -1 : 1;
@@ -897,18 +908,18 @@ static int menu_dialog_translate_op (int i)
 {
   switch (i)
   {
-    case OP_NEXT_ENTRY:   
+    case OP_NEXT_ENTRY:
       return OP_NEXT_LINE;
-    case OP_PREV_ENTRY:	  
+    case OP_PREV_ENTRY:
       return OP_PREV_LINE;
-    case OP_CURRENT_TOP:   case OP_FIRST_ENTRY:  
+    case OP_CURRENT_TOP:   case OP_FIRST_ENTRY:
       return OP_TOP_PAGE;
-    case OP_CURRENT_BOTTOM:    case OP_LAST_ENTRY:	  
+    case OP_CURRENT_BOTTOM:    case OP_LAST_ENTRY:
       return OP_BOTTOM_PAGE;
-    case OP_CURRENT_MIDDLE: 
-      return OP_MIDDLE_PAGE; 
+    case OP_CURRENT_MIDDLE:
+      return OP_MIDDLE_PAGE;
   }
-  
+
   return i;
 }
 
@@ -955,10 +966,10 @@ int menu_redraw (MUTTMENU *menu)
     /* allow the caller to do any local configuration */
     return (OP_REDRAW);
   }
-  
+
   if (!menu->dialog)
     menu_check_recenter (menu);
-  
+
   if (menu->redraw & REDRAW_STATUS)
     menu_redraw_status (menu);
 #ifdef USE_SIDEBAR
@@ -971,10 +982,10 @@ int menu_redraw (MUTTMENU *menu)
     menu_redraw_motion (menu);
   else if (menu->redraw == REDRAW_CURRENT)
     menu_redraw_current (menu);
-  
+
   if (menu->dialog)
     menu_redraw_prompt (menu);
-  
+
   return OP_NULL;
 }
 
@@ -1088,7 +1099,7 @@ int mutt_menuLoop (MUTTMENU *menu)
       mutt_clear_error ();
 
     /* Convert menubar movement to scrolling */
-    if (menu->dialog) 
+    if (menu->dialog)
       i = menu_dialog_translate_op (i);
 
     switch (i)

@@ -10,12 +10,12 @@
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
@@ -129,6 +129,7 @@ int mutt_protect (HEADER *msg, char *keylist)
   BODY *pbody = NULL, *tmp_pbody = NULL;
   BODY *tmp_smime_pbody = NULL;
   BODY *tmp_pgp_pbody = NULL;
+  ENVELOPE *protected_headers = NULL;
   int flags = (WithCrypto & APPLICATION_PGP)? msg->security: 0;
   int i;
 
@@ -193,16 +194,28 @@ int mutt_protect (HEADER *msg, char *keylist)
     tmp_pgp_pbody   = msg->content;
 
   if (option (OPTCRYPTUSEPKA) && (msg->security & SIGN))
-    {
-      /* Set sender (necessary for e.g. PKA).  */
+  {
+    /* Set sender (necessary for e.g. PKA).  */
 
-      if ((WithCrypto & APPLICATION_SMIME)
-	  && (msg->security & APPLICATION_SMIME))
-	crypt_smime_set_sender (msg->env->from->mailbox);
-      else if ((WithCrypto & APPLICATION_PGP)
-	  && (msg->security & APPLICATION_PGP))
-	crypt_pgp_set_sender (msg->env->from->mailbox);
-    }
+    if ((WithCrypto & APPLICATION_SMIME)
+        && (msg->security & APPLICATION_SMIME))
+      crypt_smime_set_sender (msg->env->from->mailbox);
+    else if ((WithCrypto & APPLICATION_PGP)
+             && (msg->security & APPLICATION_PGP))
+      crypt_pgp_set_sender (msg->env->from->mailbox);
+  }
+
+  if (option (OPTCRYPTPROTHDRSWRITE))
+  {
+    protected_headers = mutt_new_envelope ();
+    mutt_str_replace (&protected_headers->subject, msg->env->subject);
+    /* Note: if other headers get added, such as to, cc, then a call to
+     * mutt_env_to_intl() will need to be added here too. */
+    mutt_prepare_envelope (protected_headers, 0);
+
+    mutt_free_envelope (&msg->content->mime_headers);
+    msg->content->mime_headers = protected_headers;
+  }
 
   if (msg->security & SIGN)
   {
@@ -210,7 +223,7 @@ int mutt_protect (HEADER *msg, char *keylist)
         && (msg->security & APPLICATION_SMIME))
     {
       if (!(tmp_pbody = crypt_smime_sign_message (msg->content)))
-	return -1;
+	goto bail;
       pbody = tmp_smime_pbody = tmp_pbody;
     }
 
@@ -219,7 +232,7 @@ int mutt_protect (HEADER *msg, char *keylist)
         && (!(flags & ENCRYPT) || option (OPTPGPRETAINABLESIG)))
     {
       if (!(tmp_pbody = crypt_pgp_sign_message (msg->content)))
-        return -1;
+        goto bail;
 
       flags &= ~SIGN;
       pbody = tmp_pgp_pbody = tmp_pbody;
@@ -229,7 +242,7 @@ int mutt_protect (HEADER *msg, char *keylist)
         && (msg->security & APPLICATION_SMIME)
 	&& (msg->security & APPLICATION_PGP))
     {
-	/* here comes the draft ;-) */
+      /* here comes the draft ;-) */
     }
   }
 
@@ -243,7 +256,7 @@ int mutt_protect (HEADER *msg, char *keylist)
                                                         keylist)))
       {
 	/* signed ? free it! */
-	return (-1);
+	goto bail;
       }
       /* free tmp_body if messages was signed AND encrypted ... */
       if (tmp_smime_pbody != msg->content && tmp_smime_pbody != tmp_pbody)
@@ -273,10 +286,10 @@ int mutt_protect (HEADER *msg, char *keylist)
 	  mutt_free_body (&tmp_pgp_pbody->next);
 	}
 
-	return (-1);
+	goto bail;
       }
 
-      /* destroy temporary signature envelope when doing retainable 
+      /* destroy temporary signature envelope when doing retainable
        * signatures.
 
        */
@@ -288,15 +301,20 @@ int mutt_protect (HEADER *msg, char *keylist)
     }
   }
 
-  if(pbody)
-      msg->content = pbody;
+  if (pbody)
+  {
+    msg->content = pbody;
+    return 0;
+  }
 
-  return 0;
+bail:
+  mutt_free_envelope (&msg->content->mime_headers);
+  return -1;
 }
 
 
-   
-     
+
+
 int mutt_is_multipart_signed (BODY *b)
 {
   char *p;
@@ -314,7 +332,7 @@ int mutt_is_multipart_signed (BODY *b)
   if ((WithCrypto & APPLICATION_PGP)
       && !(ascii_strcasecmp (p, "application/pgp-signature")))
     return PGPSIGN;
-    
+
   if ((WithCrypto & APPLICATION_SMIME)
       && !(ascii_strcasecmp (p, "application/x-pkcs7-signature")))
     return SMIMESIGN;
@@ -324,20 +342,20 @@ int mutt_is_multipart_signed (BODY *b)
 
   return 0;
 }
-   
-     
+
+
 int mutt_is_multipart_encrypted (BODY *b)
 {
   if ((WithCrypto & APPLICATION_PGP))
   {
     char *p;
-  
+
     if (!b || b->type != TYPEMULTIPART ||
         !b->subtype || ascii_strcasecmp (b->subtype, "encrypted") ||
         !(p = mutt_get_parameter ("protocol", b->parameter)) ||
         ascii_strcasecmp (p, "application/pgp-encrypted"))
       return 0;
-  
+
     return PGPENCRYPT;
   }
 
@@ -385,7 +403,7 @@ int mutt_is_malformed_multipart_pgp_encrypted (BODY *b)
   b = b->parts;
   if (!b || b->type != TYPETEXT ||
       !b->subtype || ascii_strcasecmp (b->subtype, "plain") ||
-       b->length != 0)
+      b->length != 0)
     return 0;
 
   b = b->next;
@@ -410,7 +428,7 @@ int mutt_is_application_pgp (BODY *m)
 {
   int t = 0;
   char *p;
-  
+
   if (m->type == TYPEAPPLICATION)
   {
     if (!ascii_strcasecmp (m->subtype, "pgp") || !ascii_strcasecmp (m->subtype, "x-pgp-message"))
@@ -419,11 +437,11 @@ int mutt_is_application_pgp (BODY *m)
 	  && (!ascii_strcasecmp (p, "sign") || !ascii_strcasecmp (p, "signclear")))
 	t |= PGPSIGN;
 
-      if ((p = mutt_get_parameter ("format", m->parameter)) && 
+      if ((p = mutt_get_parameter ("format", m->parameter)) &&
 	  !ascii_strcasecmp (p, "keys-only"))
 	t |= PGPKEY;
 
-      if(!t) t |= PGPENCRYPT;  /* not necessarily correct, but... */
+      if (!t) t |= PGPENCRYPT;  /* not necessarily correct, but... */
     }
 
     if (!ascii_strcasecmp (m->subtype, "pgp-signed"))
@@ -435,9 +453,9 @@ int mutt_is_application_pgp (BODY *m)
   else if (m->type == TYPETEXT && ascii_strcasecmp ("plain", m->subtype) == 0)
   {
     if (((p = mutt_get_parameter ("x-mutt-action", m->parameter))
-	 || (p = mutt_get_parameter ("x-action", m->parameter)) 
+	 || (p = mutt_get_parameter ("x-action", m->parameter))
 	 || (p = mutt_get_parameter ("action", m->parameter)))
-	 && !ascii_strncasecmp ("pgp-sign", p, 8))
+        && !ascii_strncasecmp ("pgp-sign", p, 8))
       t |= PGPSIGN;
     else if (p && !ascii_strncasecmp ("pgp-encrypt", p, 11))
       t |= PGPENCRYPT;
@@ -455,7 +473,7 @@ int mutt_is_application_smime (BODY *m)
   char *t=NULL;
   int len, complain=0;
 
-  if(!m)
+  if (!m)
     return 0;
 
   if ((m->type & TYPEAPPLICATION) && m->subtype)
@@ -472,7 +490,7 @@ int mutt_is_application_smime (BODY *m)
 	  return (SMIMESIGN|SMIMEOPAQUE);
 	else return 0;
       }
-      /* Netscape 4.7 uses 
+      /* Netscape 4.7 uses
        * Content-Description: S/MIME Encrypted Message
        * instead of Content-Type parameter
        */
@@ -487,7 +505,7 @@ int mutt_is_application_smime (BODY *m)
 
     if (!t) t = m->d_filename;
     if (!t) t = m->filename;
-    if (!t) 
+    if (!t)
     {
       if (complain)
 	mutt_message (_("S/MIME messages with no hints on content are unsupported."));
@@ -501,13 +519,9 @@ int mutt_is_application_smime (BODY *m)
     {
       len++;
       if (!ascii_strcasecmp ((t+len), "p7m"))
-#if 0
-       return SMIMEENCRYPT;
-#else
-      /* Not sure if this is the correct thing to do, but 
-         it's required for compatibility with Outlook */
-       return (SMIMESIGN|SMIMEOPAQUE);
-#endif
+        /* Not sure if this is the correct thing to do, but
+           it's required for compatibility with Outlook */
+        return (SMIMESIGN|SMIMEOPAQUE);
       else if (!ascii_strcasecmp ((t+len), "p7s"))
 	return (SMIMESIGN|SMIMEOPAQUE);
     }
@@ -527,7 +541,7 @@ int crypt_query (BODY *m)
 
   if (!WithCrypto)
     return 0;
-  
+
   if (!m)
     return 0;
 
@@ -549,14 +563,14 @@ int crypt_query (BODY *m)
     if (t && m->goodsig)
       t |= GOODSIGN;
   }
-  
+
   if (m->type == TYPEMULTIPART)
   {
     t |= mutt_is_multipart_encrypted(m);
     t |= mutt_is_multipart_signed (m);
     t |= mutt_is_malformed_multipart_pgp_encrypted (m);
 
-    if (t && m->goodsig) 
+    if (t && m->goodsig)
       t |= GOODSIGN;
   }
 
@@ -564,17 +578,17 @@ int crypt_query (BODY *m)
   {
     BODY *p;
     int u, v, w;
-    
+
     u = m->parts ? 0xffffffff : 0;	/* Bits set in all parts */
     w = 0;				/* Bits set in any part  */
- 
+
     for (p = m->parts; p; p = p->next)
     {
       v  = crypt_query (p);
       u &= v; w |= v;
     }
     t |= u | (w & ~GOODSIGN);
-    
+
     if ((w & GOODSIGN) && !(u & GOODSIGN))
       t |= PARTSIGN;
   }
@@ -600,7 +614,7 @@ int crypt_write_signed(BODY *a, STATE *s, const char *tempfile)
     mutt_perror (tempfile);
     return -1;
   }
-      
+
   fseeko (s->fpin, a->hdr_offset, 0);
   bytes = a->length + a->offset - a->hdr_offset;
   hadcr = 0;
@@ -608,21 +622,21 @@ int crypt_write_signed(BODY *a, STATE *s, const char *tempfile)
   {
     if ((c = fgetc (s->fpin)) == EOF)
       break;
-    
+
     bytes--;
-    
+
     if  (c == '\r')
       hadcr = 1;
-    else 
+    else
     {
       if (c == '\n' && !hadcr)
 	fputc ('\r', fp);
-      
+
       hadcr = 0;
     }
-    
+
     fputc (c, fp);
-    
+
   }
   safe_fclose (&fp);
 
@@ -647,11 +661,11 @@ void convert_to_7bit (BODY *a)
       }
       else if ((WithCrypto & APPLICATION_PGP) && option (OPTPGPSTRICTENC))
 	convert_to_7bit (a->parts);
-    } 
+    }
     else if (a->type == TYPEMESSAGE &&
 	     ascii_strcasecmp(a->subtype, "delivery-status"))
     {
-      if(a->encoding != ENC7BIT)
+      if (a->encoding != ENC7BIT)
 	mutt_message_to_7bit (a, NULL);
     }
     else if (a->encoding == ENC8BIT)
@@ -659,7 +673,7 @@ void convert_to_7bit (BODY *a)
     else if (a->encoding == ENCBINARY)
       a->encoding = ENCBASE64;
     else if (a->content && a->encoding != ENCBASE64 &&
-	     (a->content->from || (a->content->space && 
+	     (a->content->from || (a->content->space &&
 				   option (OPTPGPSTRICTENC))))
       a->encoding = ENCQUOTEDPRINTABLE;
     a = a->next;
@@ -706,10 +720,10 @@ void crypt_extract_keys_from_messages (HEADER * h)
 	if ((WithCrypto & APPLICATION_PGP)
             && (Context->hdrs[Context->v2r[i]]->security & APPLICATION_PGP))
 	{
-	  mutt_copy_message (fpout, Context, Context->hdrs[Context->v2r[i]], 
+	  mutt_copy_message (fpout, Context, Context->hdrs[Context->v2r[i]],
 			     MUTT_CM_DECODE|MUTT_CM_CHARCONV, 0);
 	  fflush(fpout);
-	  
+
 	  mutt_endwin (_("Trying to extract PGP keys...\n"));
 	  crypt_pgp_invoke_import (tempfname);
 	}
@@ -729,8 +743,7 @@ void crypt_extract_keys_from_messages (HEADER * h)
           if (Context->hdrs[Context->v2r[i]]->env->from)
 	    tmp = mutt_expand_aliases (Context->hdrs[Context->v2r[i]]->env->from);
 	  else if (Context->hdrs[Context->v2r[i]]->env->sender)
-	    tmp = mutt_expand_aliases (Context->hdrs[Context->v2r[i]]
-                                                    ->env->sender);
+	    tmp = mutt_expand_aliases (Context->hdrs[Context->v2r[i]]->env->sender);
           mbox = tmp ? tmp->mailbox : NULL;
 	  if (mbox)
 	  {
@@ -762,15 +775,15 @@ void crypt_extract_keys_from_messages (HEADER * h)
           && (h->security & APPLICATION_SMIME))
       {
 	if (h->security & ENCRYPT)
-	  mutt_copy_message (fpout, Context, h, MUTT_CM_NOHEADER
-                                                |MUTT_CM_DECODE_CRYPT
-                                                |MUTT_CM_DECODE_SMIME, 0);
+	  mutt_copy_message (fpout, Context, h,
+                             MUTT_CM_NOHEADER | MUTT_CM_DECODE_CRYPT | MUTT_CM_DECODE_SMIME,
+                             0);
 	else
 	  mutt_copy_message (fpout, Context, h, 0, 0);
 
 	fflush(fpout);
 	if (h->env->from) tmp = mutt_expand_aliases (h->env->from);
-	else if (h->env->sender)  tmp = mutt_expand_aliases (h->env->sender); 
+	else if (h->env->sender)  tmp = mutt_expand_aliases (h->env->sender);
 	mbox = tmp ? tmp->mailbox : NULL;
 	if (mbox) /* else ? */
 	{
@@ -780,7 +793,7 @@ void crypt_extract_keys_from_messages (HEADER * h)
       }
     }
   }
-      
+
   safe_fclose (&fpout);
   if (isendwin())
     mutt_any_key_to_continue (NULL);
@@ -822,29 +835,29 @@ int crypt_get_keys (HEADER *msg, char **keylist, int oppenc_mode)
 
   if (oppenc_mode || (msg->security & ENCRYPT))
   {
-     if ((WithCrypto & APPLICATION_PGP)
-         && (msg->security & APPLICATION_PGP))
-     {
-       if ((*keylist = crypt_pgp_findkeys (adrlist, oppenc_mode)) == NULL)
-       {
-           rfc822_free_address (&adrlist);
-           return (-1);
-       }
-       unset_option (OPTPGPCHECKTRUST);
-       if (option (OPTPGPSELFENCRYPT))
-         self_encrypt = PgpDefaultKey;
-     }
-     if ((WithCrypto & APPLICATION_SMIME)
-         && (msg->security & APPLICATION_SMIME))
-     {
-       if ((*keylist = crypt_smime_findkeys (adrlist, oppenc_mode)) == NULL)
-       {
-           rfc822_free_address (&adrlist);
-           return (-1);
-       }
-       if (option (OPTSMIMESELFENCRYPT))
-         self_encrypt = SmimeDefaultKey;
-     }
+    if ((WithCrypto & APPLICATION_PGP)
+        && (msg->security & APPLICATION_PGP))
+    {
+      if ((*keylist = crypt_pgp_findkeys (adrlist, oppenc_mode)) == NULL)
+      {
+        rfc822_free_address (&adrlist);
+        return (-1);
+      }
+      unset_option (OPTPGPCHECKTRUST);
+      if (option (OPTPGPSELFENCRYPT))
+        self_encrypt = PgpDefaultKey;
+    }
+    if ((WithCrypto & APPLICATION_SMIME)
+        && (msg->security & APPLICATION_SMIME))
+    {
+      if ((*keylist = crypt_smime_findkeys (adrlist, oppenc_mode)) == NULL)
+      {
+        rfc822_free_address (&adrlist);
+        return (-1);
+      }
+      if (option (OPTSMIMESELFENCRYPT))
+        self_encrypt = SmimeDefaultKey;
+    }
   }
 
   if (!oppenc_mode && self_encrypt && *self_encrypt)
@@ -855,7 +868,7 @@ int crypt_get_keys (HEADER *msg, char **keylist, int oppenc_mode)
   }
 
   rfc822_free_address (&adrlist);
-    
+
   return (0);
 }
 
@@ -900,7 +913,7 @@ static void crypt_fetch_signatures (BODY ***signatures, BODY *a, int *n)
       crypt_fetch_signatures (signatures, a->parts, n);
     else
     {
-      if((*n % 5) == 0)
+      if ((*n % 5) == 0)
 	safe_realloc (signatures, (*n + 6) * sizeof (BODY **));
 
       (*signatures)[(*n)++] = a;
@@ -908,6 +921,39 @@ static void crypt_fetch_signatures (BODY ***signatures, BODY *a, int *n)
   }
 }
 
+int mutt_should_hide_protected_subject (HEADER *h)
+{
+  if (option (OPTCRYPTPROTHDRSWRITE) &&
+      (h->security & ENCRYPT) &&
+      !(h->security & INLINE) &&
+      ProtHdrSubject && *ProtHdrSubject)
+    return 1;
+
+  return 0;
+}
+
+int mutt_protected_headers_handler (BODY *a, STATE *s)
+{
+  if (option (OPTCRYPTPROTHDRSREAD) && a->mime_headers)
+  {
+    if (a->mime_headers->subject)
+    {
+      if ((s->flags & MUTT_DISPLAY) && option (OPTWEED) &&
+          mutt_matches_ignore ("subject", Ignore) &&
+          !mutt_matches_ignore ("subject", UnIgnore))
+        return 0;
+
+      state_mark_protected_header (s);
+      mutt_write_one_header (s->fpout, "Subject", a->mime_headers->subject,
+                             s->prefix,
+                             mutt_window_wrap_cols (MuttIndexWindow, Wrap),
+                             (s->flags & MUTT_DISPLAY) ? CH_DISPLAY : 0);
+      state_puts ("\n", s);
+    }
+  }
+
+  return 0;
+}
 
 /*
  * This routine verifies a  "multipart/signed"  body.
@@ -918,7 +964,7 @@ int mutt_signed_handler (BODY *a, STATE *s)
   char tempfile[_POSIX_PATH_MAX];
   int signed_type;
   int inconsistent = 0;
-  
+
   BODY *b = a;
   BODY **signatures = NULL;
   int sigcnt = 0;
@@ -977,9 +1023,9 @@ int mutt_signed_handler (BODY *a, STATE *s)
 
   if (s->flags & MUTT_DISPLAY)
   {
-    
+
     crypt_fetch_signatures (&signatures, a->next, &sigcnt);
-    
+
     if (sigcnt)
     {
       mutt_mktemp (tempfile, sizeof (tempfile));
@@ -988,52 +1034,53 @@ int mutt_signed_handler (BODY *a, STATE *s)
 	for (i = 0; i < sigcnt; i++)
 	{
 	  if ((WithCrypto & APPLICATION_PGP)
-              && signatures[i]->type == TYPEAPPLICATION 
+              && signatures[i]->type == TYPEAPPLICATION
 	      && !ascii_strcasecmp (signatures[i]->subtype, "pgp-signature"))
 	  {
 	    if (crypt_pgp_verify_one (signatures[i], s, tempfile) != 0)
 	      goodsig = 0;
-	    
+
 	    continue;
 	  }
 
 	  if ((WithCrypto & APPLICATION_SMIME)
-              && signatures[i]->type == TYPEAPPLICATION 
+              && signatures[i]->type == TYPEAPPLICATION
 	      && (!ascii_strcasecmp(signatures[i]->subtype, "x-pkcs7-signature")
 		  || !ascii_strcasecmp(signatures[i]->subtype, "pkcs7-signature")))
 	  {
 	    if (crypt_smime_verify_one (signatures[i], s, tempfile) != 0)
 	      goodsig = 0;
-	    
+
 	    continue;
 	  }
 
 	  state_printf (s, _("[-- Warning: "
                              "We can't verify %s/%s signatures. --]\n\n"),
-			  TYPE(signatures[i]), signatures[i]->subtype);
+                        TYPE(signatures[i]), signatures[i]->subtype);
 	}
       }
-      
+
       mutt_unlink (tempfile);
 
       b->goodsig = goodsig;
       b->badsig  = !goodsig;
-      
+
       /* Now display the signed body */
       state_attach_puts (_("[-- The following data is signed --]\n\n"), s);
 
+      mutt_protected_headers_handler (a, s);
 
       FREE (&signatures);
     }
     else
       state_attach_puts (_("[-- Warning: Can't find any signatures. --]\n\n"), s);
   }
-  
+
   rc = mutt_body_handler (a, s);
-  
+
   if (s->flags & MUTT_DISPLAY && sigcnt)
     state_attach_puts (_("\n[-- End of signed data --]\n"), s);
-  
+
   return rc;
 }
 
@@ -1042,7 +1089,7 @@ int mutt_signed_handler (BODY *a, STATE *s)
  * See mutt_crypt.h for details.
  */
 const char* crypt_get_fingerprint_or_id (char *p, const char **pphint,
-    const char **ppl, const char **pps)
+                                         const char **ppl, const char **pps)
 {
   const char *ps, *pl, *phint;
   char *pfcopy, *pf, *s1, *s2;
@@ -1138,5 +1185,3 @@ short crypt_is_numerical_keyid (const char *s)
 
   return 1;
 }
-
-

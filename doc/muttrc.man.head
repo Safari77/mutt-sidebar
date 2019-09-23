@@ -26,7 +26,7 @@
 .ft
 .fi
 ..
-.TH muttrc 5 "September 2002" Unix "User Manuals"
+.TH muttrc 5 "January 2019" Unix "User Manuals"
 .SH NAME
 muttrc \- Configuration file for the Mutt Mail User Agent
 .SH DESCRIPTION
@@ -221,9 +221,9 @@ This command binds the given \fIsequence\fP of keys to the given
 specify multiple maps, put only a comma between the maps.
 .PP
 .nf
-\fBcolor\fP \fIobject\fP \fIforeground\fP \fIbackground\fP [ \fIregexp\fP ]
-\fBcolor\fP index \fIforeground\fP \fIbackground\fP [ \fIpattern\fP ]
-\fBcolor\fP compose \fIcomposeobject\fP \fIforeground\fP \fIbackground\fP
+\fBcolor\fP \fIobject\fP [ \fIattribute\fP ... ] \fIforeground\fP \fIbackground\fP [ \fIregexp\fP ]
+\fBcolor\fP index [ \fIattribute\fP ... ] \fIforeground\fP \fIbackground\fP [ \fIpattern\fP ]
+\fBcolor\fP compose \fIcomposeobject\fP [ \fIattribute\fP ... ] \fIforeground\fP \fIbackground\fP
 \fBuncolor\fP index \fIpattern\fP [ \fIpattern\fP ... ]
 .fi
 .IP
@@ -251,6 +251,10 @@ Valid composeobjects include
 Valid colors include:
 .BR white ", " black ", " green ", " magenta ", " blue ", "
 .BR cyan ", " yellow ", " red ", " default ", " color\fIN\fP .
+.IP
+Valid attributes include:
+.BR none ", " bold ", " underline ", "
+.BR reverse ", and " standout .
 .PP
 .nf
 \fBmono\fP \fIobject\fP \fIattribute\fP [ \fIregexp\fP ]
@@ -258,9 +262,7 @@ Valid colors include:
 .fi
 .IP
 For terminals which don't support color, you can still assign
-attributes to objects.  Valid attributes include:
-.BR none ", " bold ", " underline ", " 
-.BR reverse ", and " standout .
+attributes to objects.
 .TP
 [\fBun\fP]\fBignore\fP \fIpattern\fP [ \fIpattern\fP ... ]
 The \fBignore\fP command permits you to specify header fields which
@@ -614,10 +616,10 @@ new messages
 old messages
 .TP
 ~p
-messages addressed to you (as defined by \fBalternates\fP)
+messages addressed to you (consults $from, \fBalternates\fP, and local account/hostname information)
 .TP
 ~P
-messages from you (as defined by \fBalternates\fP)
+messages from you (consults $from, \fBalternates\fP, and local account/hostname information)
 .TP
 ~Q
 messages which have been replied to

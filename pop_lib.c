@@ -1,16 +1,16 @@
 /*
  * Copyright (C) 2000-2003 Vsevolod Volkov <vvv@mutt.org.ua>
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
@@ -63,7 +63,8 @@ int pop_parse_path (const char* path, ACCOUNT* acct)
     acct->flags |= MUTT_ACCT_SSL;
 
   service = getservbyname (url.scheme == U_POP ? "pop3" : "pop3s", "tcp");
-  if (!acct->port) {
+  if (!acct->port)
+  {
     if (service)
       acct->port = ntohs (service->s_port);
     else
@@ -135,7 +136,7 @@ static int fetch_auth (char *line, void *data)
   else
   {
     safe_realloc (&pop_data->auth_list,
-	    strlen (pop_data->auth_list) + strlen (line) + 2);
+                  strlen (pop_data->auth_list) + strlen (line) + 2);
     strcat (pop_data->auth_list, " ");	/* __STRCAT_CHECKED__ */
   }
   strcat (pop_data->auth_list, line);	/* __STRCAT_CHECKED__ */
@@ -148,7 +149,7 @@ static int fetch_auth (char *line, void *data)
  *  0 - successful,
  * -1 - connection lost,
  * -2 - execution error.
-*/
+ */
 static int pop_capabilities (POP_DATA *pop_data, int mode)
 {
   char buf[LONG_STRING];
@@ -226,7 +227,7 @@ static int pop_capabilities (POP_DATA *pop_data, int mode)
  *  0 - successful,
  * -1 - connection lost,
  * -2 - invalid response.
-*/
+ */
 int pop_connect (POP_DATA *pop_data)
 {
   char buf[LONG_STRING];
@@ -260,7 +261,7 @@ int pop_connect (POP_DATA *pop_data)
  * -1 - connection lost,
  * -2 - invalid command or execution error,
  * -3 - authentication canceled.
-*/
+ */
 int pop_open_connection (POP_DATA *pop_data)
 {
   int ret;
@@ -292,7 +293,7 @@ int pop_open_connection (POP_DATA *pop_data)
     if (pop_data->use_stls == 0)
     {
       ret = query_quadoption (OPT_SSLSTARTTLS,
-	    _("Secure connection with TLS?"));
+                              _("Secure connection with TLS?"));
       if (ret == -1)
 	return -2;
       pop_data->use_stls = 1;
@@ -415,7 +416,7 @@ void pop_logout (CONTEXT *ctx)
  *  0 - successful,
  * -1 - connection lost,
  * -2 - invalid command or execution error.
-*/
+ */
 int pop_query_d (POP_DATA *pop_data, char *buf, size_t buflen, char *msg)
 {
   int dbg = MUTT_SOCK_LOG_CMD;
@@ -425,12 +426,12 @@ int pop_query_d (POP_DATA *pop_data, char *buf, size_t buflen, char *msg)
     return -1;
 
 #ifdef DEBUG
-    /* print msg instead of real command */
-    if (msg)
-    {
-      dbg = MUTT_SOCK_LOG_FULL;
-      dprint (MUTT_SOCK_LOG_CMD, (debugfile, "> %s", msg));
-    }
+  /* print msg instead of real command */
+  if (msg)
+  {
+    dbg = MUTT_SOCK_LOG_FULL;
+    dprint (MUTT_SOCK_LOG_CMD, (debugfile, "> %s", msg));
+  }
 #endif
 
   mutt_socket_write_d (pop_data->conn, buf, -1, dbg);
@@ -530,9 +531,9 @@ static int check_uidl (char *line, void *data)
   errno = 0;
   index = strtoul(line, &endp, 10);
   if (errno)
-      return -1;
+    return -1;
   while (*endp == ' ')
-      endp++;
+    endp++;
   memmove(line, endp, strlen(endp) + 1);
 
   for (i = 0; i < ctx->msgcount; i++)
@@ -590,7 +591,7 @@ int pop_reconnect (CONTEXT *ctx)
       return -1;
 
     if (query_quadoption (OPT_POPRECONNECT,
-		_("Connection lost. Reconnect to POP server?")) != MUTT_YES)
+                          _("Connection lost. Reconnect to POP server?")) != MUTT_YES)
       return -1;
   }
 }

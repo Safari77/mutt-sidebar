@@ -4,39 +4,39 @@
  *     License as published by the Free Software Foundation; either
  *     version 2 of the License, or (at your option) any later
  *     version.
- * 
+ *
  *     This program is distributed in the hope that it will be
  *     useful, but WITHOUT ANY WARRANTY; without even the implied
  *     warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
  *     PURPOSE.  See the GNU General Public License for more
  *     details.
- * 
+ *
  *     You should have received a copy of the GNU General Public
  *     License along with this program; if not, write to the Free
- *     Software Foundation, Inc., 51 Franklin Street, Fifth Floor, 
+ *     Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  *     Boston, MA  02110-1301, USA.
- * 
+ *
  */
 
-/* 
+/*
  * Base64 handling elsewhere in mutt should be modified to call
  * these routines. These routines were written because IMAP's
  * AUTHENTICATE protocol required them, and base64 handling
  * elsewhere wasn't sufficiently generic.
- * 
+ *
  */
 
-/* 
+/*
  * This code is heavily modified from fetchmail (also GPL'd, of
  * course) by Brendan Cully <brendan@kublai.com>.
- * 
+ *
  * Original copyright notice:
- * 
+ *
  * The code in the fetchmail distribution is Copyright 1997 by Eric
  * S. Raymond.  Portions are also copyrighted by Carl Harris, 1993
  * and 1995.  Copyright retained for the purpose of protecting free
- * redistribution of source. 
- * 
+ * redistribution of source.
+ *
  */
 
 #if HAVE_CONFIG_H
@@ -47,6 +47,14 @@
 #include "mime.h"
 
 #define BAD     -1
+
+void mutt_buffer_to_base64 (BUFFER *out, const unsigned char *in, size_t len)
+{
+  mutt_buffer_increase_size (out,
+                             ((len * 2) > LONG_STRING) ? (len * 2) : LONG_STRING);
+  mutt_to_base64 ((unsigned char *)out->data, in, len, out->dsize);
+  mutt_buffer_fix_dptr (out);
+}
 
 /* raw bytes to null-terminated base 64 string */
 void mutt_to_base64 (unsigned char *out, const unsigned char *in, size_t len,
@@ -77,6 +85,21 @@ void mutt_to_base64 (unsigned char *out, const unsigned char *in, size_t len,
     *out++ = '=';
   }
   *out = '\0';
+}
+
+int mutt_buffer_from_base64 (BUFFER *out, const char *in)
+{
+  int olen;
+
+  mutt_buffer_increase_size (out, mutt_strlen (in));
+  olen = mutt_from_base64 (out->data, in, out->dsize);
+  /* mutt_from_base64 returns raw bytes, so don't terminate the buffer either */
+  if (olen > 0)
+    out->dptr = out->data + olen;
+  else
+    out->dptr = out->data;
+
+  return olen;
 }
 
 /* Convert '\0'-terminated base 64 string to raw bytes.

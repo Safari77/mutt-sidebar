@@ -38,15 +38,18 @@ void mutt_buffer_free (BUFFER **);
 BUFFER *mutt_buffer_from (char *);
 void mutt_buffer_clear (BUFFER *);
 
+size_t mutt_buffer_len (BUFFER *);
 void mutt_buffer_increase_size (BUFFER *, size_t);
 void mutt_buffer_fix_dptr (BUFFER *);
 
 /* These two replace the buffer contents. */
 int mutt_buffer_printf (BUFFER*, const char*, ...);
 void mutt_buffer_strcpy (BUFFER *, const char *);
+void mutt_buffer_strcpy_n (BUFFER *, const char *, size_t);
 
 /* These append to the buffer. */
 int mutt_buffer_add_printf (BUFFER*, const char*, ...);
+void mutt_buffer_addstr_n (BUFFER*, const char*, size_t);
 void mutt_buffer_addstr (BUFFER*, const char*);
 void mutt_buffer_addch (BUFFER*, char);
 

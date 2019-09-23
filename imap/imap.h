@@ -50,7 +50,7 @@ void imap_disallow_reopen (CONTEXT *ctx);
 extern struct mx_ops mx_imap_ops;
 
 /* browse.c */
-int imap_browse (char* path, struct browser_state* state);
+int imap_browse (const char* path, struct browser_state* state);
 int imap_mailbox_create (const char* folder);
 int imap_mailbox_rename (const char* mailbox);
 
@@ -62,9 +62,9 @@ int imap_copy_messages (CONTEXT* ctx, HEADER* h, char* dest, int delete);
 void imap_logout_all (void);
 
 /* util.c */
-int imap_expand_path (char* path, size_t len);
+int imap_expand_path (BUFFER* path);
 int imap_parse_path (const char* path, IMAP_MBOX* mx);
-void imap_pretty_mailbox (char* path);
+void imap_pretty_mailbox (char* path, size_t pathlen);
 
 int imap_wait_keepalive (pid_t pid);
 void imap_keepalive (void);

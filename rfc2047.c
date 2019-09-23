@@ -1,21 +1,21 @@
 /*
  * Copyright (C) 1996-2000,2010 Michael R. Elkins <me@mutt.org>
  * Copyright (C) 2000-2002 Edmund Grimley Evans <edmundo@rano.org>
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */
 
 #if HAVE_CONFIG_H
 # include "config.h"
@@ -77,7 +77,7 @@ static size_t convert_string (ICONV_CONST char *f, size_t flen,
     return (size_t)(-1);
   }
   *ob = '\0';
-  
+
   *tlen = ob - buf;
 
   safe_realloc (&buf, ob - buf + 1);
@@ -119,13 +119,13 @@ int convert_nonmime_string (char **ps)
     }
   }
   mutt_convert_string (ps,
-      (const char *)mutt_get_default_charset (),
-      Charset, MUTT_ICONV_HOOK_FROM);
+                       (const char *)mutt_get_default_charset (),
+                       Charset, MUTT_ICONV_HOOK_FROM);
   return -1;
 }
 
 char *mutt_choose_charset (const char *fromcode, const char *charsets,
-		      char *u, size_t ulen, char **d, size_t *dlen)
+                           char *u, size_t ulen, char **d, size_t *dlen)
 {
   char canonical_buff[LONG_STRING];
   char *e = 0, *tocode = 0;
@@ -182,7 +182,7 @@ char *mutt_choose_charset (const char *fromcode, const char *charsets,
       *d = e;
     if (dlen)
       *dlen = elen;
-    
+
     mutt_canonical_charset (canonical_buff, sizeof (canonical_buff), tocode);
     mutt_str_replace (&tocode, canonical_buff);
   }
@@ -420,7 +420,7 @@ static int rfc2047_encode (ICONV_CONST char *d, size_t dlen, int col,
   /* Try to convert to UTF-8. */
   if (convert_string (d, dlen, fromcode, icode, &u, &ulen))
   {
-    ret = 1; 
+    ret = 1;
     icode = 0;
     safe_realloc (&u, (ulen = dlen) + 1);
     memcpy (u, d, dlen);
@@ -431,7 +431,7 @@ static int rfc2047_encode (ICONV_CONST char *d, size_t dlen, int col,
   s0 = s1 = t0 = t1 = 0;
   for (t = u; t < u + ulen; t++)
   {
-    if ((*t & 0x80) || 
+    if ((*t & 0x80) ||
 	(*t == '=' && t[1] == '?' && (t == u || HSPACE(*(t-1)))))
     {
       if (!t0) t0 = t;
@@ -471,12 +471,12 @@ static int rfc2047_encode (ICONV_CONST char *d, size_t dlen, int col,
   /* Hack to avoid labelling 8-bit data as us-ascii. */
   if (!icode && mutt_is_us_ascii (tocode))
     tocode = "unknown-8bit";
-  
+
   /* Adjust t0 for maximum length of line. */
   t = u + (ENCWORD_LEN_MAX + 1) - col - ENCWORD_LEN_MIN;
   if (t < u)  t = u;
   if (t < t0) t0 = t;
-  
+
 
   /* Adjust t0 until we can encode a character after a space. */
   for (; t0 > u; t0--)
@@ -577,7 +577,7 @@ static int rfc2047_encode (ICONV_CONST char *d, size_t dlen, int col,
   FREE (&u);
 
   buf[buflen] = '\0';
-  
+
   *e = buf;
   *elen = buflen + 1;
   return ret;
@@ -608,7 +608,7 @@ void rfc2047_encode_adrlist (ADDRESS *addr, const char *tag)
 {
   ADDRESS *ptr = addr;
   int col = tag ? strlen (tag) + 2 : 32;
-  
+
   while (ptr)
   {
     if (ptr->personal)
@@ -623,13 +623,25 @@ void rfc2047_encode_adrlist (ADDRESS *addr, const char *tag)
   }
 }
 
-static int rfc2047_decode_word (char *d, const char *s, size_t len)
+void rfc2047_encode_envelope (ENVELOPE *e)
+{
+  rfc2047_encode_adrlist (e->from, "From");
+  rfc2047_encode_adrlist (e->to, "To");
+  rfc2047_encode_adrlist (e->cc, "Cc");
+  rfc2047_encode_adrlist (e->bcc, "Bcc");
+  rfc2047_encode_adrlist (e->reply_to, "Reply-To");
+  rfc2047_encode_adrlist (e->mail_followup_to, "Mail-Followup-To");
+  rfc2047_encode_adrlist (e->sender, "Sender");
+  rfc2047_encode_string (&e->x_label);
+  rfc2047_encode_string (&e->subject);
+}
+
+static int rfc2047_decode_word (BUFFER *d, const char *s, char **charset)
 {
   const char *pp, *pp1;
   char *pd, *d0;
   const char *t, *t1;
   int enc = 0, count = 0;
-  char *charset = NULL;
   int rv = -1;
 
   pd = d0 = safe_malloc (strlen (s));
@@ -644,17 +656,17 @@ static int rfc2047_decode_word (char *d, const char *s, size_t len)
       while (pp1 && *(pp1 + 1) != '=')
 	pp1 = strchr(pp1 + 1, '?');
       if (!pp1)
-	  goto error_out_0;
+        goto error_out_0;
     }
 
     switch (count)
     {
       case 2:
-	/* ignore language specification a la RFC 2231 */        
+	/* ignore language specification a la RFC 2231 */
 	t = pp1;
         if ((t1 = memchr (pp, '*', t - pp)))
 	  t = t1;
-	charset = mutt_substrdup (pp, t);
+	*charset = mutt_substrdup (pp, t);
 	break;
       case 3:
 	if (toupper ((unsigned char) *pp) == 'Q')
@@ -710,14 +722,10 @@ static int rfc2047_decode_word (char *d, const char *s, size_t len)
 	break;
     }
   }
-  
-  if (charset)
-    mutt_convert_string (&d0, charset, Charset, MUTT_ICONV_HOOK_FROM);
-  mutt_filter_unprintable (&d0);
-  strfcpy (d, d0, len);
+
+  mutt_buffer_addstr (d, d0);
   rv = 0;
 error_out_0:
-  FREE (&charset);
   FREE (&d0);
   return rv;
 }
@@ -798,117 +806,150 @@ static size_t lwsrlen (const char *s, size_t n)
   return len;
 }
 
+static void convert_and_add_text (BUFFER *d, const char *text, size_t len)
+{
+  char *t;
+
+  if (AssumedCharset && *AssumedCharset)
+  {
+    t = safe_malloc (len + 1);
+    strfcpy (t, text, len + 1);
+    convert_nonmime_string (&t);
+    mutt_buffer_addstr (d, t);
+    FREE (&t);
+  }
+  else
+    mutt_buffer_addstr_n (d, text, len);
+}
+
+static void convert_and_add_word (BUFFER *d, BUFFER *word, char **charset)
+{
+  char *t;
+
+  t = safe_strdup (mutt_b2s (word));
+  if (!t)
+    goto out;
+
+  if (*charset)
+    mutt_convert_string (&t, *charset, Charset, MUTT_ICONV_HOOK_FROM);
+
+  mutt_filter_unprintable (&t);
+  mutt_buffer_addstr (d, t);
+  FREE (&t);
+
+out:
+  mutt_buffer_clear (word);
+  FREE (charset);  /* __FREE_CHECKED__ */
+}
+
 /* try to decode anything that looks like a valid RFC2047 encoded
  * header field, ignoring RFC822 parsing rules
  */
 void rfc2047_decode (char **pd)
 {
-  const char *p, *q;
-  size_t m, n;
-  int found_encoded = 0;
-  char *d0, *d;
   const char *s = *pd;
-  size_t dlen;
+  const char *word_begin, *word_end;
+  char *word_charset = NULL, *accumulated_charset = NULL;
+  size_t m, n;
+  int found_encoded = 0, rc;
+  BUFFER *d, *word, *accumulated_word;
 
   if (!s || !*s)
     return;
 
-  dlen = 4 * strlen (s); /* should be enough */
-  d = d0 = safe_malloc (dlen + 1);
+  d = mutt_buffer_pool_get ();
+  word = mutt_buffer_pool_get ();
+  accumulated_word = mutt_buffer_pool_get ();
 
-  while (*s && dlen > 0)
+  while ((word_begin = find_encoded_word (s, &word_end)) != NULL)
   {
-    if (!(p = find_encoded_word (s, &q)))
+    /* If there is text before the encoded word */
+    if (word_begin != s)
     {
-      /* no encoded words */
-      if (option (OPTIGNORELWS))
-      {
-        n = mutt_strlen (s);
-        if (found_encoded && (m = lwslen (s, n)) != 0)
-        {
-          if (m != n)
-            *d = ' ', d++, dlen--;
-          s += m;
-        }
-      }
-      if (AssumedCharset && *AssumedCharset)
-      {
-	char *t;
-	size_t tlen;
+      n = (size_t) (word_begin - s);
 
-	n = mutt_strlen (s);
-	t = safe_malloc (n + 1);
-	strfcpy (t, s, n + 1);
-	convert_nonmime_string (&t);
-	tlen = mutt_strlen (t);
-	strncpy (d, t, tlen);
-	d += tlen;
-	FREE (&t);
-	break;
-      }
-      strncpy (d, s, dlen);
-      d += dlen;
-      break;
-    }
-
-    if (p != s)
-    {
-      n = (size_t) (p - s);
-      /* ignore spaces between encoded word
-       * and linear-white-space between encoded word and *text */
-      if (option (OPTIGNORELWS))
+      if (!found_encoded || ((strspn (s, " \t\r\n") != n)))
       {
-        if (found_encoded && (m = lwslen (s, n)) != 0)
-        {
-          if (m != n)
-            *d = ' ', d++, dlen--;
-          n -= m, s += m;
-        }
+        convert_and_add_word (d, accumulated_word, &accumulated_charset);
 
-        if ((m = n - lwsrlen (s, n)) != 0)
+        if (option (OPTIGNORELWS))
         {
-          if (m > dlen)
-            m = dlen;
-          memcpy (d, s, m);
-          d += m;
-          dlen -= m;
-          if (m != n)
-            *d = ' ', d++, dlen--;
+          if (found_encoded && (m = lwslen (s, n)) != 0)
+          {
+            if (m != n)
+              mutt_buffer_addch (d, ' ');
+            n -= m, s += m;
+          }
+
+          if ((m = n - lwsrlen (s, n)) != 0)
+          {
+            convert_and_add_text (d, s, m);
+            if (m != n)
+              mutt_buffer_addch (d, ' ');
+          }
         }
-      }
-      else if (!found_encoded || strspn (s, " \t\r\n") != n)
-      {
-	if (n > dlen)
-	  n = dlen;
-	memcpy (d, s, n);
-	d += n;
-	dlen -= n;
+        else
+          convert_and_add_text (d, s, n);
       }
     }
 
-    if (rfc2047_decode_word (d, p, dlen) == -1)
+    rc = rfc2047_decode_word (word, word_begin, &word_charset);
+
+    /* If the decode failed, or it's a different charset, write out
+     * the accumulated part. */
+    if ((rc != 0) ||
+        (ascii_strcasecmp (accumulated_charset, word_charset) != 0))
     {
-      /* could not decode word, fall back to displaying the raw string */
-      strfcpy(d, p, dlen);
+      convert_and_add_word (d, accumulated_word, &accumulated_charset);
     }
+
+    /* If the decode failed, write out the raw string. */
+    if (rc != 0)
+    {
+      mutt_buffer_addstr_n (d, word_begin, word_end - word_begin);
+    }
+    /* Otherwise save it to be compared to the next word's charset */
+    else
+    {
+      mutt_buffer_addstr (accumulated_word, mutt_b2s (word));
+      mutt_str_replace (&accumulated_charset, word_charset);
+    }
+
+    mutt_buffer_clear (word);
+    FREE (&word_charset);
     found_encoded = 1;
-    s = q;
-    n = mutt_strlen (d);
-    dlen -= n;
-    d += n;
+    s = word_end;
   }
-  *d = 0;
 
-  FREE (pd);		/* __FREE_CHECKED__ */
-  *pd = d0;
-  mutt_str_adjust (pd);
+  convert_and_add_word (d, accumulated_word, &accumulated_charset);
+
+  if (*s)
+  {
+    if (found_encoded && option (OPTIGNORELWS))
+    {
+      n = mutt_strlen (s);
+      if ((m = lwslen (s, n)) != 0)
+      {
+        if (m != n)
+          mutt_buffer_addch (d, ' ');
+        s += m;
+      }
+    }
+    convert_and_add_text (d, s, mutt_strlen (s));
+  }
+
+  mutt_str_replace (pd, mutt_b2s (d));
+
+  mutt_buffer_pool_release (&d);
+  mutt_buffer_pool_release (&word);
+  mutt_buffer_pool_release (&accumulated_word);
 }
 
 void rfc2047_decode_adrlist (ADDRESS *a)
 {
   while (a)
   {
-    if (a->personal && ((strstr (a->personal, "=?") != NULL) || 
+    if (a->personal && ((strstr (a->personal, "=?") != NULL) ||
 			(AssumedCharset && *AssumedCharset)))
       rfc2047_decode (&a->personal);
     else if (a->group && a->mailbox && (strstr (a->mailbox, "=?") != NULL))
@@ -919,4 +960,18 @@ void rfc2047_decode_adrlist (ADDRESS *a)
 #endif
     a = a->next;
   }
+}
+
+void rfc2047_decode_envelope (ENVELOPE *e)
+{
+  rfc2047_decode_adrlist (e->from);
+  rfc2047_decode_adrlist (e->to);
+  rfc2047_decode_adrlist (e->cc);
+  rfc2047_decode_adrlist (e->bcc);
+  rfc2047_decode_adrlist (e->reply_to);
+  rfc2047_decode_adrlist (e->mail_followup_to);
+  rfc2047_decode_adrlist (e->return_path);
+  rfc2047_decode_adrlist (e->sender);
+  rfc2047_decode (&e->x_label);
+  rfc2047_decode (&e->subject);
 }

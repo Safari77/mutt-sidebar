@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (C) 1996-2002,2004,2007 Michael R. Elkins <me@mutt.org>, and others
  *
  *     This program is free software; you can redistribute it and/or modify
@@ -115,8 +115,10 @@ int mutt_parse_hook (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *err)
     pattern.data = safe_strdup (path);
   }
 #ifdef USE_COMPRESSED
-  else if (data & (MUTT_APPENDHOOK | MUTT_OPENHOOK | MUTT_CLOSEHOOK)) {
-    if (mutt_comp_valid_command (command.data) == 0) {
+  else if (data & (MUTT_APPENDHOOK | MUTT_OPENHOOK | MUTT_CLOSEHOOK))
+  {
+    if (mutt_comp_valid_command (command.data) == 0)
+    {
       strfcpy (err->data, _("badly formatted command string"), err->dsize);
       return -1;
     }
@@ -124,19 +126,21 @@ int mutt_parse_hook (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *err)
 #endif
   else if (DefaultHook && !(data & (MUTT_CHARSETHOOK | MUTT_ICONVHOOK | MUTT_ACCOUNTHOOK))
            && (!WithCrypto || !(data & MUTT_CRYPTHOOK))
-      )
+    )
   {
-    char tmp[HUGE_STRING];
+    BUFFER *tmp = NULL;
 
     /* At this stage remain only message-hooks, reply-hooks, send-hooks,
      * send2-hooks, save-hooks, and fcc-hooks: All those allowing full
      * patterns. If given a simple regexp, we expand $default_hook.
      */
-    strfcpy (tmp, pattern.data, sizeof (tmp));
-    mutt_check_simple (tmp, sizeof (tmp), DefaultHook);
+    tmp = mutt_buffer_pool_get ();
+    mutt_buffer_strcpy (tmp, pattern.data);
+    mutt_check_simple (tmp, DefaultHook);
     FREE (&pattern.data);
     memset (&pattern, 0, sizeof (pattern));
-    pattern.data = safe_strdup (tmp);
+    pattern.data = safe_strdup (mutt_b2s (tmp));
+    mutt_buffer_pool_release (&tmp);
   }
 
   if (data & (MUTT_MBOXHOOK | MUTT_SAVEHOOK | MUTT_FCCHOOK))
@@ -187,7 +191,7 @@ int mutt_parse_hook (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *err)
   if (data & (MUTT_SENDHOOK | MUTT_SEND2HOOK | MUTT_SAVEHOOK | MUTT_FCCHOOK | MUTT_MESSAGEHOOK | MUTT_REPLYHOOK))
   {
     if ((pat = mutt_pattern_comp (pattern.data,
-	   (data & (MUTT_SENDHOOK | MUTT_SEND2HOOK | MUTT_FCCHOOK)) ? 0 : MUTT_FULL_MSG,
+                                  (data & (MUTT_SENDHOOK | MUTT_SEND2HOOK | MUTT_FCCHOOK)) ? 0 : MUTT_FULL_MSG,
 				  err)) == NULL)
       goto error;
   }
@@ -198,13 +202,13 @@ int mutt_parse_hook (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *err)
 #ifdef MUTT_CRYPTHOOK
     if ((rc = REGCOMP (rx, NONULL(pattern.data), ((data & (MUTT_CRYPTHOOK|MUTT_CHARSETHOOK|MUTT_ICONVHOOK)) ? REG_ICASE : 0))) != 0)
 #else
-    if ((rc = REGCOMP (rx, NONULL(pattern.data), (data & (MUTT_CHARSETHOOK|MUTT_ICONVHOOK)) ? REG_ICASE : 0)) != 0)
+      if ((rc = REGCOMP (rx, NONULL(pattern.data), (data & (MUTT_CHARSETHOOK|MUTT_ICONVHOOK)) ? REG_ICASE : 0)) != 0)
 #endif /* MUTT_CRYPTHOOK */
-    {
-      regerror (rc, rx, err->data, err->dsize);
-      FREE (&rx);
-      goto error;
-    }
+      {
+        regerror (rc, rx, err->data, err->dsize);
+        FREE (&rx);
+        goto error;
+      }
   }
 
   if (ptr)
@@ -329,11 +333,7 @@ int mutt_parse_idxfmt_hook (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *
   }
 
   if (DefaultHook && *DefaultHook)
-  {
-    mutt_buffer_increase_size (pattern, HUGE_STRING);
-    mutt_check_simple (pattern->data, pattern->dsize, DefaultHook);
-    mutt_buffer_fix_dptr (pattern);  /* not necessary, but to be safe */
-  }
+    mutt_check_simple (pattern, DefaultHook);
 
   /* check to make sure that a matching hook doesn't already exist */
   for (ptr = hooks; ptr; ptr = ptr->next)
@@ -358,7 +358,7 @@ int mutt_parse_idxfmt_hook (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *
   if ((pat = mutt_pattern_comp (pattern->data,
                                 MUTT_FULL_MSG | MUTT_PATTERN_DYNAMIC,
                                 err)) == NULL)
-      goto out;
+    goto out;
 
   if (ptr)
   {
@@ -410,7 +410,7 @@ int mutt_parse_unhook (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *err)
       if (!type)
       {
 	snprintf (err->data, err->dsize,
-		 _("unhook: unknown hook type: %s"), buf->data);
+                  _("unhook: unknown hook type: %s"), buf->data);
 	return (-1);
       }
       if (current_hook_type == type)
@@ -429,7 +429,7 @@ int mutt_parse_unhook (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *err)
   return 0;
 }
 
-void mutt_folder_hook (char *path)
+void mutt_folder_hook (const char *path)
 {
   HOOK *tmp = Hooks;
   BUFFER err, token;
@@ -442,7 +442,7 @@ void mutt_folder_hook (char *path)
   mutt_buffer_init (&token);
   for (; tmp; tmp = tmp->next)
   {
-    if(!tmp->command)
+    if (!tmp->command)
       continue;
 
     if (tmp->type & MUTT_FOLDERHOOK)
@@ -464,7 +464,7 @@ void mutt_folder_hook (char *path)
   }
   FREE (&token.data);
   FREE (&err.data);
-  
+
   current_hook_type = 0;
 }
 
@@ -496,7 +496,7 @@ void mutt_message_hook (CONTEXT *ctx, HEADER *hdr, int type)
   memset (&cache, 0, sizeof (cache));
   for (hook = Hooks; hook; hook = hook->next)
   {
-    if(!hook->command)
+    if (!hook->command)
       continue;
 
     if (hook->type & type)
@@ -533,7 +533,7 @@ mutt_addr_hook (char *path, size_t pathlen, int type, CONTEXT *ctx, HEADER *hdr)
   /* determine if a matching hook exists */
   for (hook = Hooks; hook; hook = hook->next)
   {
-    if(!hook->command)
+    if (!hook->command)
       continue;
 
     if (hook->type & type)
@@ -604,8 +604,8 @@ static char *_mutt_string_hook (const char *match, int hook)
 
   for (; tmp; tmp = tmp->next)
   {
-    if ((tmp->type & hook) && ((match &&
-	 regexec (tmp->rx.rx, match, 0, NULL, 0) == 0) ^ tmp->rx.not))
+    if ((tmp->type & hook) &&
+        ((match && regexec (tmp->rx.rx, match, 0, NULL, 0) == 0) ^ tmp->rx.not))
       return (tmp->command);
   }
   return (NULL);

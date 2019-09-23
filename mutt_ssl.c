@@ -137,7 +137,7 @@ static int ssl_load_certificates (SSL_CTX *ctx)
         (X509_cmp_current_time (X509_get0_notAfter (cert)) <= 0))
     {
       dprint (2, (debugfile, "ssl_load_certificates: filtering expired cert: %s\n",
-              X509_NAME_oneline (X509_get_subject_name (cert), buf, sizeof (buf))));
+                  X509_NAME_oneline (X509_get_subject_name (cert), buf, sizeof (buf))));
     }
     else
     {
@@ -247,8 +247,10 @@ int mutt_ssl_starttls (CONNECTION* conn)
 
   ssl_get_client_cert(ssldata, conn);
 
-  if (SslCiphers) {
-    if (!SSL_CTX_set_cipher_list (ssldata->ctx, SslCiphers)) {
+  if (SslCiphers)
+  {
+    if (!SSL_CTX_set_cipher_list (ssldata->ctx, SslCiphers))
+    {
       dprint (1, (debugfile, "mutt_ssl_starttls: Could not select preferred ciphers\n"));
       goto bail_ctx;
     }
@@ -284,19 +286,19 @@ int mutt_ssl_starttls (CONNECTION* conn)
   conn->conn_close = tls_close;
 
   conn->ssf = SSL_CIPHER_get_bits (SSL_get_current_cipher (ssldata->ssl),
-    &maxbits);
+                                   &maxbits);
 
   return 0;
 
- bail_ssl:
+bail_ssl:
   SSL_free (ssldata->ssl);
   ssldata->ssl = 0;
- bail_ctx:
+bail_ctx:
   SSL_CTX_free (ssldata->ctx);
   ssldata->ctx = 0;
- bail_ssldata:
+bail_ssldata:
   FREE (&ssldata);
- bail:
+bail:
   return -1;
 }
 
@@ -510,7 +512,8 @@ static int ssl_socket_open (CONNECTION * conn)
 
   ssl_get_client_cert(data, conn);
 
-  if (SslCiphers) {
+  if (SslCiphers)
+  {
     SSL_CTX_set_cipher_list (data->ctx, SslCiphers);
   }
 
@@ -532,7 +535,7 @@ static int ssl_socket_open (CONNECTION * conn)
   data->isopen = 1;
 
   conn->ssf = SSL_CIPHER_get_bits (SSL_get_current_cipher (data->ssl),
-    &maxbits);
+                                   &maxbits);
 
   return 0;
 }
@@ -598,14 +601,14 @@ static int ssl_negotiate (CONNECTION *conn, sslsockdata* ssldata)
   {
     switch (SSL_get_error (ssldata->ssl, err))
     {
-    case SSL_ERROR_SYSCALL:
-      errmsg = _("I/O error");
-      break;
-    case SSL_ERROR_SSL:
-      errmsg = ERR_error_string (ERR_get_error (), NULL);
-      break;
-    default:
-      errmsg = _("unknown error");
+      case SSL_ERROR_SYSCALL:
+        errmsg = _("I/O error");
+        break;
+      case SSL_ERROR_SSL:
+        errmsg = ERR_error_string (ERR_get_error (), NULL);
+        break;
+      default:
+        errmsg = _("unknown error");
     }
 
     mutt_error (_("SSL failed: %s"), errmsg);
@@ -619,7 +622,9 @@ static int ssl_negotiate (CONNECTION *conn, sslsockdata* ssldata)
      %2$s is cipher_version (e.g. "TLSv1/SSLv3")
      %3$s is cipher_name (e.g. "ECDHE-RSA-AES128-GCM-SHA256") */
   mutt_message (_("%s connection using %s (%s)"),
-    SSL_get_version(ssldata->ssl), SSL_get_cipher_version (ssldata->ssl), SSL_get_cipher_name (ssldata->ssl));
+                SSL_get_version(ssldata->ssl),
+                SSL_get_cipher_version (ssldata->ssl),
+                SSL_get_cipher_name (ssldata->ssl));
   mutt_sleep (0);
 
   return 0;
@@ -665,51 +670,51 @@ static void ssl_err (sslsockdata *data, int err)
 
   switch (SSL_get_error (data->ssl, err))
   {
-  case SSL_ERROR_NONE:
-    return;
-  case SSL_ERROR_ZERO_RETURN:
-    errmsg = "SSL connection closed";
-    data->isopen = 0;
-    break;
-  case SSL_ERROR_WANT_READ:
-    errmsg = "retry read";
-    break;
-  case SSL_ERROR_WANT_WRITE:
-    errmsg = "retry write";
-    break;
-  case SSL_ERROR_WANT_CONNECT:
-    errmsg = "retry connect";
-    break;
-  case SSL_ERROR_WANT_ACCEPT:
-    errmsg = "retry accept";
-    break;
-  case SSL_ERROR_WANT_X509_LOOKUP:
-    errmsg = "retry x509 lookup";
-    break;
-  case SSL_ERROR_SYSCALL:
-    errmsg = "I/O error";
-    data->isopen = 0;
-    break;
-  case SSL_ERROR_SSL:
-    sslerr = ERR_get_error ();
-    switch (sslerr)
-    {
-    case 0:
-      switch (err)
+    case SSL_ERROR_NONE:
+      return;
+    case SSL_ERROR_ZERO_RETURN:
+      errmsg = "SSL connection closed";
+      data->isopen = 0;
+      break;
+    case SSL_ERROR_WANT_READ:
+      errmsg = "retry read";
+      break;
+    case SSL_ERROR_WANT_WRITE:
+      errmsg = "retry write";
+      break;
+    case SSL_ERROR_WANT_CONNECT:
+      errmsg = "retry connect";
+      break;
+    case SSL_ERROR_WANT_ACCEPT:
+      errmsg = "retry accept";
+      break;
+    case SSL_ERROR_WANT_X509_LOOKUP:
+      errmsg = "retry x509 lookup";
+      break;
+    case SSL_ERROR_SYSCALL:
+      errmsg = "I/O error";
+      data->isopen = 0;
+      break;
+    case SSL_ERROR_SSL:
+      sslerr = ERR_get_error ();
+      switch (sslerr)
       {
-      case 0:
-	errmsg = "EOF";
-	break;
-      default:
-	errmsg = strerror(errno);
+        case 0:
+          switch (err)
+          {
+            case 0:
+              errmsg = "EOF";
+              break;
+            default:
+              errmsg = strerror(errno);
+          }
+          break;
+        default:
+          errmsg = ERR_error_string (sslerr, NULL);
       }
       break;
     default:
-      errmsg = ERR_error_string (sslerr, NULL);
-    }
-    break;
-  default:
-    errmsg = "unknown error";
+      errmsg = "unknown error";
   }
 
   dprint (1, (debugfile, "SSL error: %s\n", errmsg));
@@ -790,14 +795,14 @@ static char *asn1time_to_string (ASN1_UTCTIME *tm)
 }
 
 static int compare_certificates (X509 *cert, X509 *peercert,
-  unsigned char *peermd, unsigned int peermdlen)
+                                 unsigned char *peermd, unsigned int peermdlen)
 {
   unsigned char md[EVP_MAX_MD_SIZE];
   unsigned int mdlen;
 
   /* Avoid CPU-intensive digest calculation if the certificates are
-    * not even remotely equal.
-    */
+   * not even remotely equal.
+   */
   if (X509_subject_name_cmp (cert, peercert) != 0 ||
       X509_issuer_name_cmp (cert, peercert) != 0)
     return -1;
@@ -1029,7 +1034,8 @@ static int check_host (X509 *x509cert, const char *hostname, char *err, size_t e
     /* cast is safe since bufsize is incremented above, so bufsize-1 is always
      * zero or greater.
      */
-    if (mutt_strlen(buf) == (size_t)bufsize - 1) {
+    if (mutt_strlen(buf) == (size_t)bufsize - 1)
+    {
       match_found = hostname_match(hostname_ascii, buf);
     }
   }
@@ -1168,12 +1174,12 @@ static int ssl_verify_callback (int preverify_ok, X509_STORE_CTX *ctx)
     {
       int err = X509_STORE_CTX_get_error (ctx);
       snprintf (buf, sizeof (buf), "%s (%d)",
-         X509_verify_cert_error_string (err), err);
+                X509_verify_cert_error_string (err), err);
       dprint (2, (debugfile, "X509_verify_cert: %s\n", buf));
     }
 #endif
 
-   /* prompt user */
+    /* prompt user */
     return interactive_check_cert (cert, pos, len, ssl, 1);
   }
 
@@ -1196,53 +1202,56 @@ static int interactive_check_cert (X509 *cert, int idx, int len, SSL *ssl, int a
   char buf[STRING];
   char title[STRING];
   MUTTMENU *menu = mutt_new_menu (MENU_GENERIC);
-  int done, row, i;
+  int done;
+  BUFFER *drow = NULL;
   unsigned u;
   FILE *fp;
   int allow_skip = 0;
 
   mutt_push_current_menu (menu);
 
-  menu->max = mutt_array_size (part) * 2 + 11;
-  menu->dialog = (char **) safe_calloc (1, menu->max * sizeof (char *));
-  for (i = 0; i < menu->max; i++)
-    menu->dialog[i] = (char *) safe_calloc (1, SHORT_STRING * sizeof (char));
+  drow = mutt_buffer_pool_get ();
 
-  row = 0;
-  strfcpy (menu->dialog[row], _("This certificate belongs to:"), SHORT_STRING);
-  row++;
+  mutt_menu_add_dialog_row (menu, _("This certificate belongs to:"));
   x509_subject = X509_get_subject_name (cert);
   for (u = 0; u < mutt_array_size (part); u++)
-    snprintf (menu->dialog[row++], SHORT_STRING, "   %s",
-              x509_get_part (x509_subject, part[u]));
+  {
+    mutt_buffer_printf (drow, "   %s", x509_get_part (x509_subject, part[u]));
+    mutt_menu_add_dialog_row (menu, mutt_b2s (drow));
+  }
 
-  row++;
-  strfcpy (menu->dialog[row], _("This certificate was issued by:"), SHORT_STRING);
-  row++;
+  mutt_menu_add_dialog_row (menu, "");
+  mutt_menu_add_dialog_row (menu, _("This certificate was issued by:"));
   x509_issuer = X509_get_issuer_name (cert);
   for (u = 0; u < mutt_array_size (part); u++)
-    snprintf (menu->dialog[row++], SHORT_STRING, "   %s",
-              x509_get_part (x509_issuer, part[u]));
+  {
+    mutt_buffer_printf (drow, "   %s", x509_get_part (x509_issuer, part[u]));
+    mutt_menu_add_dialog_row (menu, mutt_b2s (drow));
+  }
 
-  row++;
-  snprintf (menu->dialog[row++], SHORT_STRING, "%s", _("This certificate is valid"));
-  snprintf (menu->dialog[row++], SHORT_STRING, _("   from %s"),
-      asn1time_to_string (X509_getm_notBefore (cert)));
-  snprintf (menu->dialog[row++], SHORT_STRING, _("     to %s"),
-      asn1time_to_string (X509_getm_notAfter (cert)));
+  mutt_menu_add_dialog_row (menu, "");
+  mutt_menu_add_dialog_row (menu, _("This certificate is valid"));
+  mutt_buffer_printf (drow, _("   from %s"),
+            asn1time_to_string (X509_getm_notBefore (cert)));
+  mutt_menu_add_dialog_row (menu, mutt_b2s (drow));
+  mutt_buffer_printf (drow, _("     to %s"),
+            asn1time_to_string (X509_getm_notAfter (cert)));
+  mutt_menu_add_dialog_row (menu, mutt_b2s (drow));
 
-  row++;
+  mutt_menu_add_dialog_row (menu, "");
   buf[0] = '\0';
   x509_fingerprint (buf, sizeof (buf), cert, EVP_sha1);
-  snprintf (menu->dialog[row++], SHORT_STRING, _("SHA1 Fingerprint: %s"), buf);
+  mutt_buffer_printf (drow, _("SHA1 Fingerprint: %s"), buf);
+  mutt_menu_add_dialog_row (menu, mutt_b2s (drow));
   buf[0] = '\0';
   buf[40] = '\0';  /* Ensure the second printed line is null terminated */
   x509_fingerprint (buf, sizeof (buf), cert, EVP_sha256);
   buf[39] = '\0';  /* Divide into two lines of output */
-  snprintf (menu->dialog[row++], SHORT_STRING, "%s%s",
-            _("SHA256 Fingerprint: "), buf);
-  snprintf (menu->dialog[row++], SHORT_STRING, "%*s%s",
+  mutt_buffer_printf (drow, "%s%s", _("SHA256 Fingerprint: "), buf);
+  mutt_menu_add_dialog_row (menu, mutt_b2s (drow));
+  mutt_buffer_printf (drow, "%*s%s",
             (int)mutt_strlen (_("SHA256 Fingerprint: ")), "", buf + 40);
+  mutt_menu_add_dialog_row (menu, mutt_b2s (drow));
 
   snprintf (title, sizeof (title),
 	    _("SSL Certificate check (certificate %d of %d in chain)"),
@@ -1262,8 +1271,8 @@ static int interactive_check_cert (X509 *cert, int idx, int len, SSL *ssl, int a
    * to also scan the certificate file here.
    */
   allow_always = allow_always &&
-                 SslCertFile &&
-                 check_certificate_expiration (cert, 1);
+    SslCertFile &&
+    check_certificate_expiration (cert, 1);
 
   /* L10N:
    * These four letters correspond to the choices in the next four strings:
@@ -1340,6 +1349,8 @@ static int interactive_check_cert (X509 *cert, int idx, int len, SSL *ssl, int a
     }
   }
   unset_option(OPTIGNOREMACROEVENTS);
+
+  mutt_buffer_pool_release (&drow);
   mutt_pop_current_menu (menu);
   mutt_menuDestroy (&menu);
   dprint (2, (debugfile, "ssl interactive_check_cert: done=%d\n", done));

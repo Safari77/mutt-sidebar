@@ -10,9 +10,6 @@ AC_CONFIG_HEADERS([config.h])
 
 AC_SUBST([CONFIG_STATUS_DEPENDENCIES], ['$(top_srcdir)/VERSION'])
 
-MUTT_VERSION=`env sh "$srcdir/version.sh"`
-AC_DEFINE_UNQUOTED(MUTT_VERSION,"$MUTT_VERSION", [Full textual version string.])
-
 AC_USE_SYSTEM_EXTENSIONS
 
 ALL_LINGUAS="de eu ru it es uk fr pl nl cs id sk ko el zh_TW zh_CN pt_BR eo gl sv da lt tr ja hu et ca bg ga fi"
@@ -129,23 +126,14 @@ AC_ARG_ENABLE(gpgme, AS_HELP_STRING([--enable-gpgme],[Enable GPGME support]),
 
 if test x"$enable_gpgme" = xyes; then
    AC_MSG_RESULT(yes)
-   AM_PATH_GPGME(1.0.0, AC_DEFINE(CRYPT_BACKEND_GPGME, 1,
+   AM_PATH_GPGME(1.4.0, AC_DEFINE(CRYPT_BACKEND_GPGME, 1,
 		 [Defined, if GPGME support is enabled]),
 		 [gpgme_found=no])
    if test x"$gpgme_found" = xno; then
-      AC_MSG_ERROR([*** GPGME not found ***])
+      AC_MSG_ERROR([*** GPGME not found or version is older than 1.4 ***])
    else
-      AM_PATH_GPGME(1.1.1, AC_DEFINE(HAVE_GPGME_PKA_TRUST, 1,
-				  [Define if GPGME supports PKA]))
-      #needed to get GPGME_LIBS and al correctly
-      AM_PATH_GPGME(1.0.0, AC_DEFINE(CRYPT_BACKEND_GPGME, 1,
-                    [Define if you use GPGME to support OpenPGP]))
-      dnl AC_CHECK_FUNCS([gpgme_op_export_keys])
-      saved_LIBS="$LIBS"
-      LIBS="$LIBS $GPGME_LIBS"
-      AC_CHECK_FUNCS([gpgme_op_export_keys])
-      LIBS="$saved_LIBS"
       MUTT_LIB_OBJECTS="$MUTT_LIB_OBJECTS crypt-gpgme.o crypt-mod-pgp-gpgme.o crypt-mod-smime-gpgme.o"
+      AM_PATH_GPG_ERROR(1.33)
    fi
 else
    AC_MSG_RESULT([no])
@@ -866,14 +854,11 @@ AC_ARG_ENABLE(filemonitor, AS_HELP_STRING([--disable-filemonitor],[Disable file 
 ])
 
 if test x$have_filemonitor != xno ; then
-        AC_CHECK_FUNCS(inotify_init1 inotify_add_watch inotify_rm_watch,
-        [
-                AC_DEFINE(USE_INOTIFY,1,[ Define if want to use inotify for filesystem monitoring (available in Linux only). ])
-        ],
-        [
-                have_filemonitor=no
-        ])
+        AC_CHECK_FUNCS(inotify_init inotify_add_watch inotify_rm_watch,
+                       [], [have_filemonitor=no])
         if test x$have_filemonitor != xno ; then
+                AC_DEFINE(USE_INOTIFY,1,[ Define if want to use inotify for filesystem monitoring (available in Linux only). ])
+                AC_CHECK_FUNCS_ONCE(inotify_init1)
                 AC_CHECK_HEADERS(sys/inotify.h)
                 MUTT_LIB_OBJECTS="$MUTT_LIB_OBJECTS monitor.o"
         fi
@@ -1414,9 +1399,15 @@ if test "x$with_idn2" != "xno"; then
 
     AC_SEARCH_LIBS([idn2_check_version], [idn2], [
       AC_DEFINE([HAVE_LIBIDN2], 1, [Define to 1 if you have the GNU idn2 library])
-      dnl -lunistring is needed for static linking
-      AC_SEARCH_LIBS([u8_strconv_from_locale], [unistring])
       MUTTLIBS="$MUTTLIBS $LIBS"
+
+      dnl -lunistring is needed for static linking, and has to come
+      dnl after the -lidn2
+      AC_SEARCH_LIBS([u8_strconv_from_locale], [unistring], [
+            if test "$ac_cv_search_u8_strconv_from_locale" != "none required"; then
+              MUTTLIBS="$MUTTLIBS -lunistring"
+            fi
+      ])
 
       dnl libidn2 >= 2.0.0 declares compatibility macros in idn2.h
       LIBS="$LIBS $LIBICONV"
@@ -1572,14 +1563,16 @@ then
 fi
 AC_SUBST(DSLROOT)
 
-AC_PATH_PROG([db2x], [docbook2x-texi], [none])
-if test "$db2x" != "none"; then
-   AC_PATH_PROG([makeinfo], [makeinfo], [none])
-   if test "$makeinfo" != "none"; then
+AC_PATH_PROGS([DB2XTEXI], [docbook2x-texi db2x_docbook2texi docbook2texi], [none])
+if test "$DB2XTEXI" != "none"; then
+   AC_PATH_PROG([MAKEINFO], [makeinfo], [none])
+   if test "$MAKEINFO" != "none"; then
       do_build_info=yes
    fi
 fi
 AM_CONDITIONAL(BUILD_INFO, test x$do_build_info = xyes)
+AC_SUBST(DB2XTEXI)
+AC_SUBST(MAKEINFO)
 
 AC_ARG_ENABLE(doc, AS_HELP_STRING([--disable-doc],[Do not build the documentation]),
 [       if test x$enableval = xno ; then

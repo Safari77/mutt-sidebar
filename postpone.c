@@ -103,9 +103,9 @@ int mutt_num_postponed (int force)
 
   if (stat (Postponed, &st) == -1)
   {
-     PostCount = 0;
-     LastModify = 0;
-     return (0);
+    PostCount = 0;
+    LastModify = 0;
+    return (0);
   }
 
   if (S_ISDIR (st.st_mode))
@@ -333,17 +333,17 @@ int mutt_get_postponed (CONTEXT *ctx, HEADER *hdr, HEADER **cur, char *fcc, size
       tmp->next = NULL;
       mutt_free_list (&tmp);
       tmp = next;
-     /* note that x-mutt-fcc was present.  we do this because we want to add a
-      * default fcc if the header was missing, but preserve the request of the
-      * user to not make a copy if the header field is present, but empty.
-      * see http://dev.mutt.org/trac/ticket/3653
-      */
+      /* note that x-mutt-fcc was present.  we do this because we want to add a
+       * default fcc if the header was missing, but preserve the request of the
+       * user to not make a copy if the header field is present, but empty.
+       * see http://dev.mutt.org/trac/ticket/3653
+       */
       code |= SENDPOSTPONEDFCC;
     }
     else if ((WithCrypto & APPLICATION_PGP)
              && (mutt_strncmp ("Pgp:", tmp->data, 4) == 0 /* this is generated
-						       * by old mutt versions
-						       */
+                                                           * by old mutt versions
+                                                           */
                  || mutt_strncmp ("X-Mutt-PGP:", tmp->data, 11) == 0))
     {
       hdr->security = mutt_parse_crypt_hdr (strchr (tmp->data, ':') + 1, 1,
@@ -464,18 +464,18 @@ int mutt_parse_crypt_hdr (const char *p, int set_empty_signas, int crypt_app)
         *q = '\0';
         break;
 
-      /* This used to be the micalg parameter.
-       *
-       * It's no longer needed, so we just skip the parameter in order
-       * to be able to recall old messages.
-       */
+        /* This used to be the micalg parameter.
+         *
+         * It's no longer needed, so we just skip the parameter in order
+         * to be able to recall old messages.
+         */
       case 'm':
       case 'M':
-        if(*(p+1) == '<')
+        if (*(p+1) == '<')
         {
 	  for (p += 2; *p && *p != '>'; p++)
 	    ;
-	  if(*p != '>')
+	  if (*p != '>')
 	  {
 	    mutt_error _("Illegal crypto header");
 	    return 0;
@@ -489,13 +489,13 @@ int mutt_parse_crypt_hdr (const char *p, int set_empty_signas, int crypt_app)
       case 'C':
    	q = smime_cryptalg;
 
-        if(*(p+1) == '<')
+        if (*(p+1) == '<')
 	{
-	  for(p += 2; *p && *p != '>' && q < smime_cryptalg + sizeof(smime_cryptalg) - 1;
-	      *q++ = *p++)
+	  for (p += 2; *p && *p != '>' && q < smime_cryptalg + sizeof(smime_cryptalg) - 1;
+               *q++ = *p++)
 	    ;
 
-	  if(*p != '>')
+	  if (*p != '>')
 	  {
 	    mutt_error _("Illegal S/MIME header");
 	    return 0;
@@ -550,12 +550,13 @@ int mutt_prepare_template (FILE *fp, CONTEXT *ctx, HEADER *newhdr, HEADER *hdr,
                            short resend)
 {
   MESSAGE *msg = NULL;
-  char file[PATH_MAX];
+  BUFFER *file = NULL;
   BODY *b;
   FILE *bfp;
   int rv = -1;
   STATE s;
   int sec_type;
+  ENVELOPE *protected_headers = NULL;
 
   memset (&s, 0, sizeof (s));
 
@@ -605,6 +606,12 @@ int mutt_prepare_template (FILE *fp, CONTEXT *ctx, HEADER *newhdr, HEADER *hdr,
     mutt_free_body (&newhdr->content);
     newhdr->content = b;
 
+    if (b->mime_headers)
+    {
+      protected_headers = b->mime_headers;
+      b->mime_headers = NULL;
+    }
+
     mutt_clear_error ();
   }
 
@@ -625,6 +632,13 @@ int mutt_prepare_template (FILE *fp, CONTEXT *ctx, HEADER *newhdr, HEADER *hdr,
     /* destroy the signature */
     mutt_free_body (&newhdr->content->parts->next);
     newhdr->content = mutt_remove_multipart (newhdr->content);
+
+    if (newhdr->content->mime_headers)
+    {
+      mutt_free_envelope (&protected_headers);
+      protected_headers = newhdr->content->mime_headers;
+      newhdr->content->mime_headers = NULL;
+    }
   }
 
 
@@ -643,6 +657,8 @@ int mutt_prepare_template (FILE *fp, CONTEXT *ctx, HEADER *newhdr, HEADER *hdr,
 
   s.fpin = bfp;
 
+  file = mutt_buffer_pool_get ();
+
   /* create temporary files for all attachments */
   for (b = newhdr->content; b; b = b->next)
   {
@@ -651,10 +667,10 @@ int mutt_prepare_template (FILE *fp, CONTEXT *ctx, HEADER *newhdr, HEADER *hdr,
      * mutt_get_tmp_attachment () from muttlib.c
      */
 
-    file[0] = '\0';
+    mutt_buffer_clear (file);
     if (b->filename)
     {
-      strfcpy (file, b->filename, sizeof (file));
+      mutt_buffer_strcpy (file, b->filename);
       b->d_filename = safe_strdup (b->filename);
     }
     else
@@ -680,8 +696,8 @@ int mutt_prepare_template (FILE *fp, CONTEXT *ctx, HEADER *newhdr, HEADER *hdr,
       mutt_delete_parameter ("x-mutt-noconv", &b->parameter);
     }
 
-    mutt_adv_mktemp (file, sizeof(file));
-    if ((s.fpout = safe_fopen (file, "w")) == NULL)
+    mutt_adv_mktemp (file);
+    if ((s.fpout = safe_fopen (mutt_b2s (file), "w")) == NULL)
       goto bail;
 
 
@@ -724,6 +740,12 @@ int mutt_prepare_template (FILE *fp, CONTEXT *ctx, HEADER *newhdr, HEADER *hdr,
         goto bail;
       }
 
+      if (b == newhdr->content && !protected_headers)
+      {
+        protected_headers = b->mime_headers;
+        b->mime_headers = NULL;
+      }
+
       newhdr->security |= sec_type;
       b->type = TYPETEXT;
       mutt_str_replace (&b->subtype, "plain");
@@ -734,7 +756,7 @@ int mutt_prepare_template (FILE *fp, CONTEXT *ctx, HEADER *newhdr, HEADER *hdr,
     if (safe_fclose (&s.fpout) != 0)
       goto bail;
 
-    mutt_str_replace (&b->filename, file);
+    mutt_str_replace (&b->filename, mutt_b2s (file));
     b->unlink = 1;
 
     mutt_stamp_attachment (b);
@@ -742,6 +764,15 @@ int mutt_prepare_template (FILE *fp, CONTEXT *ctx, HEADER *newhdr, HEADER *hdr,
     mutt_free_body (&b->parts);
     if (b->hdr) b->hdr->content = NULL; /* avoid dangling pointer */
   }
+
+  if (option (OPTCRYPTPROTHDRSREAD) &&
+      protected_headers &&
+      protected_headers->subject &&
+      mutt_strcmp (newhdr->env->subject, protected_headers->subject))
+  {
+    mutt_str_replace (&newhdr->env->subject, protected_headers->subject);
+  }
+  mutt_free_envelope (&protected_headers);
 
   /* Fix encryption flags. */
 
@@ -763,9 +794,10 @@ int mutt_prepare_template (FILE *fp, CONTEXT *ctx, HEADER *newhdr, HEADER *hdr,
 
   rv = 0;
 
-  bail:
+bail:
 
   /* that's it. */
+  mutt_buffer_pool_release (&file);
   if (bfp != fp) safe_fclose (&bfp);
   if (msg) mx_close_message (ctx, &msg);
 

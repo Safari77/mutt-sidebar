@@ -13,6 +13,7 @@ config.h
 config.h.in
 config.cache
 config.log
+configure.lineno
 config.status
 config.sub
 configure
@@ -76,6 +77,7 @@ reldate.h
 smime_keys
 stamp-doc-rc
 stamp-h1
+/version.h
 *.swp
 TAGS
 tags

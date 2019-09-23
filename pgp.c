@@ -7,16 +7,16 @@
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */
 
 /*
  * This file contains all of the PGP routines necessary to sign, encrypt,
@@ -77,22 +77,22 @@ int pgp_valid_passphrase (void)
   time_t now = time (NULL);
 
   if (pgp_use_gpg_agent())
-    {
-      *PgpPass = 0;
-      return 1; /* handled by gpg-agent */
-    }
+  {
+    *PgpPass = 0;
+    return 1; /* handled by gpg-agent */
+  }
 
   if (now < PgpExptime)
     /* Use cached copy.  */
     return 1;
-  
+
   pgp_void_passphrase ();
 
   if (mutt_get_password (_("Enter PGP passphrase:"), PgpPass, sizeof (PgpPass)) == 0)
-    {
-      PgpExptime = mutt_add_timeout (time (NULL), PgpTimeout);
-      return (1);
-    }
+  {
+    PgpExptime = mutt_add_timeout (time (NULL), PgpTimeout);
+    return (1);
+  }
   else
     PgpExptime = 0;
 
@@ -124,7 +124,7 @@ int pgp_use_gpg_agent (void)
 
 static pgp_key_t _pgp_parent(pgp_key_t k)
 {
-  if((k->flags & KEYFLAG_SUBKEY) && k->parent && option(OPTPGPIGNORESUB))
+  if ((k->flags & KEYFLAG_SUBKEY) && k->parent && option(OPTPGPIGNORESUB))
     k = k->parent;
 
   return k;
@@ -153,7 +153,7 @@ char *pgp_keyid(pgp_key_t k)
 
 char *_pgp_keyid(pgp_key_t k)
 {
-  if(option(OPTPGPLONGIDS))
+  if (option(OPTPGPLONGIDS))
     return k->keyid;
   else
     return (k->keyid + 8);
@@ -197,7 +197,7 @@ static int pgp_copy_checksig (FILE *fpin, FILE *fpout)
     char *line = NULL;
     int lineno = 0;
     size_t linelen;
-    
+
     while ((line = mutt_read_line (line, &linelen, fpin, &lineno, 0)) != NULL)
     {
       if (regexec (PgpGoodSign.rx, line, 0, NULL, 0) == 0)
@@ -209,7 +209,7 @@ static int pgp_copy_checksig (FILE *fpin, FILE *fpout)
       else
 	dprint (2, (debugfile, "pgp_copy_checksig: \"%s\" doesn't match regexp.\n",
 		    line));
-      
+
       if (strncmp (line, "[GNUPG:] ", 9) == 0)
 	continue;
       fputs (line, fpout);
@@ -300,7 +300,7 @@ static int pgp_check_decryption_okay (FILE *fpin)
       continue;
     s = line + 9;
     dprint (2, (debugfile, "pgp_check_decryption_okay: checking \"%s\".\n",
-                  line));
+                line));
     if (mutt_strncmp (s, "BEGIN_DECRYPTION", 16) == 0)
       inside_decrypt = 1;
     else if (mutt_strncmp (s, "END_DECRYPTION", 14) == 0)
@@ -334,26 +334,26 @@ static int pgp_check_decryption_okay (FILE *fpin)
   return rv;
 }
 
-/* 
+/*
  * Copy a clearsigned message, and strip the signature and PGP's
  * dash-escaping.
- * 
+ *
  * XXX - charset handling: We assume that it is safe to do
  * character set decoding first, dash decoding second here, while
  * we do it the other way around in the main handler.
- * 
+ *
  * (Note that we aren't worse than Outlook &c in this, and also
  * note that we can successfully handle anything produced by any
- * existing versions of mutt.) 
+ * existing versions of mutt.)
  */
 
 static void pgp_copy_clearsigned (FILE *fpin, STATE *s, char *charset)
 {
   char buf[HUGE_STRING];
   short complete, armor_header;
-  
+
   FGETCONV *fc;
-  
+
   rewind (fpin);
 
   /* fromcode comes from the MIME Content-Type charset label. It might
@@ -361,7 +361,7 @@ static void pgp_copy_clearsigned (FILE *fpin, STATE *s, char *charset)
    * charset-hooks. Therefore we set flags to MUTT_ICONV_HOOK_FROM.
    */
   fc = fgetconv_open (fpin, charset, Charset, MUTT_ICONV_HOOK_FROM);
-  
+
   for (complete = 1, armor_header = 1;
        fgetconvs (buf, sizeof (buf), fc) != NULL;
        complete = strchr (buf, '\n') != NULL)
@@ -375,24 +375,24 @@ static void pgp_copy_clearsigned (FILE *fpin, STATE *s, char *charset)
 
     if (mutt_strcmp (buf, "-----BEGIN PGP SIGNATURE-----\n") == 0)
       break;
-    
+
     if (armor_header)
     {
       char *p = mutt_skip_whitespace (buf);
-      if (*p == '\0') 
+      if (*p == '\0')
 	armor_header = 0;
       continue;
     }
-    
-    if (s->prefix) 
+
+    if (s->prefix)
       state_puts (s->prefix, s);
-    
+
     if (buf[0] == '-' && buf[1] == ' ')
       state_puts (buf + 2, s);
     else
       state_puts (buf, s);
   }
-  
+
   fgetconv_close (&fc);
 }
 
@@ -426,16 +426,16 @@ int pgp_application_pgp_handler (BODY *m, STATE *s)
 
   fseeko (s->fpin, m->offset, 0);
   last_pos = m->offset;
-  
+
   for (bytes = m->length; bytes > 0;)
   {
     if (fgets (buf, sizeof (buf), s->fpin) == NULL)
       break;
-    
+
     offset = ftello (s->fpin);
     bytes -= (offset - last_pos); /* don't rely on mutt_strlen(buf) */
     last_pos = offset;
-    
+
     if (mutt_strncmp ("-----BEGIN PGP ", buf, 15) == 0)
     {
       clearsign = 0;
@@ -453,7 +453,7 @@ int pgp_application_pgp_handler (BODY *m, STATE *s)
       {
         needpass = 0;
         pgp_keyblock = 1;
-      } 
+      }
       else
       {
 	/* XXX - we may wish to recode here */
@@ -472,18 +472,18 @@ int pgp_application_pgp_handler (BODY *m, STATE *s)
 	mutt_perror (tmpfname);
 	return -1;
       }
-      
+
       fputs (buf, tmpfp);
       while (bytes > 0 && fgets (buf, sizeof (buf) - 1, s->fpin) != NULL)
       {
 	offset = ftello (s->fpin);
 	bytes -= (offset - last_pos); /* don't rely on mutt_strlen(buf) */
 	last_pos = offset;
-	
+
 	fputs (buf, tmpfp);
 
 	if ((needpass && mutt_strcmp ("-----END PGP MESSAGE-----\n", buf) == 0) ||
-	    (!needpass 
+	    (!needpass
              && (mutt_strcmp ("-----END PGP SIGNATURE-----\n", buf) == 0
                  || mutt_strcmp ("-----END PGP PUBLIC KEY BLOCK-----\n",buf) == 0)))
 	  break;
@@ -576,13 +576,13 @@ int pgp_application_pgp_handler (BODY *m, STATE *s)
 	     *  gpg_good_sign="" && pgp_decode_command returned 0
 	     */
 	    if (rc == -1 || rv) maybe_goodsig = 0;
-	    
+
 	    state_attach_puts (_("[-- End of PGP output --]\n\n"), s);
 	  }
 	  if (pgp_use_gpg_agent())
 	    mutt_need_hard_redraw ();
 	}
-	
+
         /* treat empty result as sign of failure */
 	/* TODO: maybe on failure mutt should include the original undecoded text. */
 	if (pgpout)
@@ -596,7 +596,7 @@ int pgp_application_pgp_handler (BODY *m, STATE *s)
 	  could_not_decrypt = 1;
 	  pgp_void_passphrase ();
 	}
-	
+
 	if ((could_not_decrypt || (decrypt_okay_rc <= -3)) &&
             !(s->flags & MUTT_DISPLAY))
 	{
@@ -606,12 +606,12 @@ int pgp_application_pgp_handler (BODY *m, STATE *s)
 	  goto out;
         }
       }
-      
+
       /*
        * Now, copy cleartext to the screen.
        */
 
-      if(s->flags & MUTT_DISPLAY)
+      if (s->flags & MUTT_DISPLAY)
       {
 	if (needpass)
 	  state_attach_puts (_("[-- BEGIN PGP MESSAGE --]\n\n"), s);
@@ -624,7 +624,7 @@ int pgp_application_pgp_handler (BODY *m, STATE *s)
       if (clearsign)
       {
 	rewind (tmpfp);
-	if (tmpfp) 
+	if (tmpfp)
 	  pgp_copy_clearsigned (tmpfp, s, body_charset);
       }
       else if (pgpout)
@@ -666,7 +666,7 @@ int pgp_application_pgp_handler (BODY *m, STATE *s)
                (not encrypting) something and (2) it is a plaintext. So the
                message does not mean "You failed to encrypt the message."
             */
-	    mutt_error _("PGP message was not encrypted.");
+	    mutt_error _("PGP message is not encrypted.");
 	  else
 	    mutt_message _("PGP message successfully decrypted.");
         }
@@ -706,7 +706,7 @@ out:
     state_attach_puts (_("[-- Error: could not find beginning of PGP message! --]\n\n"), s);
     return -1;
   }
-  
+
   return rc;
 }
 
@@ -715,11 +715,11 @@ static int pgp_check_traditional_one_body (FILE *fp, BODY *b)
   char tempfile[_POSIX_PATH_MAX];
   char buf[HUGE_STRING];
   FILE *tfp;
-  
+
   short sgn = 0;
   short enc = 0;
   short key = 0;
-  
+
   if (b->type != TYPETEXT)
     return 0;
 
@@ -729,13 +729,13 @@ static int pgp_check_traditional_one_body (FILE *fp, BODY *b)
     unlink (tempfile);
     return 0;
   }
-  
+
   if ((tfp = fopen (tempfile, "r")) == NULL)
   {
     unlink (tempfile);
     return 0;
   }
-  
+
   while (fgets (buf, sizeof (buf), tfp))
   {
     if (mutt_strncmp ("-----BEGIN PGP ", buf, 15) == 0)
@@ -755,7 +755,7 @@ static int pgp_check_traditional_one_body (FILE *fp, BODY *b)
     return 0;
 
   /* fix the content type */
-  
+
   mutt_set_parameter ("format", "fixed", &b->parameter);
   if (enc)
     mutt_set_parameter ("x-action", "pgp-encrypted", &b->parameter);
@@ -763,7 +763,7 @@ static int pgp_check_traditional_one_body (FILE *fp, BODY *b)
     mutt_set_parameter ("x-action", "pgp-signed", &b->parameter);
   else if (key)
     mutt_set_parameter ("x-action", "pgp-keys", &b->parameter);
-  
+
   return 1;
 }
 
@@ -790,7 +790,7 @@ int pgp_check_traditional (FILE *fp, BODY *b, int just_one)
   return rv;
 }
 
-     
+
 
 
 
@@ -801,48 +801,48 @@ int pgp_verify_one (BODY *sigbdy, STATE *s, const char *tempfile)
   pid_t thepid;
   int badsig = -1;
   int rv;
-  
+
   snprintf (sigfile, sizeof (sigfile), "%s.asc", tempfile);
-  
-  if(!(fp = safe_fopen (sigfile, "w")))
+
+  if (!(fp = safe_fopen (sigfile, "w")))
   {
     mutt_perror(sigfile);
     return -1;
   }
-	
+
   fseeko (s->fpin, sigbdy->offset, 0);
   mutt_copy_bytes (s->fpin, fp, sigbdy->length);
   safe_fclose (&fp);
-  
+
   mutt_mktemp (pgperrfile, sizeof (pgperrfile));
-  if(!(pgperr = safe_fopen(pgperrfile, "w+")))
+  if (!(pgperr = safe_fopen(pgperrfile, "w+")))
   {
     mutt_perror(pgperrfile);
     unlink(sigfile);
     return -1;
   }
-  
+
   crypt_current_time (s, "PGP");
-  
-  if((thepid = pgp_invoke_verify (NULL, &pgpout, NULL, 
-				   -1, -1, fileno(pgperr),
-				   tempfile, sigfile)) != -1)
+
+  if ((thepid = pgp_invoke_verify (NULL, &pgpout, NULL,
+                                   -1, -1, fileno(pgperr),
+                                   tempfile, sigfile)) != -1)
   {
     if (pgp_copy_checksig (pgpout, s->fpout) >= 0)
       badsig = 0;
-    
-    
+
+
     safe_fclose (&pgpout);
     fflush (pgperr);
     rewind (pgperr);
-    
+
     if (pgp_copy_checksig  (pgperr, s->fpout) >= 0)
       badsig = 0;
 
     if ((rv = mutt_wait_filter (thepid)))
       badsig = -1;
-    
-     dprint (1, (debugfile, "pgp_verify_one: mutt_wait_filter returned %d.\n", rv));
+
+    dprint (1, (debugfile, "pgp_verify_one: mutt_wait_filter returned %d.\n", rv));
   }
 
   safe_fclose (&pgperr);
@@ -853,7 +853,7 @@ int pgp_verify_one (BODY *sigbdy, STATE *s, const char *tempfile)
   mutt_unlink (pgperrfile);
 
   dprint (1, (debugfile, "pgp_verify_one: returning %d.\n", badsig));
-  
+
   return badsig;
 }
 
@@ -874,10 +874,10 @@ static void pgp_extract_keys_from_attachment (FILE *fp, BODY *top)
   }
 
   memset (&s, 0, sizeof (STATE));
-  
+
   s.fpin = fp;
   s.fpout = tempfp;
-  
+
   mutt_body_handler (top, &s);
 
   safe_fclose (&tempfp);
@@ -890,7 +890,7 @@ static void pgp_extract_keys_from_attachment (FILE *fp, BODY *top)
 
 void pgp_extract_keys_from_attachment_list (FILE *fp, int tag, BODY *top)
 {
-  if(!fp)
+  if (!fp)
   {
     mutt_error _("Internal error.  Please submit a bug report.");
     return;
@@ -898,16 +898,16 @@ void pgp_extract_keys_from_attachment_list (FILE *fp, int tag, BODY *top)
 
   mutt_endwin (NULL);
   set_option(OPTDONTHANDLEPGPKEYS);
-  
-  for(; top; top = top->next)
+
+  for (; top; top = top->next)
   {
-    if(!tag || top->tagged)
+    if (!tag || top->tagged)
       pgp_extract_keys_from_attachment (fp, top);
-    
-    if(!tag)
+
+    if (!tag)
       break;
   }
-  
+
   unset_option(OPTDONTHANDLEPGPKEYS);
 }
 
@@ -922,7 +922,7 @@ BODY *pgp_decrypt_part (BODY *a, STATE *s, FILE *fpout, BODY *p)
   char pgptmpfile[_POSIX_PATH_MAX];
   pid_t thepid;
   int rv;
-  
+
   mutt_mktemp (pgperrfile, sizeof (pgperrfile));
   if ((pgperr = safe_fopen (pgperrfile, "w+")) == NULL)
   {
@@ -932,7 +932,7 @@ BODY *pgp_decrypt_part (BODY *a, STATE *s, FILE *fpout, BODY *p)
   unlink (pgperrfile);
 
   mutt_mktemp (pgptmpfile, sizeof (pgptmpfile));
-  if((pgptmp = safe_fopen (pgptmpfile, "w")) == NULL)
+  if ((pgptmp = safe_fopen (pgptmpfile, "w")) == NULL)
   {
     mutt_perror (pgptmpfile);
     safe_fclose (&pgperr);
@@ -964,7 +964,7 @@ BODY *pgp_decrypt_part (BODY *a, STATE *s, FILE *fpout, BODY *p)
     fputs (PgpPass, pgpin);
   fputc ('\n', pgpin);
   safe_fclose (&pgpin);
-  
+
   /* Read the output from PGP, and make sure to change CRLF to LF, otherwise
    * read_mime_header has a hard time parsing the message.
    */
@@ -1016,7 +1016,7 @@ BODY *pgp_decrypt_part (BODY *a, STATE *s, FILE *fpout, BODY *p)
   }
 
   rewind (fpout);
-  
+
   if ((tattach = mutt_read_mime_header (fpout, 0)) != NULL)
   {
     /*
@@ -1139,23 +1139,47 @@ int pgp_encrypted_handler (BODY *a, STATE *s)
   if ((tattach = pgp_decrypt_part (a, s, fpout, a)) != NULL)
   {
     if (s->flags & MUTT_DISPLAY)
+    {
       state_attach_puts (_("[-- The following data is PGP/MIME encrypted --]\n\n"), s);
+
+      mutt_protected_headers_handler (tattach, s);
+    }
+
+    /* Store any protected headers in the parent so they can be
+     * accessed for index updates after the handler recursion is done.
+     * This is done before the handler to prevent a nested encrypted
+     * handler from freeing the headers. */
+    mutt_free_envelope (&a->mime_headers);
+    a->mime_headers = tattach->mime_headers;
+    tattach->mime_headers = NULL;
 
     fpin = s->fpin;
     s->fpin = fpout;
     rc = mutt_body_handler (tattach, s);
     s->fpin = fpin;
 
-    /* 
+    /* Embedded multipart signed protected headers override the
+     * encrypted headers.  We need to do this after the handler so
+     * they can be printed in the pager. */
+    if (mutt_is_multipart_signed (tattach) &&
+        tattach->parts &&
+        tattach->parts->mime_headers)
+    {
+      mutt_free_envelope (&a->mime_headers);
+      a->mime_headers = tattach->parts->mime_headers;
+      tattach->parts->mime_headers = NULL;
+    }
+
+    /*
      * if a multipart/signed is the _only_ sub-part of a
      * multipart/encrypted, cache signature verification
      * status.
      *
      */
-    
+
     if (mutt_is_multipart_signed (tattach) && !tattach->next)
       a->goodsig |= tattach->goodsig;
-    
+
     if (s->flags & MUTT_DISPLAY)
     {
       state_puts ("\n", s);
@@ -1195,7 +1219,7 @@ BODY *pgp_sign_message (BODY *a)
   int err = 0;
   int empty = 1;
   pid_t thepid;
-  
+
   convert_to_7bit (a); /* Signed data _must_ be in 7-bit format. */
 
   mutt_mktemp (sigfile, sizeof (sigfile));
@@ -1212,12 +1236,12 @@ BODY *pgp_sign_message (BODY *a)
     unlink(sigfile);
     return NULL;
   }
-  
+
   mutt_write_mime_header (a, sfp);
   fputc ('\n', sfp);
   mutt_write_mime_body (a, sfp);
   safe_fclose (&sfp);
-  
+
   if ((thepid = pgp_invoke_sign (&pgpin, &pgpout, &pgperr,
 				 -1, -1, -1, signedfile)) == -1)
   {
@@ -1227,12 +1251,12 @@ BODY *pgp_sign_message (BODY *a)
     unlink(signedfile);
     return NULL;
   }
-  
+
   if (!pgp_use_gpg_agent())
-     fputs(PgpPass, pgpin);
+    fputs(PgpPass, pgpin);
   fputc('\n', pgpin);
   safe_fclose (&pgpin);
-  
+
   /*
    * Read back the PGP signature.  Also, change MESSAGE=>SIGNATURE as
    * recommended for future releases of PGP.
@@ -1256,13 +1280,13 @@ BODY *pgp_sign_message (BODY *a)
     fputs (buffer, stdout);
   }
 
-  if(mutt_wait_filter (thepid) && option(OPTPGPCHECKEXIT))
+  if (mutt_wait_filter (thepid) && option(OPTPGPCHECKEXIT))
     empty=1;
 
   safe_fclose (&pgperr);
   safe_fclose (&pgpout);
   unlink (signedfile);
-  
+
   if (fclose (fp) != 0)
   {
     mutt_perror ("fclose");
@@ -1394,7 +1418,7 @@ char *pgp_findKeys (ADDRESS *adrlist, int oppenc_mode)
       {
         snprintf (buf, sizeof (buf), _("Enter keyID for %s: "), q->mailbox);
         k_info = pgp_ask_for_key (buf, q->mailbox,
-                              KEYFLAG_CANENCRYPT, PGP_PUBRING);
+                                  KEYFLAG_CANENCRYPT, PGP_PUBRING);
       }
 
       if (k_info == NULL)
@@ -1411,7 +1435,7 @@ char *pgp_findKeys (ADDRESS *adrlist, int oppenc_mode)
       keylist_size += mutt_strlen (keyID) + 4;
       safe_realloc (&keylist, keylist_size);
       sprintf (keylist + keylist_used, "%s0x%s", keylist_used ? " " : "",	/* __SPRINTF_CHECKED__ */
-              keyID);
+               keyID);
       keylist_used = mutt_strlen (keylist);
 
       key_selected = 1;
@@ -1442,7 +1466,7 @@ BODY *pgp_encrypt_message (BODY *a, char *keylist, int sign)
   int err = 0;
   int empty = 0;
   pid_t thepid;
-  
+
   mutt_mktemp (tempfile, sizeof (tempfile));
   if ((fpout = safe_fopen (tempfile, "w+")) == NULL)
   {
@@ -1461,7 +1485,7 @@ BODY *pgp_encrypt_message (BODY *a, char *keylist, int sign)
   unlink (pgperrfile);
 
   mutt_mktemp (pgpinfile, sizeof (pgpinfile));
-  if((fptmp = safe_fopen(pgpinfile, "w")) == NULL)
+  if ((fptmp = safe_fopen(pgpinfile, "w")) == NULL)
   {
     mutt_perror(pgpinfile);
     unlink(tempfile);
@@ -1469,16 +1493,16 @@ BODY *pgp_encrypt_message (BODY *a, char *keylist, int sign)
     safe_fclose (&pgperr);
     return NULL;
   }
-  
+
   if (sign)
     convert_to_7bit (a);
-  
+
   mutt_write_mime_header (a, fptmp);
   fputc ('\n', fptmp);
   mutt_write_mime_body (a, fptmp);
   safe_fclose (&fptmp);
-  
-  if ((thepid = pgp_invoke_encrypt (&pgpin, NULL, NULL, -1, 
+
+  if ((thepid = pgp_invoke_encrypt (&pgpin, NULL, NULL, -1,
 				    fileno (fpout), fileno (pgperr),
 				    pgpinfile, keylist, sign)) == -1)
   {
@@ -1490,19 +1514,19 @@ BODY *pgp_encrypt_message (BODY *a, char *keylist, int sign)
   if (sign)
   {
     if (!pgp_use_gpg_agent())
-       fputs (PgpPass, pgpin);
+      fputs (PgpPass, pgpin);
     fputc ('\n', pgpin);
   }
   safe_fclose (&pgpin);
-  
-  if(mutt_wait_filter (thepid) && option(OPTPGPCHECKEXIT))
+
+  if (mutt_wait_filter (thepid) && option(OPTPGPCHECKEXIT))
     empty=1;
 
   unlink(pgpinfile);
-  
+
   fflush (fpout);
   rewind (fpout);
-  if(!empty)
+  if (!empty)
     empty = (fgetc (fpout) == EOF);
   safe_fclose (&fpout);
 
@@ -1537,7 +1561,7 @@ BODY *pgp_encrypt_message (BODY *a, char *keylist, int sign)
 
   mutt_generate_boundary(&t->parameter);
   mutt_set_parameter("protocol", "application/pgp-encrypted", &t->parameter);
-  
+
   t->parts = mutt_new_body ();
   t->parts->type = TYPEAPPLICATION;
   t->parts->subtype = safe_strdup ("pgp-encrypted");
@@ -1563,11 +1587,11 @@ BODY *pgp_traditional_encryptsign (BODY *a, int flags, char *keylist)
   char pgpoutfile[_POSIX_PATH_MAX];
   char pgperrfile[_POSIX_PATH_MAX];
   char pgpinfile[_POSIX_PATH_MAX];
-  
+
   char body_charset[STRING];
   char *from_charset;
   const char *send_charset;
-  
+
   FILE *pgpout = NULL, *pgperr = NULL, *pgpin = NULL;
   FILE *fp;
 
@@ -1582,13 +1606,13 @@ BODY *pgp_traditional_encryptsign (BODY *a, int flags, char *keylist)
     return NULL;
   if (ascii_strcasecmp (a->subtype, "plain"))
     return NULL;
-  
+
   if ((fp = fopen (a->filename, "r")) == NULL)
   {
     mutt_perror (a->filename);
     return NULL;
   }
-  
+
   mutt_mktemp (pgpinfile, sizeof (pgpinfile));
   if ((pgpin = safe_fopen (pgpinfile, "w")) == NULL)
   {
@@ -1602,18 +1626,18 @@ BODY *pgp_traditional_encryptsign (BODY *a, int flags, char *keylist)
    * we have to convert from that to utf-8.  If noconv is not set,
    * we have to convert from $charset to utf-8.
    */
-  
+
   mutt_get_body_charset (body_charset, sizeof (body_charset), a);
   if (a->noconv)
     from_charset = body_charset;
-  else 
+  else
     from_charset = Charset;
-    
+
   if (!mutt_is_us_ascii (body_charset))
   {
     int c;
     FGETCONV *fc;
-    
+
     if (flags & ENCRYPT)
       send_charset = "us-ascii";
     else
@@ -1623,7 +1647,7 @@ BODY *pgp_traditional_encryptsign (BODY *a, int flags, char *keylist)
     fc = fgetconv_open (fp, from_charset, "utf-8", 0);
     while ((c = fgetconv (fc)) != EOF)
       fputc (c, pgpin);
-    
+
     fgetconv_close (&fc);
   }
   else
@@ -1641,17 +1665,17 @@ BODY *pgp_traditional_encryptsign (BODY *a, int flags, char *keylist)
   {
     mutt_perror (pgpout ? pgperrfile : pgpoutfile);
     unlink (pgpinfile);
-    if (pgpout) 
+    if (pgpout)
     {
       safe_fclose (&pgpout);
       unlink (pgpoutfile);
     }
     return NULL;
   }
-  
+
   unlink (pgperrfile);
 
-  if ((thepid = pgp_invoke_traditional (&pgpin, NULL, NULL, 
+  if ((thepid = pgp_invoke_traditional (&pgpin, NULL, NULL,
 					-1, fileno (pgpout), fileno (pgperr),
 					pgpinfile, keylist, flags)) == -1)
   {
@@ -1669,7 +1693,7 @@ BODY *pgp_traditional_encryptsign (BODY *a, int flags, char *keylist)
     fprintf (pgpin, "%s\n", PgpPass);
   safe_fclose (&pgpin);
 
-  if(mutt_wait_filter (thepid) && option(OPTPGPCHECKEXIT))
+  if (mutt_wait_filter (thepid) && option(OPTPGPCHECKEXIT))
     empty=1;
 
   mutt_unlink (pgpinfile);
@@ -1679,24 +1703,24 @@ BODY *pgp_traditional_encryptsign (BODY *a, int flags, char *keylist)
 
   rewind (pgpout);
   rewind (pgperr);
-  
-  if(!empty)
+
+  if (!empty)
     empty = (fgetc (pgpout) == EOF);
   safe_fclose (&pgpout);
-  
+
   err = 0;
-  
+
   while (fgets (buff, sizeof (buff), pgperr))
   {
     err = 1;
     fputs (buff, stdout);
   }
-  
+
   safe_fclose (&pgperr);
-  
+
   if (err)
     mutt_any_key_to_continue (NULL);
-  
+
   if (empty)
   {
     if (flags & SIGN)
@@ -1704,39 +1728,29 @@ BODY *pgp_traditional_encryptsign (BODY *a, int flags, char *keylist)
     unlink (pgpoutfile);
     return NULL;
   }
-    
+
   b = mutt_new_body ();
-  
+
   b->encoding = ENC7BIT;
 
   b->type = TYPETEXT;
   b->subtype = safe_strdup ("plain");
-  
+
   mutt_set_parameter ("x-action", flags & ENCRYPT ? "pgp-encrypted" : "pgp-signed",
 		      &b->parameter);
   mutt_set_parameter ("charset", send_charset, &b->parameter);
-  
+
   b->filename = safe_strdup (pgpoutfile);
-  
-#if 0
-  /* The following is intended to give a clue to some completely brain-dead 
-   * "mail environments" which are typically used by large corporations.
-   */
-
-  b->d_filename = safe_strdup ("msg.pgp");
-  b->use_disp = 1;
-
-#endif
 
   b->disposition = DISPNONE;
   b->unlink   = 1;
 
   b->noconv = 1;
   b->use_disp = 0;
-  
+
   if (!(flags & ENCRYPT))
     b->encoding = a->encoding;
-  
+
   return b;
 }
 
@@ -1752,7 +1766,7 @@ int pgp_send_menu (HEADER *msg)
     return msg->security;
 
   /* If autoinline and no crypto options set, then set inline. */
-  if (option (OPTPGPAUTOINLINE) && 
+  if (option (OPTPGPAUTOINLINE) &&
       !((msg->security & APPLICATION_PGP) && (msg->security & (SIGN|ENCRYPT))))
     msg->security |= INLINE;
 
@@ -1769,8 +1783,8 @@ int pgp_send_menu (HEADER *msg)
     if (msg->security & (ENCRYPT | SIGN))
     {
       snprintf (promptbuf, sizeof (promptbuf),
-          _("PGP (s)ign, sign (a)s, %s format, (c)lear, or (o)ppenc mode off? "),
-          (msg->security & INLINE) ? _("PGP/M(i)ME") : _("(i)nline"));
+                _("PGP (s)ign, sign (a)s, %s format, (c)lear, or (o)ppenc mode off? "),
+                (msg->security & INLINE) ? _("PGP/M(i)ME") : _("(i)nline"));
       prompt = promptbuf;
       /* L10N: The 'f' is from "forget it", an old undocumented synonym of
          'clear'.  Please use a corresponding letter in your language.
@@ -1793,14 +1807,14 @@ int pgp_send_menu (HEADER *msg)
   else if (option (OPTCRYPTOPPORTUNISTICENCRYPT))
   {
     /* When the message is not selected for signing or encryption, the toggle
-    * between PGP/MIME and Traditional doesn't make sense.
-    */
+     * between PGP/MIME and Traditional doesn't make sense.
+     */
     if (msg->security & (ENCRYPT | SIGN))
     {
 
-      snprintf (promptbuf, sizeof (promptbuf), 
-          _("PGP (e)ncrypt, (s)ign, sign (a)s, (b)oth, %s format, (c)lear, or (o)ppenc mode? "),
-          (msg->security & INLINE) ? _("PGP/M(i)ME") : _("(i)nline"));
+      snprintf (promptbuf, sizeof (promptbuf),
+                _("PGP (e)ncrypt, (s)ign, sign (a)s, (b)oth, %s format, (c)lear, or (o)ppenc mode? "),
+                (msg->security & INLINE) ? _("PGP/M(i)ME") : _("(i)nline"));
       prompt = promptbuf;
       letters = _("esabfcoi");
       choices = "esabfcOi";
@@ -1820,9 +1834,9 @@ int pgp_send_menu (HEADER *msg)
     if (msg->security & (ENCRYPT | SIGN))
     {
 
-      snprintf (promptbuf, sizeof (promptbuf), 
-          _("PGP (e)ncrypt, (s)ign, sign (a)s, (b)oth, %s format, or (c)lear? "),
-          (msg->security & INLINE) ? _("PGP/M(i)ME") : _("(i)nline"));
+      snprintf (promptbuf, sizeof (promptbuf),
+                _("PGP (e)ncrypt, (s)ign, sign (a)s, (b)oth, %s format, or (c)lear? "),
+                (msg->security & INLINE) ? _("PGP/M(i)ME") : _("(i)nline"));
       prompt = promptbuf;
       letters = _("esabfci");
       choices = "esabfci";
@@ -1840,62 +1854,62 @@ int pgp_send_menu (HEADER *msg)
   {
     switch (choices[choice - 1])
     {
-    case 'e': /* (e)ncrypt */
-      msg->security |= ENCRYPT;
-      msg->security &= ~SIGN;
-      break;
+      case 'e': /* (e)ncrypt */
+        msg->security |= ENCRYPT;
+        msg->security &= ~SIGN;
+        break;
 
-    case 's': /* (s)ign */
-      msg->security &= ~ENCRYPT;
-      msg->security |= SIGN;
-      break;
-
-    case 'S': /* (s)ign in oppenc mode */
-      msg->security |= SIGN;
-      break;
-
-    case 'a': /* sign (a)s */
-      unset_option(OPTPGPCHECKTRUST);
-
-      if ((p = pgp_ask_for_key (_("Sign as: "), NULL, 0, PGP_SECRING)))
-      {
-        snprintf (input_signas, sizeof (input_signas), "0x%s",
-            pgp_fpr_or_lkeyid (p));
-        mutt_str_replace (&PgpSignAs, input_signas);
-        pgp_free_key (&p);
-
+      case 's': /* (s)ign */
+        msg->security &= ~ENCRYPT;
         msg->security |= SIGN;
+        break;
 
-        crypt_pgp_void_passphrase ();  /* probably need a different passphrase */
-      }
-      break;
+      case 'S': /* (s)ign in oppenc mode */
+        msg->security |= SIGN;
+        break;
 
-    case 'b': /* (b)oth */
-      msg->security |= (ENCRYPT | SIGN);
-      break;
+      case 'a': /* sign (a)s */
+        unset_option(OPTPGPCHECKTRUST);
 
-    case 'f': /* (f)orget it: kept for backward compatibility. */
-    case 'c': /* (c)lear     */
-      msg->security &= ~(ENCRYPT | SIGN);
-      break;
+        if ((p = pgp_ask_for_key (_("Sign as: "), NULL, 0, PGP_SECRING)))
+        {
+          snprintf (input_signas, sizeof (input_signas), "0x%s",
+                    pgp_fpr_or_lkeyid (p));
+          mutt_str_replace (&PgpSignAs, input_signas);
+          pgp_free_key (&p);
 
-    case 'F': /* (f)orget it or (c)lear in oppenc mode */
-    case 'C':
-      msg->security &= ~SIGN;
-      break;
+          msg->security |= SIGN;
 
-    case 'O': /* oppenc mode on */
-      msg->security |= OPPENCRYPT;
-      crypt_opportunistic_encrypt (msg);
-      break;
+          crypt_pgp_void_passphrase ();  /* probably need a different passphrase */
+        }
+        break;
 
-    case 'o': /* oppenc mode off */
-      msg->security &= ~OPPENCRYPT;
-      break;
+      case 'b': /* (b)oth */
+        msg->security |= (ENCRYPT | SIGN);
+        break;
 
-    case 'i': /* toggle (i)nline */
-      msg->security ^= INLINE;
-      break;
+      case 'f': /* (f)orget it: kept for backward compatibility. */
+      case 'c': /* (c)lear     */
+        msg->security &= ~(ENCRYPT | SIGN);
+        break;
+
+      case 'F': /* (f)orget it or (c)lear in oppenc mode */
+      case 'C':
+        msg->security &= ~SIGN;
+        break;
+
+      case 'O': /* oppenc mode on */
+        msg->security |= OPPENCRYPT;
+        crypt_opportunistic_encrypt (msg);
+        break;
+
+      case 'o': /* oppenc mode off */
+        msg->security &= ~OPPENCRYPT;
+        break;
+
+      case 'i': /* toggle (i)nline */
+        msg->security ^= INLINE;
+        break;
     }
   }
 

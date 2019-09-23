@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 2000-2008,2012,2014 Brendan Cully <brendan@kublai.com>
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */
 
 /* common SASL helper routines */
 
@@ -37,47 +37,47 @@ static int getnameinfo_err(int ret)
 {
   int err;
   dprint (1, (debugfile, "getnameinfo: "));
-  switch(ret)
+  switch (ret)
   {
-     case EAI_AGAIN:
-       dprint (1, (debugfile, "The name could not be resolved at this time.  Future attempts may succeed.\n"));
-       err=SASL_TRYAGAIN;
-       break;
-     case EAI_BADFLAGS:
-       dprint (1, (debugfile, "The flags had an invalid value.\n"));
-       err=SASL_BADPARAM;
-       break;
-     case EAI_FAIL:
-       dprint (1, (debugfile, "A non-recoverable error occurred.\n"));
-       err=SASL_FAIL;
-       break;
-     case EAI_FAMILY:
-       dprint (1, (debugfile, "The address family was not recognized or the address length was invalid for the specified family.\n"));
-       err=SASL_BADPROT;
-       break;
-     case EAI_MEMORY:
-       dprint (1, (debugfile, "There was a memory allocation failure.\n"));
-       err=SASL_NOMEM;
-       break;
-     case EAI_NONAME:
-       dprint (1, (debugfile, "The name does not resolve for the supplied parameters.  NI_NAMEREQD is set and the host's name cannot be located, or both nodename and servname were null.\n"));
-       err=SASL_FAIL; /* no real equivalent */
-       break;
-     case EAI_SYSTEM:
-       dprint (1, (debugfile, "A system error occurred.  The error code can be found in errno(%d,%s)).\n",errno,strerror(errno)));
-       err=SASL_FAIL; /* no real equivalent */
-       break;
-     default:
-       dprint (1, (debugfile, "Unknown error %d\n",ret));
-       err=SASL_FAIL; /* no real equivalent */
-       break;
+    case EAI_AGAIN:
+      dprint (1, (debugfile, "The name could not be resolved at this time.  Future attempts may succeed.\n"));
+      err=SASL_TRYAGAIN;
+      break;
+    case EAI_BADFLAGS:
+      dprint (1, (debugfile, "The flags had an invalid value.\n"));
+      err=SASL_BADPARAM;
+      break;
+    case EAI_FAIL:
+      dprint (1, (debugfile, "A non-recoverable error occurred.\n"));
+      err=SASL_FAIL;
+      break;
+    case EAI_FAMILY:
+      dprint (1, (debugfile, "The address family was not recognized or the address length was invalid for the specified family.\n"));
+      err=SASL_BADPROT;
+      break;
+    case EAI_MEMORY:
+      dprint (1, (debugfile, "There was a memory allocation failure.\n"));
+      err=SASL_NOMEM;
+      break;
+    case EAI_NONAME:
+      dprint (1, (debugfile, "The name does not resolve for the supplied parameters.  NI_NAMEREQD is set and the host's name cannot be located, or both nodename and servname were null.\n"));
+      err=SASL_FAIL; /* no real equivalent */
+      break;
+    case EAI_SYSTEM:
+      dprint (1, (debugfile, "A system error occurred.  The error code can be found in errno(%d,%s)).\n",errno,strerror(errno)));
+      err=SASL_FAIL; /* no real equivalent */
+      break;
+    default:
+      dprint (1, (debugfile, "Unknown error %d\n",ret));
+      err=SASL_FAIL; /* no real equivalent */
+      break;
   }
   return err;
 }
 
 /* arbitrary. SASL will probably use a smaller buffer anyway. OTOH it's
  * been a while since I've had access to an SASL server which negotiated
- * a protection buffer. */ 
+ * a protection buffer. */
 #define MUTT_SASL_MAXBUF 65536
 
 #define IP_PORT_BUFLEN 1024
@@ -91,16 +91,16 @@ static int mutt_sasl_start (void);
 /* callbacks */
 static int mutt_sasl_cb_log (void* context, int priority, const char* message);
 static int mutt_sasl_cb_authname (void* context, int id, const char** result,
-  unsigned int* len);
+                                  unsigned int* len);
 static int mutt_sasl_cb_pass (sasl_conn_t* conn, void* context, int id,
-  sasl_secret_t** psecret);
+                              sasl_secret_t** psecret);
 
 /* socket wrappers for a SASL security layer */
 static int mutt_sasl_conn_open (CONNECTION* conn);
 static int mutt_sasl_conn_close (CONNECTION* conn);
 static int mutt_sasl_conn_read (CONNECTION* conn, char* buf, size_t len);
 static int mutt_sasl_conn_write (CONNECTION* conn, const char* buf,
-  size_t count);
+                                 size_t count);
 static int mutt_sasl_conn_poll (CONNECTION* conn, time_t wait_secs);
 
 /* utility function, stolen from sasl2 sample code */
@@ -198,7 +198,8 @@ int mutt_sasl_client_new (CONNECTION* conn, sasl_conn_t** saslconn)
   }
 
   size = sizeof (local);
-  if (!getsockname (conn->fd, (struct sockaddr *)&local, &size)) {
+  if (!getsockname (conn->fd, (struct sockaddr *)&local, &size))
+  {
     if (iptostring((struct sockaddr *)&local, size, iplocalport,
                    IP_PORT_BUFLEN) == SASL_OK)
       plp = iplocalport;
@@ -207,9 +208,10 @@ int mutt_sasl_client_new (CONNECTION* conn, sasl_conn_t** saslconn)
   }
   else
     dprint (2, (debugfile, "SASL failed to get local IP address\n"));
-  
+
   size = sizeof (remote);
-  if (!getpeername (conn->fd, (struct sockaddr *)&remote, &size)){
+  if (!getpeername (conn->fd, (struct sockaddr *)&remote, &size))
+  {
     if (iptostring((struct sockaddr *)&remote, size, ipremoteport,
                    IP_PORT_BUFLEN) == SASL_OK)
       prp = ipremoteport;
@@ -221,9 +223,9 @@ int mutt_sasl_client_new (CONNECTION* conn, sasl_conn_t** saslconn)
 
   dprint (2, (debugfile, "SASL local ip: %s, remote ip:%s\n", NONULL(plp),
 	      NONULL(prp)));
-  
+
   rc = sasl_client_new (service, conn->account.host, plp, prp,
-    mutt_sasl_get_callbacks (&conn->account), 0, saslconn);
+                        mutt_sasl_get_callbacks (&conn->account), 0, saslconn);
 
   if (rc != SASL_OK)
   {
@@ -338,7 +340,7 @@ int mutt_sasl_interact (sasl_interact_t* interaction)
  * abstraction problem is that there is more in CONNECTION than there
  * needs to be. Ideally it would have only (void*)data and methods. */
 
-/* mutt_sasl_setup_conn: replace connection methods, sockdata with 
+/* mutt_sasl_setup_conn: replace connection methods, sockdata with
  *   SASL wrappers, for protection layers. Also get ssf, as a fastpath
  *   for the read/write methods. */
 void mutt_sasl_setup_conn (CONNECTION* conn, sasl_conn_t* saslconn)
@@ -395,7 +397,7 @@ void mutt_sasl_done (void)
 
 /* mutt_sasl_cb_authname: callback to retrieve authname or user from ACCOUNT */
 static int mutt_sasl_cb_authname (void* context, int id, const char** result,
-  unsigned* len)
+                                  unsigned* len)
 {
   ACCOUNT* account = (ACCOUNT*) context;
 
@@ -425,7 +427,7 @@ static int mutt_sasl_cb_authname (void* context, int id, const char** result,
       return SASL_FAIL;
     *result = account->user;
   }
-  
+
   if (len)
     *len = strlen (*result);
 
@@ -433,7 +435,7 @@ static int mutt_sasl_cb_authname (void* context, int id, const char** result,
 }
 
 static int mutt_sasl_cb_pass (sasl_conn_t* conn, void* context, int id,
-  sasl_secret_t** psecret)
+                              sasl_secret_t** psecret)
 {
   ACCOUNT* account = (ACCOUNT*) context;
   int len;
@@ -442,8 +444,8 @@ static int mutt_sasl_cb_pass (sasl_conn_t* conn, void* context, int id,
     return SASL_BADPARAM;
 
   dprint (2, (debugfile,
-    "mutt_sasl_cb_pass: getting password for %s@%s:%u\n", account->login,
-    account->host, account->port));
+              "mutt_sasl_cb_pass: getting password for %s@%s:%u\n", account->login,
+              account->host, account->port));
 
   if (mutt_account_getpass (account))
     return SASL_FAIL;
@@ -522,7 +524,7 @@ static int mutt_sasl_conn_read (CONNECTION* conn, char* buf, size_t len)
 
     return olen;
   }
-  
+
   conn->sockdata = sasldata->sockdata;
 
   sasldata->bpos = 0;
@@ -539,11 +541,11 @@ static int mutt_sasl_conn_read (CONNECTION* conn, char* buf, size_t len)
 	goto out;
 
       rc = sasl_decode (sasldata->saslconn, buf, rc, &sasldata->buf,
-        &sasldata->blen);
+                        &sasldata->blen);
       if (rc != SASL_OK)
       {
 	dprint (1, (debugfile, "SASL decode failed: %s\n",
-          sasl_errstring (rc, NULL, NULL)));
+                    sasl_errstring (rc, NULL, NULL)));
 	goto out;
       }
     }
@@ -560,14 +562,14 @@ static int mutt_sasl_conn_read (CONNECTION* conn, char* buf, size_t len)
   else
     rc = (sasldata->msasl_read) (conn, buf, len);
 
-  out:
-    conn->sockdata = sasldata;
+out:
+  conn->sockdata = sasldata;
 
-    return rc;
+  return rc;
 }
 
 static int mutt_sasl_conn_write (CONNECTION* conn, const char* buf,
-  size_t len)
+                                 size_t len)
 {
   SASL_DATA* sasldata;
   int rc;
@@ -590,7 +592,7 @@ static int mutt_sasl_conn_write (CONNECTION* conn, const char* buf,
       if (rc != SASL_OK)
       {
 	dprint (1, (debugfile, "SASL encoding failed: %s\n",
-          sasl_errstring (rc, NULL, NULL)));
+                    sasl_errstring (rc, NULL, NULL)));
 	goto fail;
       }
 
@@ -604,14 +606,14 @@ static int mutt_sasl_conn_write (CONNECTION* conn, const char* buf,
     while (len > *sasldata->pbufsize);
   }
   else
-  /* just write using the underlying socket function */
+    /* just write using the underlying socket function */
     rc = (sasldata->msasl_write) (conn, buf, len);
-  
+
   conn->sockdata = sasldata;
 
   return rc;
 
- fail:
+fail:
   conn->sockdata = sasldata;
   return -1;
 }

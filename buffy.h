@@ -1,16 +1,16 @@
-/* 
+/*
  * Copyright (C) 1996-2000,2010,2013 Michael R. Elkins <me@mutt.org>
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
@@ -25,9 +25,9 @@
 
 typedef struct buffy_t
 {
-  char path[PATH_MAX];
-  char realpath[PATH_MAX]; /* used for duplicate detection, context comparison,
-                                     and the sidebar */
+  BUFFER *pathbuf;
+  const char *realpath; /* used for duplicate detection, context comparison,
+                           and the sidebar */
   off_t size;
   struct buffy_t *next;
   short new;			/* mailbox has new mail */
@@ -50,6 +50,13 @@ WHERE short BuffyTimeout INITVAL (3);
 WHERE short BuffyCheckStatsInterval INITVAL (60);
 
 extern time_t BuffyDoneTime;	/* last time we knew for sure how much mail there was */
+
+void mutt_buffer_buffy (BUFFER *);
+void mutt_buffy (char *, size_t);
+
+int  mutt_buffy_list (void);
+int mutt_buffy_check (int);
+int mutt_buffy_notify (void);
 
 BUFFY *mutt_find_mailbox (const char *path);
 void mutt_update_mailbox (BUFFY * b);

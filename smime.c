@@ -7,12 +7,12 @@
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
@@ -137,12 +137,12 @@ int smime_valid_passphrase (void)
     return 1;
 
   smime_void_passphrase();
-  
+
   if (mutt_get_password (_("Enter S/MIME passphrase:"), SmimePass, sizeof (SmimePass)) == 0)
-    {
-      SmimeExptime = mutt_add_timeout (time (NULL), SmimeTimeout);
-      return (1);
-    }
+  {
+    SmimeExptime = mutt_add_timeout (time (NULL), SmimeTimeout);
+    return (1);
+  }
   else
     SmimeExptime = 0;
 
@@ -171,37 +171,46 @@ static const char *_mutt_fmt_smime_command (char *dest,
   char fmt[16];
   struct smime_command_context *cctx = (struct smime_command_context *) data;
   int optional = (flags & MUTT_FORMAT_OPTIONAL);
-  
+
   switch (op)
   {
     case 'C':
     {
       if (!optional)
       {
-	char path[_POSIX_PATH_MAX];
-	char buf1[LONG_STRING], buf2[LONG_STRING];
+	BUFFER *path, *buf1, *buf2;
 	struct stat sb;
 
-	strfcpy (path, NONULL (SmimeCALocation), sizeof (path));
-	mutt_expand_path (path, sizeof (path));
-	mutt_quote_filename (buf1, sizeof (buf1), path);
+        path = mutt_buffer_pool_get ();
+        buf1 = mutt_buffer_pool_get ();
+        buf2 = mutt_buffer_pool_get ();
 
-	if (stat (path, &sb) != 0 || !S_ISDIR (sb.st_mode))
-	  snprintf (buf2, sizeof (buf2), "-CAfile %s", buf1);
+	mutt_buffer_strcpy (path, NONULL (SmimeCALocation));
+	mutt_buffer_expand_path (path);
+	mutt_buffer_quote_filename (buf1, mutt_b2s (path));
+
+	if (stat (mutt_b2s (path), &sb) != 0 ||
+            !S_ISDIR (sb.st_mode))
+	  mutt_buffer_printf (buf2, "-CAfile %s", mutt_b2s (buf1));
 	else
-	  snprintf (buf2, sizeof (buf2), "-CApath %s", buf1);
-	
+	  mutt_buffer_printf (buf2, "-CApath %s", mutt_b2s (buf1));
+
 	snprintf (fmt, sizeof (fmt), "%%%ss", prefix);
-	snprintf (dest, destlen, fmt, buf2);
+	snprintf (dest, destlen, fmt, mutt_b2s (buf2));
+
+        mutt_buffer_pool_release (&path);
+        mutt_buffer_pool_release (&buf1);
+        mutt_buffer_pool_release (&buf2);
       }
       else if (!SmimeCALocation)
 	optional = 0;
       break;
     }
-    
+
     case 'c':
     {           /* certificate (list) */
-      if (!optional) {
+      if (!optional)
+      {
 	snprintf (fmt, sizeof (fmt), "%%%ss", prefix);
 	snprintf (dest, destlen, fmt, NONULL(cctx->certificates));
       }
@@ -209,10 +218,11 @@ static const char *_mutt_fmt_smime_command (char *dest,
 	optional = 0;
       break;
     }
-    
+
     case 'i':
     {           /* intermediate certificates  */
-      if (!optional) {
+      if (!optional)
+      {
 	snprintf (fmt, sizeof (fmt), "%%%ss", prefix);
 	snprintf (dest, destlen, fmt, NONULL(cctx->intermediates));
       }
@@ -220,7 +230,7 @@ static const char *_mutt_fmt_smime_command (char *dest,
 	optional = 0;
       break;
     }
-    
+
     case 's':
     {           /* detached signature */
       if (!optional)
@@ -232,7 +242,7 @@ static const char *_mutt_fmt_smime_command (char *dest,
 	optional = 0;
       break;
     }
-    
+
     case 'k':
     {           /* private key */
       if (!optional)
@@ -244,10 +254,11 @@ static const char *_mutt_fmt_smime_command (char *dest,
 	optional = 0;
       break;
     }
-    
+
     case 'a':
     {           /* algorithm for encryption */
-      if (!optional) {
+      if (!optional)
+      {
 	snprintf (fmt, sizeof (fmt), "%%%ss", prefix);
 	snprintf (dest, destlen, fmt, NONULL (cctx->cryptalg));
       }
@@ -255,7 +266,7 @@ static const char *_mutt_fmt_smime_command (char *dest,
 	optional = 0;
       break;
     }
-    
+
     case 'f':
     {           /* file to process */
       if (!optional)
@@ -267,10 +278,11 @@ static const char *_mutt_fmt_smime_command (char *dest,
 	optional = 0;
       break;
     }
-    
+
     case 'd':
     {           /* algorithm for the signature message digest */
-      if (!optional) {
+      if (!optional)
+      {
 	snprintf (fmt, sizeof (fmt), "%%%ss", prefix);
 	snprintf (dest, destlen, fmt, NONULL (cctx->digestalg));
       }
@@ -300,7 +312,7 @@ static void mutt_smime_command (char *d, size_t dlen,
 				struct smime_command_context *cctx, const char *fmt)
 {
   mutt_FormatString (d, dlen, 0, MuttIndexWindow->cols, NONULL(fmt), _mutt_fmt_smime_command,
-		    (unsigned long) cctx, 0);
+                     (unsigned long) cctx, 0);
   dprint (2,(debugfile, "mutt_smime_command: %s\n", d));
 }
 
@@ -320,12 +332,12 @@ static pid_t smime_invoke (FILE **smimein, FILE **smimeout, FILE **smimeerr,
 {
   struct smime_command_context cctx;
   char cmd[HUGE_STRING];
-  
+
   memset (&cctx, 0, sizeof (cctx));
 
   if (!format || !*format)
     return (pid_t) -1;
-  
+
   cctx.fname	       = fname;
   cctx.sig_fname       = sig_fname;
   cctx.key	       = key;
@@ -333,7 +345,7 @@ static pid_t smime_invoke (FILE **smimein, FILE **smimeout, FILE **smimeerr,
   cctx.digestalg       = digestalg;
   cctx.certificates    = certificates;
   cctx.intermediates   = intermediates;
-  
+
   mutt_smime_command (cmd, sizeof (cmd), &cctx, format);
 
   return mutt_create_filter_fd (cmd, smimein, smimeout, smimeerr,
@@ -375,7 +387,8 @@ static void smime_entry (char *s, size_t l, MUTTMENU * menu, int num)
   smime_key_t **Table = (smime_key_t **) menu->data;
   smime_key_t *this = Table[num];
   char* truststate;
-  switch(this->trust) {
+  switch (this->trust)
+  {
     case 't':
       truststate = N_("Trusted   ");
       break;
@@ -428,14 +441,14 @@ static smime_key_t *smime_select_key (smime_key_t *keys, char *query)
   }
 
   snprintf(title, sizeof(title), _("S/MIME certificates matching \"%s\"."),
-    query);
+           query);
 
   /* Make Helpstring */
   helpstr[0] = 0;
   mutt_make_help (buf, sizeof (buf), _("Exit  "), MENU_SMIME, OP_EXIT);
   strcat (helpstr, buf);	/* __STRCAT_CHECKED__ */
   mutt_make_help (buf, sizeof (buf), _("Select  "), MENU_SMIME,
-      OP_GENERIC_SELECT_ENTRY);
+                  OP_GENERIC_SELECT_ENTRY);
   strcat (helpstr, buf);	/* __STRCAT_CHECKED__ */
   mutt_make_help (buf, sizeof(buf), _("Help"), MENU_SMIME, OP_HELP);
   strcat (helpstr, buf);	/* __STRCAT_CHECKED__ */
@@ -593,7 +606,7 @@ static smime_key_t *smime_get_candidates(char *search, short public)
   results_end = &results;
 
   snprintf(index_file, sizeof (index_file), "%s/.index",
-    public ? NONULL(SmimeCertificates) : NONULL(SmimeKeys));
+           public ? NONULL(SmimeCertificates) : NONULL(SmimeKeys));
 
   if ((fp = safe_fopen (index_file, "r")) == NULL)
   {
@@ -779,9 +792,9 @@ smime_key_t *smime_ask_for_key(char *prompt, short abilities, short public)
 
 
 
-/* 
-   This sets the '*ToUse' variables for an upcoming decryption, where
-   the required key is different from SmimeDefaultKey.
+/*
+  This sets the '*ToUse' variables for an upcoming decryption, where
+  the required key is different from SmimeDefaultKey.
 */
 
 void _smime_getkeys (char *mailbox)
@@ -804,7 +817,7 @@ void _smime_getkeys (char *mailbox)
     k = key->hash;
 
     /* the key used last time. */
-    if (*SmimeKeyToUse && 
+    if (*SmimeKeyToUse &&
         !mutt_strcasecmp (k, SmimeKeyToUse + mutt_strlen (SmimeKeys)+1))
     {
       smime_free_key (&key);
@@ -812,9 +825,9 @@ void _smime_getkeys (char *mailbox)
     }
     else smime_void_passphrase ();
 
-    snprintf (SmimeKeyToUse, sizeof (SmimeKeyToUse), "%s/%s", 
+    snprintf (SmimeKeyToUse, sizeof (SmimeKeyToUse), "%s/%s",
 	      NONULL(SmimeKeys), k);
-    
+
     snprintf (SmimeCertToUse, sizeof (SmimeCertToUse), "%s/%s",
 	      NONULL(SmimeCertificates), k);
 
@@ -827,16 +840,16 @@ void _smime_getkeys (char *mailbox)
 
   if (*SmimeKeyToUse)
   {
-    if (!mutt_strcasecmp (SmimeDefaultKey, 
+    if (!mutt_strcasecmp (SmimeDefaultKey,
                           SmimeKeyToUse + mutt_strlen (SmimeKeys)+1))
       return;
 
     smime_void_passphrase ();
   }
 
-  snprintf (SmimeKeyToUse, sizeof (SmimeKeyToUse), "%s/%s", 
+  snprintf (SmimeKeyToUse, sizeof (SmimeKeyToUse), "%s/%s",
 	    NONULL (SmimeKeys), NONULL (SmimeDefaultKey));
-  
+
   snprintf (SmimeCertToUse, sizeof (SmimeCertToUse), "%s/%s",
 	    NONULL (SmimeCertificates), NONULL (SmimeDefaultKey));
 }
@@ -848,9 +861,9 @@ void smime_getkeys (ENVELOPE *env)
 
   if (option (OPTSDEFAULTDECRYPTKEY) && SmimeDefaultKey && *SmimeDefaultKey)
   {
-    snprintf (SmimeKeyToUse, sizeof (SmimeKeyToUse), "%s/%s", 
+    snprintf (SmimeKeyToUse, sizeof (SmimeKeyToUse), "%s/%s",
 	      NONULL (SmimeKeys), SmimeDefaultKey);
-    
+
     snprintf (SmimeCertToUse, sizeof (SmimeCertToUse), "%s/%s",
 	      NONULL(SmimeCertificates), SmimeDefaultKey);
 
@@ -929,7 +942,7 @@ char *smime_findKeys (ADDRESS *adrlist, int oppenc_mode)
 
 
 static int smime_handle_cert_email (char *certificate, char *mailbox,
-				   int copy, char ***buffer, int *num)
+                                    int copy, char ***buffer, int *num)
 {
   FILE *fpout = NULL, *fperr = NULL;
   char tmpfname[_POSIX_PATH_MAX];
@@ -979,7 +992,7 @@ static int smime_handle_cert_email (char *certificate, char *mailbox,
     len = mutt_strlen (email);
     if (len && (email[len - 1] == '\n'))
       email[len - 1] = '\0';
-    if(mutt_strncasecmp (email, mailbox, mutt_strlen (mailbox)) == 0)
+    if (mutt_strncasecmp (email, mailbox, mutt_strlen (mailbox)) == 0)
       ret=1;
 
     ret = ret < 0 ? 0 : ret;
@@ -997,7 +1010,7 @@ static int smime_handle_cert_email (char *certificate, char *mailbox,
     ret = 1;
   else ret = 0;
 
-  if(copy && buffer && num)
+  if (copy && buffer && num)
   {
     (*num) = count;
     *buffer =  safe_calloc(sizeof(char*), count);
@@ -1014,7 +1027,7 @@ static int smime_handle_cert_email (char *certificate, char *mailbox,
       count++;
     }
   }
-  else if(copy) ret = 2;
+  else if (copy) ret = 2;
 
   safe_fclose (&fpout);
   safe_fclose (&fperr);
@@ -1080,7 +1093,7 @@ static char *smime_extract_certificate (char *infile)
     safe_fclose (&fperr);
     mutt_unlink (pk7out);
     return NULL;
-    
+
   }
 
 
@@ -1093,7 +1106,7 @@ static char *smime_extract_certificate (char *infile)
     mutt_perror (certfile);
     return NULL;
   }
-  
+
   /* Step 2: Extract the certificates from a PKCS#7 structure.
    */
   if ((thepid =  smime_invoke (NULL, NULL, NULL,
@@ -1158,7 +1171,7 @@ static char *smime_extract_signer_certificate (char *infile)
     mutt_perror (certfile);
     return NULL;
   }
-  
+
   /* Extract signer's certificate
    */
   if ((thepid =  smime_invoke (NULL, NULL, NULL,
@@ -1235,7 +1248,7 @@ void smime_invoke_import (char *infile, char *mailbox)
   if ((certfile = smime_extract_certificate(infile)))
   {
     mutt_endwin (NULL);
-  
+
     if ((thepid =  smime_invoke (&smimein, NULL, NULL,
 				 -1, fileno(fpout), fileno(fperr),
 				 certfile, NULL, NULL, NULL, NULL, NULL, NULL,
@@ -1249,7 +1262,7 @@ void smime_invoke_import (char *infile, char *mailbox)
     safe_fclose (&smimein);
 
     mutt_wait_filter (thepid);
-  
+
     mutt_unlink (certfile);
     FREE (&certfile);
   }
@@ -1282,7 +1295,7 @@ int smime_verify_sender(HEADER *h)
     return 1;
   }
 
-  if(h->security & ENCRYPT)
+  if (h->security & ENCRYPT)
     mutt_copy_message (fpout, Context, h,
 		       MUTT_CM_DECODE_CRYPT & MUTT_CM_DECODE_SMIME,
 		       CH_MIME|CH_WEED|CH_NONEWLINE);
@@ -1294,13 +1307,13 @@ int smime_verify_sender(HEADER *h)
 
   if (h->env->from)
   {
-    h->env->from = mutt_expand_aliases (h->env->from); 
-    mbox = h->env->from->mailbox; 
+    h->env->from = mutt_expand_aliases (h->env->from);
+    mbox = h->env->from->mailbox;
   }
   else if (h->env->sender)
   {
-    h->env->sender = mutt_expand_aliases (h->env->sender); 
-    mbox = h->env->sender->mailbox; 
+    h->env->sender = mutt_expand_aliases (h->env->sender);
+    mbox = h->env->sender->mailbox;
   }
 
   if (mbox)
@@ -1310,19 +1323,19 @@ int smime_verify_sender(HEADER *h)
       mutt_unlink(tempfname);
       if (smime_handle_cert_email (certfile, mbox, 0, NULL, NULL))
       {
-	if(isendwin())
-         mutt_any_key_to_continue(NULL);
+	if (isendwin())
+          mutt_any_key_to_continue(NULL);
       }
       else
 	retval = 0;
       mutt_unlink(certfile);
       FREE (&certfile);
     }
-  else 
-	mutt_any_key_to_continue(_("no certfile"));
+    else
+      mutt_any_key_to_continue(_("no certfile"));
   }
-  else 
-	mutt_any_key_to_continue(_("no mbox"));
+  else
+    mutt_any_key_to_continue(_("no mbox"));
 
   mutt_unlink(tempfname);
   return retval;
@@ -1357,7 +1370,7 @@ pid_t smime_invoke_encrypt (FILE **smimein, FILE **smimeout, FILE **smimeerr,
 
 static
 pid_t smime_invoke_sign (FILE **smimein, FILE **smimeout, FILE **smimeerr,
-			 int smimeinfd, int smimeoutfd, int smimeerrfd, 
+			 int smimeinfd, int smimeoutfd, int smimeerrfd,
 			 const char *fname)
 {
   return smime_invoke (smimein, smimeout, smimeerr, smimeinfd, smimeoutfd,
@@ -1379,7 +1392,7 @@ BODY *smime_build_smime_entity (BODY *a, char *certlist)
   BODY *t;
   int err = 0, empty, off;
   pid_t thepid;
-  
+
   mutt_mktemp (tempfile, sizeof (tempfile));
   if ((fpout = safe_fopen (tempfile, "w+")) == NULL)
   {
@@ -1396,7 +1409,7 @@ BODY *smime_build_smime_entity (BODY *a, char *certlist)
     return NULL;
   }
   mutt_unlink (smimeerrfile);
-  
+
   mutt_mktemp (smimeinfile, sizeof (smimeinfile));
   if ((fptmp = safe_fopen (smimeinfile, "w+")) == NULL)
   {
@@ -1441,15 +1454,15 @@ BODY *smime_build_smime_entity (BODY *a, char *certlist)
   }
 
   safe_fclose (&smimein);
-  
+
   mutt_wait_filter (thepid);
   mutt_unlink (smimeinfile);
-  
+
   fflush (fpout);
   rewind (fpout);
   empty = (fgetc (fpout) == EOF);
   safe_fclose (&fpout);
- 
+
   fflush (smimeerr);
   rewind (smimeerr);
   while (fgets (buf, sizeof (buf) - 1, smimeerr) != NULL)
@@ -1484,7 +1497,7 @@ BODY *smime_build_smime_entity (BODY *a, char *certlist)
   t->unlink = 1; /*delete after sending the message */
   t->parts=0;
   t->next=0;
-  
+
   return (t);
 }
 
@@ -1556,20 +1569,20 @@ BODY *smime_sign_message (BODY *a )
     mutt_unlink (filetosign);
     return NULL;
   }
-  
+
   mutt_write_mime_header (a, sfp);
   fputc ('\n', sfp);
   mutt_write_mime_body (a, sfp);
   safe_fclose (&sfp);
 
-  
 
-  snprintf (SmimeKeyToUse, sizeof (SmimeKeyToUse), "%s/%s", 
-	   NONULL(SmimeKeys), signas);
+
+  snprintf (SmimeKeyToUse, sizeof (SmimeKeyToUse), "%s/%s",
+            NONULL(SmimeKeys), signas);
 
   snprintf (SmimeCertToUse, sizeof (SmimeCertToUse), "%s/%s",
-	   NONULL(SmimeCertificates), signas);
-  
+            NONULL(SmimeCertificates), signas);
+
   signas_key = smime_get_key_by_hash (signas, 1);
   if ((! signas_key) ||
       (! mutt_strcmp ("?", signas_key->issuer)))
@@ -1578,14 +1591,14 @@ BODY *smime_sign_message (BODY *a )
     intermediates = signas_key->issuer;
 
   snprintf (SmimeIntermediateToUse, sizeof (SmimeIntermediateToUse), "%s/%s",
-	   NONULL(SmimeCertificates), intermediates);
+            NONULL(SmimeCertificates), intermediates);
 
   smime_free_key (&signas_key);
-  
+
 
 
   if ((thepid = smime_invoke_sign (&smimein, NULL, &smimeerr,
-				 -1, fileno (smimeout), -1, filetosign)) == -1)
+                                   -1, fileno (smimeout), -1, filetosign)) == -1)
   {
     mutt_perror _("Can't open OpenSSL subprocess!");
     safe_fclose (&smimeout);
@@ -1596,7 +1609,7 @@ BODY *smime_sign_message (BODY *a )
   fputs (SmimePass, smimein);
   fputc ('\n', smimein);
   safe_fclose (&smimein);
-  
+
 
   mutt_wait_filter (thepid);
 
@@ -1618,7 +1631,7 @@ BODY *smime_sign_message (BODY *a )
   safe_fclose (&smimeout);
 
   mutt_unlink (filetosign);
-  
+
 
   if (err)
     mutt_any_key_to_continue (NULL);
@@ -1644,7 +1657,7 @@ BODY *smime_sign_message (BODY *a )
   FREE (&micalg);
 
   mutt_set_parameter ("protocol", "application/x-pkcs7-signature",
-		     &t->parameter);
+                      &t->parameter);
 
   t->parts = a;
   a = t;
@@ -1680,7 +1693,7 @@ BODY *smime_sign_message (BODY *a )
 
 static
 pid_t smime_invoke_verify (FILE **smimein, FILE **smimeout, FILE **smimeerr,
-			   int smimeinfd, int smimeoutfd, int smimeerrfd, 
+			   int smimeinfd, int smimeoutfd, int smimeerrfd,
 			   const char *fname, const char *sig_fname, int opaque)
 {
   return smime_invoke (smimein, smimeout, smimeerr, smimeinfd, smimeoutfd,
@@ -1691,7 +1704,7 @@ pid_t smime_invoke_verify (FILE **smimein, FILE **smimeout, FILE **smimeerr,
 
 static
 pid_t smime_invoke_decrypt (FILE **smimein, FILE **smimeout, FILE **smimeerr,
-			    int smimeinfd, int smimeoutfd, int smimeerrfd, 
+			    int smimeinfd, int smimeoutfd, int smimeerrfd,
 			    const char *fname)
 {
   return smime_invoke (smimein, smimeout, smimeerr, smimeinfd, smimeoutfd,
@@ -1715,7 +1728,7 @@ int smime_verify_one (BODY *sigbdy, STATE *s, const char *tempfile)
 
 
   snprintf (signedfile, sizeof (signedfile), "%s.sig", tempfile);
-  
+
   /* decode to a tempfile, saving the original destination */
   fp = s->fpout;
   if ((s->fpout = safe_fopen (signedfile, "w")) == NULL)
@@ -1748,10 +1761,10 @@ int smime_verify_one (BODY *sigbdy, STATE *s, const char *tempfile)
 
   /* restore the prefix */
   s->prefix = savePrefix;
-  
+
   sigbdy->type = origType;
 
-  
+
   mutt_mktemp (smimeerrfile, sizeof (smimeerrfile));
   if (!(smimeerr = safe_fopen (smimeerrfile, "w+")))
   {
@@ -1759,16 +1772,16 @@ int smime_verify_one (BODY *sigbdy, STATE *s, const char *tempfile)
     mutt_unlink (signedfile);
     return -1;
   }
-  
+
   crypt_current_time (s, "OpenSSL");
-  
-  if ((thepid = smime_invoke_verify (NULL, &smimeout, NULL, 
-				   -1, -1, fileno (smimeerr),
-				   tempfile, signedfile, 0)) != -1)
+
+  if ((thepid = smime_invoke_verify (NULL, &smimeout, NULL,
+                                     -1, -1, fileno (smimeerr),
+                                     tempfile, signedfile, 0)) != -1)
   {
     fflush (smimeout);
     safe_fclose (&smimeout);
-      
+
     if (mutt_wait_filter (thepid))
       badsig = -1;
     else
@@ -1776,10 +1789,10 @@ int smime_verify_one (BODY *sigbdy, STATE *s, const char *tempfile)
       char *line = NULL;
       int lineno = 0;
       size_t linelen;
-      
+
       fflush (smimeerr);
       rewind (smimeerr);
-      
+
       line = mutt_read_line (line, &linelen, smimeerr, &lineno, 0);
       if (linelen && !ascii_strcasecmp (line, "verification successful"))
 	badsig = 0;
@@ -1787,24 +1800,24 @@ int smime_verify_one (BODY *sigbdy, STATE *s, const char *tempfile)
       FREE (&line);
     }
   }
-  
+
   fflush (smimeerr);
   rewind (smimeerr);
   mutt_copy_stream (smimeerr, s->fpout);
   safe_fclose (&smimeerr);
-    
+
   state_attach_puts (_("[-- End of OpenSSL output --]\n\n"), s);
-  
+
   mutt_unlink (signedfile);
   mutt_unlink (smimeerrfile);
 
   sigbdy->length = tmplength;
   sigbdy->offset = tmpoffset;
-  
+
   /* restore the original source stream */
   safe_fclose (&s->fpin);
   s->fpin = fp;
-  
+
 
   return badsig;
 }
@@ -1970,6 +1983,20 @@ static BODY *smime_handle_entity (BODY *m, STATE *s, FILE *outFile)
     p->length = info.st_size - p->offset;
 
     mutt_parse_part (fpout, p);
+
+    if (s->flags & MUTT_DISPLAY)
+    {
+      mutt_protected_headers_handler (p, s);
+    }
+
+    /* Store any protected headers in the parent so they can be
+     * accessed for index updates after the handler recursion is done.
+     * This is done before the handler to prevent a nested encrypted
+     * handler from freeing the headers. */
+    mutt_free_envelope (&m->mime_headers);
+    m->mime_headers = p->mime_headers;
+    p->mime_headers = NULL;
+
     if (s->fpout)
     {
       rewind (fpout);
@@ -1979,6 +2006,18 @@ static BODY *smime_handle_entity (BODY *m, STATE *s, FILE *outFile)
       s->fpin = tmpfp_buffer;
     }
 
+    /* Embedded multipart signed protected headers override the
+     * encrypted headers.  We need to do this after the handler so
+     * they can be printed in the pager. */
+    if (!(type & SMIMESIGN) &&
+        mutt_is_multipart_signed (p) &&
+        p->parts &&
+        p->parts->mime_headers)
+    {
+      mutt_free_envelope (&m->mime_headers);
+      m->mime_headers = p->parts->mime_headers;
+      p->parts->mime_headers = NULL;
+    }
   }
 
   safe_fclose (&smimeout);
@@ -2043,7 +2082,7 @@ int smime_decrypt_mime (FILE *fpin, FILE **fpout, BODY *b, BODY **cur)
 
   if (b->parts)
     return -1;
-  
+
   memset (&s, 0, sizeof (s));
   s.fpin = fpin;
   fseeko (s.fpin, b->offset, 0);
@@ -2079,7 +2118,7 @@ int smime_decrypt_mime (FILE *fpin, FILE **fpout, BODY *b, BODY **cur)
     rv = -1;
     goto bail;
   }
-    
+
   (*cur)->goodsig = b->goodsig;
   (*cur)->badsig  = b->badsig;
 
@@ -2090,7 +2129,7 @@ bail:
   safe_fclose (&tmpfp);
   if (*fpout)
     rewind (*fpout);
-  
+
   return rv;
 }
 
@@ -2099,6 +2138,10 @@ int smime_application_smime_handler (BODY *m, STATE *s)
 {
   int rv = -1;
   BODY *tattach;
+
+  /* clear out any mime headers before the handler, so they can't be
+   * spoofed. */
+  mutt_free_envelope (&m->mime_headers);
 
   tattach = smime_handle_entity (m, s, NULL);
   if (tattach)
@@ -2161,124 +2204,124 @@ int smime_send_menu (HEADER *msg)
   {
     switch (choices[choice - 1])
     {
-    case 'e': /* (e)ncrypt */
-      msg->security |= ENCRYPT;
-      msg->security &= ~SIGN;
-      break;
+      case 'e': /* (e)ncrypt */
+        msg->security |= ENCRYPT;
+        msg->security &= ~SIGN;
+        break;
 
-    case 'w': /* encrypt (w)ith */
+      case 'w': /* encrypt (w)ith */
       {
         msg->security |= ENCRYPT;
         do
         {
           /* I use "dra" because "123" is recognized anyway */
           switch (mutt_multi_choice (_("Choose algorithm family:"
-                                      " 1: DES, 2: RC2, 3: AES,"
-                                      " or (c)lear? "),
-                                    _("drac")))
+                                       " 1: DES, 2: RC2, 3: AES,"
+                                       " or (c)lear? "),
+                                     _("drac")))
           {
-          case 1:
-            switch (choice = mutt_multi_choice (_("1: DES, 2: Triple-DES "),
-                                                _("dt")))
-            {
             case 1:
-              mutt_str_replace (&SmimeCryptAlg, "des");
+              switch (choice = mutt_multi_choice (_("1: DES, 2: Triple-DES "),
+                                                  _("dt")))
+              {
+                case 1:
+                  mutt_str_replace (&SmimeCryptAlg, "des");
+                  break;
+                case 2:
+                  mutt_str_replace (&SmimeCryptAlg, "des3");
+                  break;
+              }
               break;
-            case 2:
-              mutt_str_replace (&SmimeCryptAlg, "des3");
-              break;
-            }
-            break;
 
-          case 2:
-            switch (choice = mutt_multi_choice (_("1: RC2-40, 2: RC2-64, 3: RC2-128 "),
-                                                _("468")))
-            {
-            case 1:
-              mutt_str_replace (&SmimeCryptAlg, "rc2-40");
-              break;
             case 2:
-              mutt_str_replace (&SmimeCryptAlg, "rc2-64");
+              switch (choice = mutt_multi_choice (_("1: RC2-40, 2: RC2-64, 3: RC2-128 "),
+                                                  _("468")))
+              {
+                case 1:
+                  mutt_str_replace (&SmimeCryptAlg, "rc2-40");
+                  break;
+                case 2:
+                  mutt_str_replace (&SmimeCryptAlg, "rc2-64");
+                  break;
+                case 3:
+                  mutt_str_replace (&SmimeCryptAlg, "rc2-128");
+                  break;
+              }
               break;
+
             case 3:
-              mutt_str_replace (&SmimeCryptAlg, "rc2-128");
+              switch (choice = mutt_multi_choice (_("1: AES128, 2: AES192, 3: AES256 "),
+                                                  _("895")))
+              {
+                case 1:
+                  mutt_str_replace (&SmimeCryptAlg, "aes128");
+                  break;
+                case 2:
+                  mutt_str_replace (&SmimeCryptAlg, "aes192");
+                  break;
+                case 3:
+                  mutt_str_replace (&SmimeCryptAlg, "aes256");
+                  break;
+              }
               break;
-            }
-            break;
 
-          case 3:
-            switch (choice = mutt_multi_choice (_("1: AES128, 2: AES192, 3: AES256 "),
-                                                _("895")))
-            {
-            case 1:
-              mutt_str_replace (&SmimeCryptAlg, "aes128");
+            case 4: /* (c)lear */
+              FREE (&SmimeCryptAlg);
+              /* fallback */
+            case -1: /* Ctrl-G or Enter */
+              choice = 0;
               break;
-            case 2:
-              mutt_str_replace (&SmimeCryptAlg, "aes192");
-              break;
-            case 3:
-              mutt_str_replace (&SmimeCryptAlg, "aes256");
-              break;
-            }
-            break;
-
-          case 4: /* (c)lear */
-            FREE (&SmimeCryptAlg);
-            /* fallback */
-          case -1: /* Ctrl-G or Enter */
-            choice = 0;
-            break;
           }
         } while (choice == -1);
       }
       break;
 
-    case 's': /* (s)ign */
-      msg->security &= ~ENCRYPT;
-      msg->security |= SIGN;
-      break;
-
-    case 'S': /* (s)ign in oppenc mode */
-      msg->security |= SIGN;
-      break;
-
-    case 'a': /* sign (a)s */
-
-      if ((key = smime_ask_for_key (_("Sign as: "), KEYFLAG_CANSIGN, 0))) 
-      {
-        mutt_str_replace (&SmimeSignAs, key->hash);
-        smime_free_key (&key);
-
+      case 's': /* (s)ign */
+        msg->security &= ~ENCRYPT;
         msg->security |= SIGN;
+        break;
 
-        /* probably need a different passphrase */
-        crypt_smime_void_passphrase ();
-      }
+      case 'S': /* (s)ign in oppenc mode */
+        msg->security |= SIGN;
+        break;
 
-      break;
+      case 'a': /* sign (a)s */
 
-    case 'b': /* (b)oth */
-      msg->security |= (ENCRYPT | SIGN);
-      break;
+        if ((key = smime_ask_for_key (_("Sign as: "), KEYFLAG_CANSIGN, 0)))
+        {
+          mutt_str_replace (&SmimeSignAs, key->hash);
+          smime_free_key (&key);
 
-    case 'f': /* (f)orget it: kept for backward compatibility. */
-    case 'c': /* (c)lear */
-      msg->security &= ~(ENCRYPT | SIGN);
-      break;
+          msg->security |= SIGN;
 
-    case 'F': /* (f)orget it or (c)lear in oppenc mode */
-    case 'C':
-      msg->security &= ~SIGN;
-      break;
+          /* probably need a different passphrase */
+          crypt_smime_void_passphrase ();
+        }
 
-    case 'O': /* oppenc mode on */
-      msg->security |= OPPENCRYPT;
-      crypt_opportunistic_encrypt (msg);
-      break;
+        break;
 
-    case 'o': /* oppenc mode off */
-      msg->security &= ~OPPENCRYPT;
-      break;
+      case 'b': /* (b)oth */
+        msg->security |= (ENCRYPT | SIGN);
+        break;
+
+      case 'f': /* (f)orget it: kept for backward compatibility. */
+      case 'c': /* (c)lear */
+        msg->security &= ~(ENCRYPT | SIGN);
+        break;
+
+      case 'F': /* (f)orget it or (c)lear in oppenc mode */
+      case 'C':
+        msg->security &= ~SIGN;
+        break;
+
+      case 'O': /* oppenc mode on */
+        msg->security |= OPPENCRYPT;
+        crypt_opportunistic_encrypt (msg);
+        break;
+
+      case 'o': /* oppenc mode off */
+        msg->security &= ~OPPENCRYPT;
+        break;
     }
   }
 

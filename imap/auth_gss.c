@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 1999-2001,2005,2009 Brendan Cully <brendan@kublai.com>
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */
 
 /* GSS login/authentication code
  *
@@ -44,55 +44,53 @@
 #  include <gssapi/gssapi_generic.h>
 #endif
 
-#define GSS_BUFSIZE 8192
-
 #define GSS_AUTH_P_NONE      1
 #define GSS_AUTH_P_INTEGRITY 2
 #define GSS_AUTH_P_PRIVACY   4
 static void print_gss_error(OM_uint32 err_maj, OM_uint32 err_min)
 {
-	OM_uint32 maj_stat, min_stat; 
-	OM_uint32 msg_ctx = 0;
-	gss_buffer_desc status_string;
-	char buf_maj[512];
-	char buf_min[512];
-        size_t status_len;
-	
-	do
-	{
-		maj_stat = gss_display_status (&min_stat,
-					       err_maj,
-					       GSS_C_GSS_CODE,
-					       GSS_C_NO_OID,
-					       &msg_ctx,
-					       &status_string);
-		if (GSS_ERROR(maj_stat))
-			break;
-                status_len = status_string.length;
-                if (status_len >= sizeof(buf_maj))
-                        status_len = sizeof(buf_maj) - 1;
-		strncpy(buf_maj, (char*) status_string.value, status_len);
-                buf_maj[status_len] = '\0';
-		gss_release_buffer(&min_stat, &status_string);
-		
-		maj_stat = gss_display_status (&min_stat,
-					       err_min,
-					       GSS_C_MECH_CODE,
-					       GSS_C_NULL_OID,
-					       &msg_ctx,
-					       &status_string);
-		if (!GSS_ERROR(maj_stat))
-		{
-                        status_len = status_string.length;
-                        if (status_len >= sizeof(buf_min))
-                                status_len = sizeof(buf_min) - 1;
-			strncpy(buf_min, (char*) status_string.value, status_len);
-                        buf_min[status_len] = '\0';
-			gss_release_buffer(&min_stat, &status_string);
-		}
-	} while (!GSS_ERROR(maj_stat) && msg_ctx != 0);
-	
-	dprint (2, (debugfile, "((%s:%d )(%s:%d))", buf_maj, err_maj, buf_min, err_min));
+  OM_uint32 maj_stat, min_stat;
+  OM_uint32 msg_ctx = 0;
+  gss_buffer_desc status_string;
+  char buf_maj[512];
+  char buf_min[512];
+  size_t status_len;
+
+  do
+  {
+    maj_stat = gss_display_status (&min_stat,
+                                   err_maj,
+                                   GSS_C_GSS_CODE,
+                                   GSS_C_NO_OID,
+                                   &msg_ctx,
+                                   &status_string);
+    if (GSS_ERROR(maj_stat))
+      break;
+    status_len = status_string.length;
+    if (status_len >= sizeof(buf_maj))
+      status_len = sizeof(buf_maj) - 1;
+    strncpy(buf_maj, (char*) status_string.value, status_len);
+    buf_maj[status_len] = '\0';
+    gss_release_buffer(&min_stat, &status_string);
+
+    maj_stat = gss_display_status (&min_stat,
+                                   err_min,
+                                   GSS_C_MECH_CODE,
+                                   GSS_C_NULL_OID,
+                                   &msg_ctx,
+                                   &status_string);
+    if (!GSS_ERROR(maj_stat))
+    {
+      status_len = status_string.length;
+      if (status_len >= sizeof(buf_min))
+        status_len = sizeof(buf_min) - 1;
+      strncpy(buf_min, (char*) status_string.value, status_len);
+      buf_min[status_len] = '\0';
+      gss_release_buffer(&min_stat, &status_string);
+    }
+  } while (!GSS_ERROR(maj_stat) && msg_ctx != 0);
+
+  dprint (2, (debugfile, "((%s:%d )(%s:%d))", buf_maj, err_maj, buf_min, err_min));
 }
 
 /* imap_auth_gss: AUTH=GSSAPI support. */
@@ -109,34 +107,38 @@ imap_auth_res_t imap_auth_gss (IMAP_DATA* idata, const char* method)
   gss_qop_t quality;
   int cflags;
   OM_uint32 maj_stat, min_stat;
-  char buf1[GSS_BUFSIZE], buf2[GSS_BUFSIZE];
+  BUFFER *buf1 = NULL, *buf2 = NULL;
   unsigned long buf_size;
-  int rc;
+  int rc, retval = IMAP_AUTH_FAILURE;
 
   if (!mutt_bit_isset (idata->capabilities, AGSSAPI))
     return IMAP_AUTH_UNAVAIL;
 
   if (mutt_account_getuser (&idata->conn->account))
     return IMAP_AUTH_FAILURE;
-  
+
+  buf1 = mutt_buffer_pool_get ();
+  buf2 = mutt_buffer_pool_get ();
+
   /* get an IMAP service ticket for the server */
-  snprintf (buf1, sizeof (buf1), "imap@%s", idata->conn->account.host);
-  request_buf.value = buf1;
-  request_buf.length = strlen (buf1);
+  mutt_buffer_printf (buf1, "imap@%s", idata->conn->account.host);
+  request_buf.value = buf1->data;
+  request_buf.length = mutt_buffer_len (buf1);
   maj_stat = gss_import_name (&min_stat, &request_buf, gss_nt_service_name,
-    &target_name);
+                              &target_name);
   if (maj_stat != GSS_S_COMPLETE)
   {
     dprint (2, (debugfile, "Couldn't get service name for [%s]\n", buf1));
-    return IMAP_AUTH_UNAVAIL;
+    retval = IMAP_AUTH_UNAVAIL;
+    goto cleanup;
   }
-#ifdef DEBUG	
+#ifdef DEBUG
   else if (debuglevel >= 2)
   {
     maj_stat = gss_display_name (&min_stat, target_name, &request_buf,
-      &mech_name);
+                                 &mech_name);
     dprint (2, (debugfile, "Using service name [%s]\n",
-      (char*) request_buf.value));
+                (char*) request_buf.value));
     maj_stat = gss_release_buffer (&min_stat, &request_buf);
   }
 #endif
@@ -146,16 +148,17 @@ imap_auth_res_t imap_auth_gss (IMAP_DATA* idata, const char* method)
 
   /* build token */
   maj_stat = gss_init_sec_context (&min_stat, GSS_C_NO_CREDENTIAL, &context,
-    target_name, GSS_C_NO_OID, GSS_C_MUTUAL_FLAG | GSS_C_SEQUENCE_FLAG, 0, 
-    GSS_C_NO_CHANNEL_BINDINGS, sec_token, NULL, &send_token,
-    (unsigned int*) &cflags, NULL);
+                                   target_name, GSS_C_NO_OID, GSS_C_MUTUAL_FLAG | GSS_C_SEQUENCE_FLAG, 0,
+                                   GSS_C_NO_CHANNEL_BINDINGS, sec_token, NULL, &send_token,
+                                   (unsigned int*) &cflags, NULL);
   if (maj_stat != GSS_S_COMPLETE && maj_stat != GSS_S_CONTINUE_NEEDED)
   {
     print_gss_error(maj_stat, min_stat);
     dprint (1, (debugfile, "Error acquiring credentials - no TGT?\n"));
     gss_release_name (&min_stat, &target_name);
 
-    return IMAP_AUTH_UNAVAIL;
+    retval = IMAP_AUTH_UNAVAIL;
+    goto cleanup;
   }
 
   /* now begin login */
@@ -177,11 +180,10 @@ imap_auth_res_t imap_auth_gss (IMAP_DATA* idata, const char* method)
 
   /* now start the security context initialisation loop... */
   dprint (2, (debugfile, "Sending credentials\n"));
-  mutt_to_base64 ((unsigned char*) buf1, send_token.value, send_token.length,
-    sizeof (buf1) - 2);
+  mutt_buffer_to_base64 (buf1, send_token.value, send_token.length);
   gss_release_buffer (&min_stat, &send_token);
-  safe_strcat (buf1, sizeof (buf1), "\r\n");
-  mutt_socket_write (idata->conn, buf1);
+  mutt_buffer_addstr (buf1, "\r\n");
+  mutt_socket_write (idata->conn, mutt_b2s (buf1));
 
   while (maj_stat == GSS_S_CONTINUE_NEEDED)
   {
@@ -197,15 +199,21 @@ imap_auth_res_t imap_auth_gss (IMAP_DATA* idata, const char* method)
       goto bail;
     }
 
-    request_buf.length = mutt_from_base64 (buf2, idata->buf + 2, sizeof(buf2));
-    request_buf.value = buf2;
+    if (mutt_buffer_from_base64 (buf2, idata->buf + 2) < 0)
+    {
+      dprint (1, (debugfile, "Invalid base64 server response.\n"));
+      gss_release_name (&min_stat, &target_name);
+      goto err_abort_cmd;
+    }
+    request_buf.value = buf2->data;
+    request_buf.length = mutt_buffer_len (buf2);
     sec_token = &request_buf;
 
     /* Write client data */
     maj_stat = gss_init_sec_context (&min_stat, GSS_C_NO_CREDENTIAL, &context,
-      target_name, GSS_C_NO_OID, GSS_C_MUTUAL_FLAG | GSS_C_SEQUENCE_FLAG, 0, 
-      GSS_C_NO_CHANNEL_BINDINGS, sec_token, NULL, &send_token,
-      (unsigned int*) &cflags, NULL);
+                                     target_name, GSS_C_NO_OID, GSS_C_MUTUAL_FLAG | GSS_C_SEQUENCE_FLAG, 0,
+                                     GSS_C_NO_CHANNEL_BINDINGS, sec_token, NULL, &send_token,
+                                     (unsigned int*) &cflags, NULL);
     if (maj_stat != GSS_S_COMPLETE && maj_stat != GSS_S_CONTINUE_NEEDED)
     {
       print_gss_error(maj_stat, min_stat);
@@ -214,11 +222,10 @@ imap_auth_res_t imap_auth_gss (IMAP_DATA* idata, const char* method)
 
       goto err_abort_cmd;
     }
-    mutt_to_base64 ((unsigned char*) buf1, send_token.value,
-      send_token.length, sizeof (buf1) - 2);
+    mutt_buffer_to_base64 (buf1, send_token.value, send_token.length);
     gss_release_buffer (&min_stat, &send_token);
-    safe_strcat (buf1, sizeof (buf1), "\r\n");
-    mutt_socket_write (idata->conn, buf1);
+    mutt_buffer_addstr (buf1, "\r\n");
+    mutt_socket_write (idata->conn, mutt_b2s (buf1));
   }
 
   gss_release_name (&min_stat, &target_name);
@@ -233,11 +240,16 @@ imap_auth_res_t imap_auth_gss (IMAP_DATA* idata, const char* method)
     dprint (1, (debugfile, "Error receiving server response.\n"));
     goto bail;
   }
-  request_buf.length = mutt_from_base64 (buf2, idata->buf + 2, sizeof(buf2));
-  request_buf.value = buf2;
+  if (mutt_buffer_from_base64 (buf2, idata->buf + 2) < 0)
+  {
+    dprint (1, (debugfile, "Invalid base64 server response.\n"));
+    goto err_abort_cmd;
+  }
+  request_buf.value = buf2->data;
+  request_buf.length = mutt_buffer_len (buf2);
 
   maj_stat = gss_unwrap (&min_stat, context, &request_buf, &send_token,
-    &cflags, &quality);
+                         &cflags, &quality);
   if (maj_stat != GSS_S_COMPLETE)
   {
     print_gss_error(maj_stat, min_stat);
@@ -263,33 +275,33 @@ imap_auth_res_t imap_auth_gss (IMAP_DATA* idata, const char* method)
   buf_size = ntohl (*((long *) send_token.value));
   gss_release_buffer (&min_stat, &send_token);
   dprint (2, (debugfile, "Unwrapped security level flags: %c%c%c\n",
-    server_conf_flags & GSS_AUTH_P_NONE      ? 'N' : '-',
-    server_conf_flags & GSS_AUTH_P_INTEGRITY ? 'I' : '-',
-    server_conf_flags & GSS_AUTH_P_PRIVACY   ? 'P' : '-'));
+              server_conf_flags & GSS_AUTH_P_NONE      ? 'N' : '-',
+              server_conf_flags & GSS_AUTH_P_INTEGRITY ? 'I' : '-',
+              server_conf_flags & GSS_AUTH_P_PRIVACY   ? 'P' : '-'));
   dprint (2, (debugfile, "Maximum GSS token size is %ld\n", buf_size));
 
   /* agree to terms (hack!) */
   buf_size = htonl (buf_size); /* not relevant without integrity/privacy */
-  memcpy (buf1, &buf_size, 4);
-  buf1[0] = GSS_AUTH_P_NONE;
+  mutt_buffer_clear (buf1);
+  mutt_buffer_addch (buf1, GSS_AUTH_P_NONE);
+  mutt_buffer_addstr_n (buf1, ((char *)&buf_size) + 1, 3);
   /* server decides if principal can log in as user */
-  strncpy (buf1 + 4, idata->conn->account.user, sizeof (buf1) - 4);
-  request_buf.value = buf1;
-  request_buf.length = 4 + strlen (idata->conn->account.user);
+  mutt_buffer_addstr (buf1, idata->conn->account.user);
+  request_buf.value = buf1->data;
+  request_buf.length = mutt_buffer_len (buf1);
   maj_stat = gss_wrap (&min_stat, context, 0, GSS_C_QOP_DEFAULT, &request_buf,
-    &cflags, &send_token);
+                       &cflags, &send_token);
   if (maj_stat != GSS_S_COMPLETE)
   {
     dprint (2, (debugfile, "Error creating login request\n"));
     goto err_abort_cmd;
   }
 
-  mutt_to_base64 ((unsigned char*) buf1, send_token.value, send_token.length,
-		  sizeof (buf1) - 2);
+  mutt_buffer_to_base64 (buf1, send_token.value, send_token.length);
   dprint (2, (debugfile, "Requesting authorisation as %s\n",
-    idata->conn->account.user));
-  safe_strcat (buf1, sizeof (buf1), "\r\n");
-  mutt_socket_write (idata->conn, buf1);
+              idata->conn->account.user));
+  mutt_buffer_addstr (buf1, "\r\n");
+  mutt_socket_write (idata->conn, mutt_b2s (buf1));
 
   /* Joy of victory or agony of defeat? */
   do
@@ -314,19 +326,26 @@ imap_auth_res_t imap_auth_gss (IMAP_DATA* idata, const char* method)
      * enough to flush its own credentials */
     gss_release_buffer (&min_stat, &send_token);
 
-    return IMAP_AUTH_SUCCESS;
+    retval = IMAP_AUTH_SUCCESS;
+    goto cleanup;
   }
   else
     goto bail;
 
- err_abort_cmd:
+err_abort_cmd:
   mutt_socket_write (idata->conn, "*\r\n");
   do
     rc = imap_cmd_step (idata);
   while (rc == IMAP_CMD_CONTINUE);
 
- bail:
+bail:
   mutt_error _("GSSAPI authentication failed.");
   mutt_sleep (2);
-  return IMAP_AUTH_FAILURE;
+  retval = IMAP_AUTH_FAILURE;
+
+cleanup:
+  mutt_buffer_pool_release (&buf1);
+  mutt_buffer_pool_release (&buf2);
+
+  return retval;
 }

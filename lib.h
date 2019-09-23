@@ -1,24 +1,24 @@
 /*
  * Copyright (C) 1996-2000,2007,2010,2012 Michael R. Elkins <me@mutt.org>
  * Copyright (C) 1999-2005,2007 Thomas Roessler <roessler@does-not-exist.org>
- * 
+ *
  *     This program is free software; you can redistribute it
  *     and/or modify it under the terms of the GNU General Public
  *     License as published by the Free Software Foundation; either
  *     version 2 of the License, or (at your option) any later
  *     version.
- * 
+ *
  *     This program is distributed in the hope that it will be
  *     useful, but WITHOUT ANY WARRANTY; without even the implied
  *     warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
  *     PURPOSE.  See the GNU General Public License for more
  *     details.
- * 
+ *
  *     You should have received a copy of the GNU General Public
  *     License along with this program; if not, write to the Free
  *     Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  *     Boston, MA  02110-1301, USA.
- */ 
+ */
 
 /* mutt functions which are generally useful. */
 
@@ -65,7 +65,7 @@
 /*
  * Create a format string to be used with scanf.
  * To use it, write, for instance, MUTT_FORMAT(HUGE_STRING).
- * 
+ *
  * See K&R 2nd ed, p. 231 for an explanation.
  */
 # define _MUTT_FORMAT_2(a,b)	"%" a  b
@@ -133,7 +133,7 @@ extern void (*mutt_error) (const char *, ...);
 # endif
 
 # ifdef _LIB_C
-#  define MUTT_LIB_WHERE 
+#  define MUTT_LIB_WHERE
 #  define MUTT_LIB_INITVAL(x) = x
 # else
 #  define MUTT_LIB_WHERE extern
@@ -150,7 +150,7 @@ MUTT_LIB_WHERE int debuglevel MUTT_LIB_INITVAL(0);
 
 void mutt_debug (FILE *, const char *, ...);
 
-#  define dprint(N,X) do { if(debuglevel>=N && debugfile) mutt_debug X; } while (0)
+#  define dprint(N,X) do { if (debuglevel>=N && debugfile) mutt_debug X; } while (0)
 
 # else
 
@@ -168,8 +168,6 @@ void mutt_debug (FILE *, const char *, ...);
 #define MUTT_EOL		(1<<1)		/* don't strip \n/\r\n */
 
 /* The actual library functions. */
-
-FILE *safe_fopen (const char *, const char *);
 
 char *mutt_concatn_path (char *, size_t, const char *, size_t, const char *, size_t);
 char *mutt_concat_path (char *, const char *, const char *, size_t);
@@ -201,19 +199,15 @@ const char *mutt_basename (const char *);
 int compare_stat (struct stat *, struct stat *);
 int mutt_copy_stream (FILE *, FILE *);
 int mutt_copy_bytes (FILE *, FILE *, size_t);
-int mutt_rx_sanitize_string (char *, size_t, const char *);
 int mutt_strcasecmp (const char *, const char *);
 int mutt_strcmp (const char *, const char *);
 int mutt_strncasecmp (const char *, const char *, size_t);
 int mutt_strncmp (const char *, const char *, size_t);
 int mutt_strcoll (const char *, const char *);
 int safe_asprintf (char **, const char *, ...);
-int safe_open (const char *, int);
 int safe_rename (const char *, const char *);
-int safe_symlink (const char *, const char *);
 int safe_fclose (FILE **);
 int safe_fsync_close (FILE **);
-int mutt_rmtree (const char *);
 
 size_t mutt_quote_filename (char *, size_t, const char *);
 size_t mutt_strlen (const char *);

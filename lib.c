@@ -1,24 +1,24 @@
 /*
  * Copyright (C) 1996-2000,2007,2010 Michael R. Elkins <me@mutt.org>
  * Copyright (C) 1999-2004,2006-2007 Thomas Roessler <roessler@does-not-exist.org>
- * 
+ *
  *     This program is free software; you can redistribute it
  *     and/or modify it under the terms of the GNU General Public
  *     License as published by the Free Software Foundation; either
  *     version 2 of the License, or (at your option) any later
  *     version.
- * 
+ *
  *     This program is distributed in the hope that it will be
  *     useful, but WITHOUT ANY WARRANTY; without even the implied
  *     warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
  *     PURPOSE.  See the GNU General Public License for more
  *     details.
- * 
+ *
  *     You should have received a copy of the GNU General Public
  *     License along with this program; if not, write to the Free
  *     Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  *     Boston, MA  02110-1301, USA.
- */ 
+ */
 
 /*
  * This file used to contain some more functions, namely those
@@ -57,8 +57,8 @@ static const struct sysexits
 {
   int v;
   const char *str;
-} 
-sysexits_h[] = 
+}
+sysexits_h[] =
 {
 #ifdef EX_USAGE
   { 0xff & EX_USAGE, "Bad usage." },
@@ -132,7 +132,7 @@ void *safe_calloc (size_t nmemb, size_t size)
     sleep (1);
     mutt_exit (1);
   }
-  
+
   if (!(p = calloc (nmemb, size)))
   {
     mutt_error _("Out of memory!");
@@ -203,10 +203,10 @@ void safe_free (void *ptr)	/* __SAFE_FREE_CHECKED__ */
 int safe_fclose (FILE **f)
 {
   int r = 0;
-  
+
   if (*f)
     r = fclose (*f);
-      
+
   *f = NULL;
   return r;
 }
@@ -248,18 +248,18 @@ char *safe_strcat (char *d, size_t l, const char *s)
 {
   char *p = d;
 
-  if (!l) 
+  if (!l)
     return d;
 
   l--; /* Space for the trailing '\0'. */
-  
+
   for (; *d && l; l--)
     d++;
   for (; *s && l; l--)
     *d++ = *s++;
 
   *d = '\0';
-  
+
   return p;
 }
 
@@ -269,16 +269,16 @@ char *safe_strncat (char *d, size_t l, const char *s, size_t sl)
 
   if (!l)
     return d;
-  
+
   l--; /* Space for the trailing '\0'. */
-  
+
   for (; *d && l; l--)
     d++;
   for (; *s && l && sl; l--, sl--)
     *d++ = *s++;
 
   *d = '\0';
-  
+
   return p;
 }
 
@@ -318,25 +318,25 @@ void mutt_unlink (const char *s)
   char buf[2048];
 
   /* Defend against symlink attacks */
-  
-#ifdef O_NOFOLLOW 
+
+#ifdef O_NOFOLLOW
   flags = O_RDWR | O_NOFOLLOW;
 #else
   flags = O_RDWR;
 #endif
-  
+
   if (lstat (s, &sb) == 0 && S_ISREG(sb.st_mode))
   {
     if ((fd = open (s, flags)) < 0)
       return;
-    
-    if ((fstat (fd, &sb2) != 0) || !S_ISREG (sb2.st_mode) 
+
+    if ((fstat (fd, &sb2) != 0) || !S_ISREG (sb2.st_mode)
 	|| (sb.st_dev != sb2.st_dev) || (sb.st_ino != sb2.st_ino))
     {
       close (fd);
       return;
     }
-    
+
     if ((f = fdopen (fd, "r+")))
     {
       unlink (s);
@@ -388,7 +388,7 @@ int mutt_copy_stream (FILE *fin, FILE *fout)
   return 0;
 }
 
-int 
+int
 compare_stat (struct stat *osb, struct stat *nsb)
 {
   if (osb->st_dev != nsb->st_dev || osb->st_ino != nsb->st_ino ||
@@ -400,50 +400,11 @@ compare_stat (struct stat *osb, struct stat *nsb)
   return 0;
 }
 
-int safe_symlink(const char *oldpath, const char *newpath)
-{
-  struct stat osb, nsb;
-
-  if(!oldpath || !newpath)
-    return -1;
-  
-  if(unlink(newpath) == -1 && errno != ENOENT)
-    return -1;
-  
-  if (oldpath[0] == '/')
-  {
-    if (symlink (oldpath, newpath) == -1)
-      return -1;
-  }
-  else
-  {
-    char abs_oldpath[_POSIX_PATH_MAX];
-
-    if ((getcwd (abs_oldpath, sizeof abs_oldpath) == NULL) ||
-	(strlen (abs_oldpath) + 1 + strlen (oldpath) + 1 > sizeof abs_oldpath))
-    return -1;
-  
-    strcat (abs_oldpath, "/");		/* __STRCAT_CHECKED__ */
-    strcat (abs_oldpath, oldpath);	/* __STRCAT_CHECKED__ */
-    if (symlink (abs_oldpath, newpath) == -1)
-      return -1;
-  }
-
-  if(stat(oldpath, &osb) == -1 || stat(newpath, &nsb) == -1
-     || compare_stat(&osb, &nsb) == -1)
-  {
-    unlink(newpath);
-    return -1;
-  }
-  
-  return 0;
-}
 
 
-
-/* 
+/*
  * This function is supposed to do nfs-safe renaming of files.
- * 
+ *
  * Warning: We don't check whether src and target are equal.
  */
 
@@ -485,15 +446,15 @@ int safe_rename (const char *src, const char *target)
     /*
      * Coda does not allow cross-directory links, but tells
      * us it's a cross-filesystem linking attempt.
-     * 
+     *
      * However, the Coda rename call is allegedly safe to use.
-     * 
-     * With other file systems, rename should just fail when 
+     *
+     * With other file systems, rename should just fail when
      * the files reside on different file systems, so it's safe
      * to try it here.
      *
      */
-    
+
     dprint (1, (debugfile, "safe_rename: link (%s, %s) failed: %s (%d)\n", src, target, strerror (errno), errno));
 
     /*
@@ -507,16 +468,16 @@ int safe_rename (const char *src, const char *target)
 #ifdef EOPNOTSUPP
 	|| errno == EOPNOTSUPP
 #endif
-	)
+      )
     {
       dprint (1, (debugfile, "safe_rename: trying rename...\n"));
-      if (rename (src, target) == -1) 
+      if (rename (src, target) == -1)
       {
 	dprint (1, (debugfile, "safe_rename: rename (%s, %s) failed: %s (%d)\n", src, target, strerror (errno), errno));
 	return -1;
       }
       dprint (1, (debugfile, "safe_rename: rename succeeded.\n"));
-    
+
       return 0;
     }
 
@@ -548,7 +509,7 @@ int safe_rename (const char *src, const char *target)
     return -1;
   }
 
-  /* 
+  /*
    * pretend that the link failed because the target file
    * did already exist.
    */
@@ -565,173 +526,16 @@ success:
    * Unlink the original link.  Should we really ignore the return
    * value here? XXX
    */
-  if (unlink (src) == -1) 
+  if (unlink (src) == -1)
   {
     dprint (1, (debugfile, "safe_rename: unlink (%s) failed: %s (%d)\n",
 		src, strerror (errno), errno));
   }
-  
+
 
   return 0;
 }
 
-
-/* Create a temporary directory next to a file name */
-
-static int mutt_mkwrapdir (const char *path, char *newfile, size_t nflen, 
-		    char *newdir, size_t ndlen)
-{
-  const char *basename;
-  char parent[_POSIX_PATH_MAX];
-  char *p;
-
-  strfcpy (parent, NONULL (path), sizeof (parent));
-  
-  if ((p = strrchr (parent, '/')))
-  {
-    *p = '\0';
-    basename = p + 1;
-  }
-  else
-  {
-    strfcpy (parent, ".", sizeof (parent));
-    basename = path;
-  }
-
-  snprintf (newdir, ndlen, "%s/%s", parent, ".muttXXXXXX");
-  if (mkdtemp(newdir) == NULL)
-  {
-      dprint(1, (debugfile, "mutt_mkwrapdir: mkdtemp() failed\n"));
-      return -1;
-  }
-  
-  if (snprintf (newfile, nflen, "%s/%s", newdir, NONULL(basename)) >= nflen)
-  {
-      rmdir(newdir);
-      dprint(1, (debugfile, "mutt_mkwrapdir: string was truncated\n"));
-      return -1;
-  }
-  return 0;  
-}
-
-/* remove a directory and everything under it */
-int mutt_rmtree (const char* path)
-{
-  DIR* dirp;
-  struct dirent* de;
-  char cur[_POSIX_PATH_MAX];
-  struct stat statbuf;
-  int rc = 0;
-
-  if (!(dirp = opendir (path)))
-  {
-    dprint (1, (debugfile, "mutt_rmtree: error opening directory %s\n", path));
-    return -1;
-  }
-  while ((de = readdir (dirp)))
-  {
-    if (!strcmp (".", de->d_name) || !strcmp ("..", de->d_name))
-      continue;
-
-    snprintf (cur, sizeof (cur), "%s/%s", path, de->d_name);
-    /* XXX make nonrecursive version */
-
-    if (stat(cur, &statbuf) == -1)
-    {
-      rc = 1;
-      continue;
-    }
-
-    if (S_ISDIR (statbuf.st_mode))
-      rc |= mutt_rmtree (cur);
-    else
-      rc |= unlink (cur);
-  }
-  closedir (dirp);
-
-  rc |= rmdir (path);
-
-  return rc;
-}
-
-static int mutt_put_file_in_place (const char *path, const char *safe_file, const char *safe_dir)
-{
-  int rv;
-  
-  rv = safe_rename (safe_file, path);
-  unlink (safe_file);
-  rmdir (safe_dir);
-  return rv;
-}
-
-int safe_open (const char *path, int flags)
-{
-  struct stat osb, nsb;
-  int fd;
-
-  if (flags & O_EXCL) 
-  {
-    char safe_file[_POSIX_PATH_MAX];
-    char safe_dir[_POSIX_PATH_MAX];
-
-    if (mutt_mkwrapdir (path, safe_file, sizeof (safe_file),
-			safe_dir, sizeof (safe_dir)) == -1)
-      return -1;
-    
-    if ((fd = open (safe_file, flags, 0600)) < 0)
-    {
-      rmdir (safe_dir);
-      return fd;
-    }
-
-    /* NFS and I believe cygwin do not handle movement of open files well */
-    close (fd);
-    if (mutt_put_file_in_place (path, safe_file, safe_dir) == -1)
-      return -1;
-  }
-
-  if ((fd = open (path, flags & ~O_EXCL, 0600)) < 0)
-    return fd;
-    
-  /* make sure the file is not symlink */
-  if (lstat (path, &osb) < 0 || fstat (fd, &nsb) < 0 ||
-      compare_stat(&osb, &nsb) == -1)
-  {
-/*    dprint (1, (debugfile, "safe_open(): %s is a symlink!\n", path)); */
-    close (fd);
-    return (-1);
-  }
-
-  return (fd);
-}
-
-/* when opening files for writing, make sure the file doesn't already exist
- * to avoid race conditions.
- */
-FILE *safe_fopen (const char *path, const char *mode)
-{
-  if (mode[0] == 'w')
-  {
-    int fd;
-    int flags = O_CREAT | O_EXCL;
-
-#ifdef O_NOFOLLOW
-    flags |= O_NOFOLLOW;
-#endif
-
-    if (mode[1] == '+')
-      flags |= O_RDWR;
-    else
-      flags |= O_WRONLY;
-
-    if ((fd = safe_open (path, flags)) < 0)
-      return (NULL);
-
-    return (fdopen (fd, mode));
-  }
-  else
-    return (fopen (path, mode));
-}
 
 static const char safe_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+@{}._-:%/";
 
@@ -744,30 +548,6 @@ void mutt_sanitize_filename (char *f, short slash)
     if ((slash && *f == '/') || !strchr (safe_chars, *f))
       *f = '_';
   }
-}
-
-/* these characters must be escaped in regular expressions */
-
-static const char rx_special_chars[] = "^.[$()|*+?{\\";
-
-int mutt_rx_sanitize_string (char *dest, size_t destlen, const char *src)
-{
-  while (*src && --destlen > 2)
-  {
-    if (strchr (rx_special_chars, *src))
-    {
-      *dest++ = '\\';
-      destlen--;
-    }
-    *dest++ = *src++;
-  }
-  
-  *dest = '\0';
-  
-  if (*src)
-    return -1;
-  else
-    return 0;
 }
 
 /* Read a line from ``fp'' into the dynamically allocated ``s'',
@@ -870,7 +650,7 @@ size_t mutt_quote_filename (char *d, size_t l, const char *f)
 {
   size_t i, j = 0;
 
-  if(!f) 
+  if (!f)
   {
     *d = '\0';
     return 0;
@@ -878,12 +658,12 @@ size_t mutt_quote_filename (char *d, size_t l, const char *f)
 
   /* leave some space for the trailing characters. */
   l -= 6;
-  
+
   d[j++] = '\'';
-  
-  for(i = 0; j < l && f[i]; i++)
+
+  for (i = 0; j < l && f[i]; i++)
   {
-    if(f[i] == '\'' || f[i] == '`')
+    if (f[i] == '\'' || f[i] == '`')
     {
       d[j++] = '\'';
       d[j++] = '\\';
@@ -893,10 +673,10 @@ size_t mutt_quote_filename (char *d, size_t l, const char *f)
     else
       d[j++] = f[i];
   }
-  
+
   d[j++] = '\'';
   d[j]   = '\0';
-  
+
   return j;
 }
 
@@ -964,7 +744,7 @@ char *mutt_skip_whitespace (char *p)
 void mutt_remove_trailing_ws (char *s)
 {
   char *p;
-  
+
   for (p = s + mutt_strlen (s) - 1 ; p >= s && ISSPACE (*p) ; p--)
     *p = 0;
 }
@@ -975,7 +755,7 @@ void mutt_remove_trailing_ws (char *s)
  * Returns NULL on error or a pointer to dst otherwise.
  */
 char *mutt_concatn_path (char *dst, size_t dstlen,
-    const char *dir, size_t dirlen, const char *fname, size_t fnamelen)
+                         const char *dir, size_t dirlen, const char *fname, size_t fnamelen)
 {
   size_t req;
   size_t offset = 0;
@@ -987,7 +767,8 @@ char *mutt_concatn_path (char *dst, size_t dstlen,
   req = dirlen + fnamelen + 1; /* +1 for the trailing nul */
   if (dirlen && fnamelen)
     req++; /* when both components are non-nul, we add a "/" in between */
-  if (req > dstlen) { /* check for condition where the dst length is too short */
+  if (req > dstlen) /* check for condition where the dst length is too short */
+  {
     /* Two options here:
      * 1) assert(0) or return NULL to signal error
      * 2) copy as much of the path as will fit
@@ -998,13 +779,15 @@ char *mutt_concatn_path (char *dst, size_t dstlen,
     return NULL;
   }
 
-  if (dirlen) { /* when dir is not empty */
+  if (dirlen) /* when dir is not empty */
+  {
     memcpy(dst, dir, dirlen);
     offset = dirlen;
     if (fnamelen)
       dst[offset++] = '/';
   }
-  if (fnamelen) { /* when fname is not empty */
+  if (fnamelen) /* when fname is not empty */
+  {
     memcpy(dst + offset, fname, fnamelen);
     offset += fnamelen;
   }
@@ -1015,10 +798,10 @@ char *mutt_concatn_path (char *dst, size_t dstlen,
 char *mutt_concat_path (char *d, const char *dir, const char *fname, size_t l)
 {
   const char *fmt = "%s/%s";
-  
+
   if (!*fname || (*dir && dir[strlen(dir)-1] == '/'))
     fmt = "%s%s";
-  
+
   snprintf (d, l, fmt, dir, fname);
   return d;
 }
@@ -1036,13 +819,13 @@ const char *
 mutt_strsysexit(int e)
 {
   int i;
-  
-  for(i = 0; sysexits_h[i].str; i++)
+
+  for (i = 0; sysexits_h[i].str; i++)
   {
-    if(e == sysexits_h[i].v)
+    if (e == sysexits_h[i].v)
       break;
   }
-  
+
   return sysexits_h[i].str;
 }
 

@@ -1,21 +1,21 @@
 /*
  * Copyright (C) 1996-1999 Brandon Long <blong@fiction.net>
  * Copyright (C) 1999-2009 Brendan Cully <brendan@kublai.com>
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */
 
 #ifndef _IMAP_PRIVATE_H
 #define _IMAP_PRIVATE_H 1
@@ -88,7 +88,7 @@ enum
   IMAP_CONNECTED,
   IMAP_AUTHENTICATED,
   IMAP_SELECTED,
-  
+
   /* and pseudo-states */
   IMAP_IDLE
 };
@@ -120,6 +120,7 @@ enum
   ENABLE,			/* RFC 5161 */
   CONDSTORE,			/* RFC 7162 */
   QRESYNC,			/* RFC 7162 */
+  LIST_EXTENDED,                /* RFC 5258: IMAP4 - LIST Command Extensions */
   X_GM_EXT1,			/* X-GM-RAW https://developers.google.com/gmail/imap_extensions?csw=1 */
 
   CAPMAX
@@ -192,7 +193,7 @@ typedef struct
   time_t lastread; /* last time we read a command for the server */
   char* buf;
   unsigned int blen;
-  
+
   /* If nonzero, we can send UTF-8, and the server will use UTF8 rather
    * than mUTF7 */
   int unicode;
@@ -268,7 +269,7 @@ int imap_read_literal (FILE* fp, IMAP_DATA* idata, unsigned int bytes, progress_
 void imap_expunge_mailbox (IMAP_DATA* idata);
 void imap_logout (IMAP_DATA** idata);
 int imap_sync_message_for_copy (IMAP_DATA *idata, HEADER *hdr, BUFFER *cmd,
-  int *err_continue);
+                                int *err_continue);
 int imap_has_flag (LIST* flag_list, const char* flag);
 
 /* auth.c */
@@ -312,8 +313,8 @@ int imap_continue (const char* msg, const char* resp);
 void imap_error (const char* where, const char* msg);
 IMAP_DATA* imap_new_idata (void);
 void imap_free_idata (IMAP_DATA** idata);
-char* imap_fix_path (IMAP_DATA* idata, const char* mailbox, char* path, 
-  size_t plen);
+char* imap_fix_path (IMAP_DATA* idata, const char* mailbox, char* path,
+                     size_t plen);
 void imap_cachepath(IMAP_DATA* idata, const char* mailbox, char* dest,
                     size_t dlen);
 int imap_get_literal_count (const char* buf, unsigned int* bytes);

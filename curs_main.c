@@ -64,55 +64,61 @@ static const char *Mailbox_is_read_only = N_("Mailbox is read-only.");
 static const char *Function_not_permitted_in_attach_message_mode = N_("Function not permitted in attach-message mode.");
 static const char *No_visible = N_("No visible messages.");
 
-#define CHECK_IN_MAILBOX if (!Context) \
-	{ \
-		mutt_flushinp (); \
-		mutt_error _(No_mailbox_is_open); \
-		break; \
-	}
+#define CHECK_IN_MAILBOX                        \
+  if (!Context)                                 \
+  {                                             \
+    mutt_flushinp ();                           \
+    mutt_error _(No_mailbox_is_open);           \
+    break;                                      \
+  }
 
-#define CHECK_MSGCOUNT if (!Context) \
-	{ \
-	  	mutt_flushinp (); \
-		mutt_error _(No_mailbox_is_open); \
-		break; \
-	} \
-	else if (!Context->msgcount) \
-	{ \
-	  	mutt_flushinp (); \
-		mutt_error _(There_are_no_messages); \
-		break; \
-	}
+#define CHECK_MSGCOUNT                          \
+  if (!Context)                                 \
+  {                                             \
+    mutt_flushinp ();                           \
+    mutt_error _(No_mailbox_is_open);           \
+    break;                                      \
+  }                                             \
+  else if (!Context->msgcount)                  \
+  {                                             \
+    mutt_flushinp ();                           \
+    mutt_error _(There_are_no_messages);        \
+    break;                                      \
+  }
 
-#define CHECK_VISIBLE if (Context && menu->current >= Context->vcount) \
-  	{\
-	  	mutt_flushinp (); \
-	  	mutt_error _(No_visible); \
-	  	break; \
-	}
+#define CHECK_VISIBLE                                   \
+  if (Context && menu->current >= Context->vcount)      \
+  {                                                     \
+    mutt_flushinp ();                                   \
+    mutt_error _(No_visible);                           \
+    break;                                              \
+  }
 
 
-#define CHECK_READONLY if (Context->readonly) \
-			{ \
-			  	mutt_flushinp (); \
-				mutt_error _(Mailbox_is_read_only); \
-				break; \
-			}
+#define CHECK_READONLY                          \
+  if (Context->readonly)                        \
+  {                                             \
+    mutt_flushinp ();                           \
+    mutt_error _(Mailbox_is_read_only);         \
+    break;                                      \
+  }
 
-#define CHECK_ACL(aclbit,action) \
-		if (!mutt_bit_isset(Context->rights,aclbit)) { \
-			mutt_flushinp(); \
-        /* L10N: %s is one of the CHECK_ACL entries below. */ \
-			mutt_error (_("%s: Operation not permitted by ACL"), action); \
-			break; \
-		}
+#define CHECK_ACL(aclbit,action)                                        \
+  if (!mutt_bit_isset(Context->rights,aclbit))                          \
+  {                                                                     \
+    mutt_flushinp();                                                    \
+    /* L10N: %s is one of the CHECK_ACL entries below. */               \
+    mutt_error (_("%s: Operation not permitted by ACL"), action);       \
+    break;                                                              \
+  }
 
-#define CHECK_ATTACH if(option(OPTATTACHMSG)) \
-		     {\
-			mutt_flushinp (); \
-			mutt_error _(Function_not_permitted_in_attach_message_mode); \
-			break; \
-		     }
+#define CHECK_ATTACH                                                    \
+  if (option(OPTATTACHMSG))                                             \
+  {                                                                     \
+    mutt_flushinp ();                                                   \
+    mutt_error _(Function_not_permitted_in_attach_message_mode);        \
+    break;                                                              \
+  }
 
 #define CURHDR Context->hdrs[Context->v2r[menu->current]]
 #define OLDHDR Context->hdrs[Context->v2r[menu->oldcurrent]]
@@ -197,7 +203,7 @@ void mutt_ts_icon(char *str)
 
 void index_make_entry (char *s, size_t l, MUTTMENU *menu, int num)
 {
-  format_flag flag = MUTT_FORMAT_MAKEPRINT | MUTT_FORMAT_ARROWCURSOR | MUTT_FORMAT_INDEX;
+  format_flag flag = MUTT_FORMAT_ARROWCURSOR | MUTT_FORMAT_INDEX;
   int edgemsgno, reverse = Sort & SORT_REVERSE;
   HEADER *h = Context->hdrs[Context->v2r[num]];
   THREAD *tmp;
@@ -455,7 +461,7 @@ static void update_index_unthreaded (CONTEXT *ctx, int check, int oldcount)
 	ctx->hdrs[j]->limited = 1;
 	ctx->vcount++;
 	ctx->vsize += this_body->length + this_body->offset -
-                      this_body->hdr_offset + padding;
+          this_body->hdr_offset + padding;
       }
     }
   }
@@ -621,7 +627,8 @@ int mutt_index_menu (void)
   menu->custom_menu_redraw = index_menu_redraw;
   mutt_push_current_menu (menu);
 
-  if (!attach_msg) {
+  if (!attach_msg)
+  {
     mutt_buffy_check(MUTT_BUFFY_CHECK_FORCE); /* force the buffy check after we
 						 enter the folder */
   }
@@ -693,7 +700,8 @@ int mutt_index_menu (void)
 	    menu_status_line(cmd, sizeof(cmd), menu, NONULL(NewMailCmd));
 	    mutt_system(cmd);
 	  }
-	} else if (check == MUTT_FLAGS)
+	}
+        else if (check == MUTT_FLAGS)
 	  mutt_message _("Mailbox was externally modified.");
 
 	/* avoid the message being overwritten by buffy */
@@ -708,27 +716,27 @@ int mutt_index_menu (void)
 
     if (!attach_msg)
     {
-     /* check for new mail in the incoming folders */
-     oldcount = newcount;
-     if ((newcount = mutt_buffy_check (0)) != oldcount)
-       menu->redraw |= REDRAW_STATUS;
-     if (do_buffy_notify)
-     {
-       if (mutt_buffy_notify())
-       {
-         menu->redraw |= REDRAW_STATUS;
-         if (option (OPTBEEPNEW))
-           beep();
-	 if (NewMailCmd)
-	 {
-	   char cmd[LONG_STRING];
-	   menu_status_line(cmd, sizeof(cmd), menu, NONULL(NewMailCmd));
-	   mutt_system(cmd);
-	 }
-       }
-     }
-     else
-       do_buffy_notify = 1;
+      /* check for new mail in the incoming folders */
+      oldcount = newcount;
+      if ((newcount = mutt_buffy_check (0)) != oldcount)
+        menu->redraw |= REDRAW_STATUS;
+      if (do_buffy_notify)
+      {
+        if (mutt_buffy_notify())
+        {
+          menu->redraw |= REDRAW_STATUS;
+          if (option (OPTBEEPNEW))
+            beep();
+          if (NewMailCmd)
+          {
+            char cmd[LONG_STRING];
+            menu_status_line(cmd, sizeof(cmd), menu, NONULL(NewMailCmd));
+            mutt_system(cmd);
+          }
+        }
+      }
+      else
+        do_buffy_notify = 1;
     }
 
     if (op >= 0)
@@ -935,7 +943,7 @@ int mutt_index_menu (void)
 	      continue;
 	    }
 	    else
-	    menu->redraw = REDRAW_MOTION;
+              menu->redraw = REDRAW_MOTION;
 	  }
 	  else
 	    mutt_error _("That message is not visible.");
@@ -986,13 +994,13 @@ int mutt_index_menu (void)
       case OP_MAIN_SHOW_LIMIT:
 	CHECK_IN_MAILBOX;
 	if (!Context->pattern)
-	   mutt_message _("No limit pattern is in effect.");
+          mutt_message _("No limit pattern is in effect.");
 	else
 	{
-	   char buf[STRING];
-	   /* L10N: ask for a limit to apply */
-	   snprintf (buf, sizeof(buf), _("Limit: %s"),Context->pattern);
-           mutt_message ("%s", buf);
+          char buf[STRING];
+          /* L10N: ask for a limit to apply */
+          snprintf (buf, sizeof(buf), _("Limit: %s"),Context->pattern);
+          mutt_message ("%s", buf);
 	}
         break;
 
@@ -1000,7 +1008,7 @@ int mutt_index_menu (void)
 
 	CHECK_IN_MAILBOX;
 	menu->oldcurrent = (Context->vcount && menu->current >= 0 && menu->current < Context->vcount) ?
-		CURHDR->index : -1;
+          CURHDR->index : -1;
 	if (mutt_pattern_func (MUTT_LIMIT, _("Limit to messages matching: ")) == 0)
 	{
 	  if (menu->oldcurrent >= 0)
@@ -1030,8 +1038,8 @@ int mutt_index_menu (void)
 	close = op;
 	if (attach_msg)
 	{
-	 done = 1;
-	 break;
+          done = 1;
+          break;
 	}
 
 	if (query_quadoption (OPT_QUIT, _("Quit Mutt?")) == MUTT_YES)
@@ -1257,22 +1265,26 @@ int mutt_index_menu (void)
 	/* fallback to the readonly case */
 
       case OP_MAIN_CHANGE_FOLDER_READONLY:
+      {
+        BUFFER *folderbuf;
+        int cont = 0;  /* Set if we want to continue instead of break */
+
+        folderbuf = mutt_buffer_pool_get ();
 
         if ((op == OP_MAIN_CHANGE_FOLDER_READONLY) || option (OPTREADONLY))
           cp = _("Open mailbox in read-only mode");
         else
           cp = _("Open mailbox");
 
-	buf[0] = '\0';
 	if ((op == OP_MAIN_NEXT_UNREAD_MAILBOX) && Context && Context->path)
 	{
-	  strfcpy (buf, Context->path, sizeof (buf));
-	  mutt_pretty_mailbox (buf, sizeof (buf));
-	  mutt_buffy (buf, sizeof (buf));
-	  if (!buf[0])
+	  mutt_buffer_strcpy (folderbuf, Context->path);
+	  mutt_buffer_pretty_mailbox (folderbuf);
+	  mutt_buffer_buffy (folderbuf);
+	  if (!mutt_buffer_len (folderbuf))
 	  {
 	    mutt_error _("No mailboxes have new mail");
-	    break;
+	    goto changefoldercleanup;
 	  }
 	}
 #ifdef USE_SIDEBAR
@@ -1280,41 +1292,40 @@ int mutt_index_menu (void)
         {
           const char *path = mutt_sb_get_highlight();
           if (!path || !*path)
-            break;
-          strncpy (buf, path, sizeof (buf));
+            goto changefoldercleanup;
+          mutt_buffer_strcpy (folderbuf, path);
         }
 #endif
 	else
 	{
           if (option (OPTCHANGEFOLDERNEXT) && Context && Context->path)
           {
-            strfcpy (buf, Context->path, sizeof (buf));
-            mutt_pretty_mailbox (buf, sizeof (buf));
+            mutt_buffer_strcpy (folderbuf, Context->path);
+            mutt_buffer_pretty_mailbox (folderbuf);
           }
-	  mutt_buffy (buf, sizeof (buf));
+	  mutt_buffer_buffy (folderbuf);
 
-          if (mutt_enter_fname (cp, buf, sizeof (buf), 1) == -1)
+          if (mutt_buffer_enter_fname (cp, folderbuf, 1) == -1)
           {
             if (menu->menu == MENU_PAGER)
             {
               op = OP_DISPLAY_MESSAGE;
-              continue;
+              cont = 1;
             }
-            else
-              break;
+            goto changefoldercleanup;
           }
-	  if (!buf[0])
+	  if (!mutt_buffer_len (folderbuf))
 	  {
             mutt_window_clearline (MuttMessageWindow, 0);
-	    break;
+	    goto changefoldercleanup;
 	  }
 	}
 
-	mutt_expand_path (buf, sizeof (buf));
-	if (mx_get_magic (buf) <= 0)
+	mutt_buffer_expand_path (folderbuf);
+        if (mx_get_magic (mutt_b2s (folderbuf)) <= 0)
 	{
-	  mutt_error (_("%s is not a mailbox."), buf);
-	  break;
+	  mutt_error (_("%s is not a mailbox."), mutt_b2s (folderbuf));
+	  goto changefoldercleanup;
 	}
 
 	/* keepalive failure in mutt_enter_fname may kill connection. #3028 */
@@ -1335,7 +1346,7 @@ int mutt_index_menu (void)
 	    new_last_folder = safe_strdup (Context->realpath);
 	  else
 #endif
-	  new_last_folder = safe_strdup (Context->path);
+            new_last_folder = safe_strdup (Context->path);
 	  oldcount = Context ? Context->msgcount : 0;
 
 	  if ((check = mx_close_mailbox (Context, &index_hint)) != 0)
@@ -1350,13 +1361,13 @@ int mutt_index_menu (void)
             FREE (&new_last_folder);
 	    set_option (OPTSEARCHINVALID);
 	    menu->redraw |= REDRAW_INDEX | REDRAW_STATUS;
-	    break;
+	    goto changefoldercleanup;
 	  }
 	  FREE (&Context);
           FREE (&LastFolder);
           LastFolder = new_last_folder;
 	}
-	mutt_str_replace (&CurrentFolder, buf);
+	mutt_str_replace (&CurrentFolder, mutt_b2s (folderbuf));
 
         mutt_sleep (0);
 
@@ -1368,9 +1379,9 @@ int mutt_index_menu (void)
          * mutt_push/pop_current_menu() functions.  If that changes, the menu
          * would need to be reset here, and the pager cleanup code after the
          * switch statement would need to be run. */
-	mutt_folder_hook (buf);
+	mutt_folder_hook (mutt_b2s (folderbuf));
 
-	if ((Context = mx_open_mailbox (buf,
+	if ((Context = mx_open_mailbox (mutt_b2s (folderbuf),
 					(option (OPTREADONLY) || op == OP_MAIN_CHANGE_FOLDER_READONLY) ?
 					MUTT_READONLY : 0, NULL)) != NULL)
 	{
@@ -1392,7 +1403,14 @@ int mutt_index_menu (void)
 						     folder */
 	menu->redraw = REDRAW_FULL;
 	set_option (OPTSEARCHINVALID);
-	break;
+
+      changefoldercleanup:
+        mutt_buffer_pool_release (&folderbuf);
+        if (cont)
+          continue;
+        else
+          break;
+      }
 
       case OP_DISPLAY_MESSAGE:
       case OP_DISPLAY_HEADERS: /* don't weed the headers */
@@ -1442,8 +1460,8 @@ int mutt_index_menu (void)
 	close = op;
 	if (menu->menu == MENU_MAIN && attach_msg)
 	{
-	 done = 1;
-	 break;
+          done = 1;
+          break;
 	}
 
 	if ((menu->menu == MENU_MAIN)
@@ -1655,8 +1673,8 @@ int mutt_index_menu (void)
 			       (op == OP_DECODE_SAVE) || (op == OP_DECODE_COPY),
 			       (op == OP_DECRYPT_SAVE) || (op == OP_DECRYPT_COPY) ||
 			       0) == 0 &&
-	     (op == OP_SAVE || op == OP_DECODE_SAVE || op == OP_DECRYPT_SAVE)
-	    )
+            (op == OP_SAVE || op == OP_DECODE_SAVE || op == OP_DECRYPT_SAVE)
+          )
 	{
           menu->redraw |= REDRAW_STATUS;
 	  if (tag)
@@ -1862,7 +1880,15 @@ int mutt_index_menu (void)
 
 	CHECK_IN_MAILBOX;
 	if (mx_toggle_write (Context) == 0)
-	  menu->redraw |= REDRAW_STATUS;
+        {
+	  if (menu->menu == MENU_PAGER)
+          {
+            op = OP_DISPLAY_MESSAGE;
+            continue;
+          }
+          else
+            menu->redraw |= REDRAW_STATUS;
+        }
 	break;
 
       case OP_MAIN_NEXT_THREAD:
@@ -1986,7 +2012,7 @@ int mutt_index_menu (void)
 
 	menu->redraw = REDRAW_INDEX | REDRAW_STATUS;
 
-       break;
+        break;
 
       case OP_MAIN_COLLAPSE_ALL:
         CHECK_MSGCOUNT;
@@ -2189,46 +2215,26 @@ int mutt_index_menu (void)
 	crypt_forget_passphrase ();
 	break;
 
-      case OP_GROUP_REPLY:
-
-	CHECK_MSGCOUNT;
-        CHECK_VISIBLE;
-	CHECK_ATTACH;
-	if (option (OPTPGPAUTODEC) && (tag || !(CURHDR->security & PGP_TRADITIONAL_CHECKED)))
-	  mutt_check_traditional_pgp (tag ? NULL : CURHDR, &menu->redraw);
-	ci_send_message (SENDREPLY|SENDGROUPREPLY, NULL, NULL, Context, tag ? NULL : CURHDR);
-	menu->redraw = REDRAW_FULL;
-	break;
-
       case OP_EDIT_LABEL:
 
 	CHECK_MSGCOUNT;
 	CHECK_READONLY;
 	rc = mutt_label_message(tag ? NULL : CURHDR);
-	if (rc > 0) {
+	if (rc > 0)
+        {
 	  Context->changed = 1;
 	  menu->redraw = REDRAW_FULL;
           /* L10N: This is displayed when the x-label on one or more
            * messages is edited. */
 	  mutt_message (_("%d labels changed."), rc);
 	}
-	else {
+	else
+        {
           /* L10N: This is displayed when editing an x-label, but no messages
            * were updated.  Possibly due to canceling at the prompt or if the new
            * label is the same as the old label. */
 	  mutt_message _("No labels changed.");
 	}
-	break;
-
-      case OP_LIST_REPLY:
-
-	CHECK_ATTACH;
-	CHECK_MSGCOUNT;
-        CHECK_VISIBLE;
-	if (option (OPTPGPAUTODEC) && (tag || !(CURHDR->security & PGP_TRADITIONAL_CHECKED)))
-	  mutt_check_traditional_pgp (tag ? NULL : CURHDR, &menu->redraw);
-	ci_send_message (SENDREPLY|SENDLISTREPLY, NULL, NULL, Context, tag ? NULL : CURHDR);
-	menu->redraw = REDRAW_FULL;
 	break;
 
       case OP_MAIL:
@@ -2403,15 +2409,27 @@ int mutt_index_menu (void)
         break;
 
       case OP_REPLY:
+      case OP_GROUP_REPLY:
+      case OP_GROUP_CHAT_REPLY:
+      case OP_LIST_REPLY:
+      {
+        int replyflags;
 
 	CHECK_ATTACH;
 	CHECK_MSGCOUNT;
         CHECK_VISIBLE;
+
+        replyflags = SENDREPLY |
+	  (op == OP_GROUP_REPLY ? SENDGROUPREPLY : 0) |
+	  (op == OP_GROUP_CHAT_REPLY ? SENDGROUPCHATREPLY : 0) |
+	  (op == OP_LIST_REPLY ? SENDLISTREPLY : 0);
+
 	if (option (OPTPGPAUTODEC) && (tag || !(CURHDR->security & PGP_TRADITIONAL_CHECKED)))
 	  mutt_check_traditional_pgp (tag ? NULL : CURHDR, &menu->redraw);
-	ci_send_message (SENDREPLY, NULL, NULL, Context, tag ? NULL : CURHDR);
+	ci_send_message (replyflags, NULL, NULL, Context, tag ? NULL : CURHDR);
 	menu->redraw = REDRAW_FULL;
 	break;
+      }
 
       case OP_SHELL_ESCAPE:
 

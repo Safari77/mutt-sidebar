@@ -105,9 +105,11 @@ smtp_get_resp (CONNECTION * conn)
   int n;
   char buf[1024];
 
-  do {
+  do
+  {
     n = mutt_socket_readln (buf, sizeof (buf), conn);
-    if (n < 4) {
+    if (n < 4)
+    {
       /* read error, or no response code */
       return smtp_err_read;
     }
@@ -136,7 +138,7 @@ smtp_get_resp (CONNECTION * conn)
     return 0;
 
   mutt_error (_("SMTP session failed: %s"), buf);
-    return -1;
+  return -1;
 }
 
 static int
@@ -266,7 +268,7 @@ static int addresses_use_unicode(const ADDRESS* a)
 {
   while (a)
   {
-    if(a->mailbox && !a->group && address_uses_unicode(a->mailbox))
+    if (a->mailbox && !a->group && address_uses_unicode(a->mailbox))
       return 1;
     a = a->next;
   }
@@ -430,14 +432,14 @@ static int smtp_helo (CONNECTION* conn)
 #endif
   }
 
-  if(!(fqdn = mutt_fqdn (0)))
+  if (!(fqdn = mutt_fqdn (0)))
     fqdn = NONULL (Hostname);
 
   snprintf (buf, sizeof (buf), "%s %s\r\n", Esmtp ? "EHLO" : "HELO", fqdn);
   /* XXX there should probably be a wrapper in mutt_socket.c that
-    * repeatedly calls conn->write until all data is sent.  This
-    * currently doesn't check for a short write.
-    */
+   * repeatedly calls conn->write until all data is sent.  This
+   * currently doesn't check for a short write.
+   */
   if (mutt_socket_write (conn, buf) == -1)
     return smtp_err_write;
   return smtp_get_resp (conn);
@@ -526,7 +528,7 @@ static int smtp_auth (CONNECTION* conn)
       {
 	r = smtp_auth_oauth (conn);
       }
-      else 
+      else
       {
 #ifdef USE_SASL
 	r = smtp_auth_sasl (conn, method);
@@ -624,7 +626,8 @@ static int smtp_auth_sasl (CONNECTION* conn, const char* mechlist)
   }
   safe_strcat (buf, bufsize, "\r\n");
 
-  do {
+  do
+  {
     if (mutt_socket_write (conn, buf) < 0)
       goto fail;
     if ((rc = mutt_socket_readln (buf, bufsize, conn)) < 0)
@@ -706,7 +709,7 @@ static int smtp_auth_oauth (CONNECTION* conn)
 
   if (rc == -1)
     return SMTP_AUTH_FAIL;
-  if (smtp_get_resp (conn) != 0) 
+  if (smtp_get_resp (conn) != 0)
     return SMTP_AUTH_FAIL;
 
   return SMTP_AUTH_SUCCESS;

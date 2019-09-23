@@ -1,24 +1,24 @@
 /*
  * Copyright (C) 1996-2002,2010,2013 Michael R. Elkins <me@mutt.org>
  * Copyright (C) 2004 g10 Code GmbH
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */
 
 #ifndef MUTT_H
-#define MUTT_H 
+#define MUTT_H
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -95,11 +95,11 @@ struct timespec
 
 /* nifty trick I stole from ELM 2.5alpha. */
 #ifdef MAIN_C
-#define WHERE 
+#define WHERE
 #define INITVAL(x) = x
 #else
 #define WHERE extern
-#define INITVAL(x) 
+#define INITVAL(x)
 #endif
 
 #define WHERE_DEFINED 1
@@ -148,13 +148,21 @@ typedef enum
 {
   MUTT_FORMAT_FORCESUBJ   = (1<<0), /* print the subject even if unchanged */
   MUTT_FORMAT_TREE        = (1<<1), /* draw the thread tree */
-  MUTT_FORMAT_MAKEPRINT   = (1<<2), /* make sure that all chars are printable */
-  MUTT_FORMAT_OPTIONAL    = (1<<3),
-  MUTT_FORMAT_STAT_FILE   = (1<<4), /* used by mutt_attach_fmt */
-  MUTT_FORMAT_ARROWCURSOR = (1<<5), /* reserve space for arrow_cursor */
-  MUTT_FORMAT_INDEX       = (1<<6), /* this is a main index entry */
-  MUTT_FORMAT_NOFILTER    = (1<<7)  /* do not allow filtering on this pass */
+  MUTT_FORMAT_OPTIONAL    = (1<<2),
+  MUTT_FORMAT_STAT_FILE   = (1<<3), /* used by mutt_attach_fmt */
+  MUTT_FORMAT_ARROWCURSOR = (1<<4), /* reserve space for arrow_cursor */
+  MUTT_FORMAT_INDEX       = (1<<5), /* this is a main index entry */
+  MUTT_FORMAT_NOFILTER    = (1<<6)  /* do not allow filtering on this pass */
 } format_flag;
+
+/* mode for mutt_write_rfc822_header() */
+typedef enum
+{
+  MUTT_WRITE_HEADER_NORMAL,
+  MUTT_WRITE_HEADER_POSTPONE,
+  MUTT_WRITE_HEADER_EDITHDRS,
+  MUTT_WRITE_HEADER_MIME
+} mutt_write_header_mode;
 
 /* types for mutt_add_hook() */
 #define MUTT_FOLDERHOOK  1
@@ -264,7 +272,7 @@ enum
   MUTT_SERVERSEARCH,
   MUTT_MIMEATTACH,
   MUTT_MIMETYPE,
-  
+
   /* Options for Mailcap lookup */
   MUTT_EDIT,
   MUTT_COMPOSE,
@@ -299,6 +307,7 @@ enum
   OPT_BOUNCE,
   OPT_COPY,
   OPT_DELETE,
+  OPT_FORWATTS,
   OPT_FORWEDIT,
   OPT_FCCATTACH,
   OPT_INCLUDE,
@@ -321,7 +330,7 @@ enum
 #endif
   OPT_SUBJECT,
   OPT_VERIFYSIG,      /* verify PGP signatures */
-    
+
   /* THIS MUST BE THE LAST VALUE. */
   OPT_MAX
 };
@@ -339,7 +348,8 @@ enum
 #define SENDPOSTPONEDFCC	(1<<9) /* used by mutt_get_postponed() to signal that the x-mutt-fcc header field was present */
 #define SENDNOFREEHEADER	(1<<10)   /* Used by the -E flag */
 #define SENDDRAFTFILE		(1<<11)   /* Used by the -H flag */
-#define SENDTOSENDER    (1<<12)
+#define SENDTOSENDER            (1<<12)
+#define SENDGROUPCHATREPLY      (1<<13)
 
 /* flags for mutt_compose_menu() */
 #define MUTT_COMPOSE_NOFREEHEADER (1<<0)
@@ -364,6 +374,7 @@ enum
   OPTASKCC,
   OPTATTACHSPLIT,
   OPTAUTOEDIT,
+  OPTAUTOSUBSCRIBE,
   OPTAUTOTAG,
   OPTBEEP,
   OPTBEEPNEW,
@@ -383,6 +394,7 @@ enum
   OPTENCODEFROM,
   OPTENVFROM,
   OPTFASTREPLY,
+  OPTFCCBEFORESEND,
   OPTFCCCLEAR,
   OPTFLAGSAFE,
   OPTFOLLOWUPTO,
@@ -436,6 +448,7 @@ enum
 # endif /* USE_SSL_OPENSSL */
 #endif /* defined(USE_SSL) */
   OPTIMPLICITAUTOVIEW,
+  OPTINCLUDEENCRYPTED,
   OPTINCLUDEONLYFIRST,
   OPTKEEPFLAGGED,
   OPTMAILCAPSANITIZE,
@@ -525,13 +538,16 @@ enum
   OPTCRYPTUSEPKA,
 
   /* PGP options */
-  
+
   OPTCRYPTAUTOSIGN,
   OPTCRYPTAUTOENCRYPT,
   OPTCRYPTAUTOPGP,
   OPTCRYPTAUTOSMIME,
   OPTCRYPTCONFIRMHOOK,
   OPTCRYPTOPPORTUNISTICENCRYPT,
+  OPTCRYPTPROTHDRSREAD,
+  OPTCRYPTPROTHDRSSAVE,
+  OPTCRYPTPROTHDRSWRITE,
   OPTCRYPTREPLYENCRYPT,
   OPTCRYPTREPLYSIGN,
   OPTCRYPTREPLYSIGNENCRYPTED,
@@ -545,9 +561,6 @@ enum
   OPTPGPCHECKGPGDECRYPTSTATUSFD,
   OPTPGPLONGIDS,
   OPTPGPAUTODEC,
-#if 0
-  OPTPGPENCRYPTSELF,
-#endif
   OPTPGPRETAINABLESIG,
   OPTPGPSELFENCRYPT,
   OPTPGPSTRICTENC,
@@ -645,6 +658,11 @@ typedef struct alias
   short num;
 } ALIAS;
 
+#define MUTT_ENV_CHANGED_IRT     (1<<0)  /* In-Reply-To changed to link/break threads */
+#define MUTT_ENV_CHANGED_REFS    (1<<1)  /* References changed to break thread */
+#define MUTT_ENV_CHANGED_XLABEL  (1<<2)  /* X-Label edited */
+#define MUTT_ENV_CHANGED_SUBJECT (1<<3)  /* Protected header update */
+
 typedef struct envelope
 {
   ADDRESS *return_path;
@@ -668,8 +686,8 @@ typedef struct envelope
   LIST *in_reply_to;		/* in-reply-to header content */
   LIST *userhdrs;		/* user defined headers */
 
-  unsigned int irt_changed : 1; /* In-Reply-To changed to link/break threads */
-  unsigned int refs_changed : 1; /* References changed to break thread */
+  unsigned char changed;       /* The MUTT_ENV_CHANGED_* flags specify which
+                                * fields are modified */
 } ENVELOPE;
 
 typedef struct parameter
@@ -712,12 +730,14 @@ typedef struct body
   char *filename;               /* when sending a message, this is the file
 				 * to which this structure refers
 				 */
-  char *d_filename;		/* filename to be used for the 
+  char *d_filename;		/* filename to be used for the
 				 * content-disposition header.
-				 * If NULL, filename is used 
+				 * If NULL, filename is used
 				 * instead.
 				 */
-  char *charset;                /* charset of attached file */
+  char *charset;                /* send mode: charset of attached file as stored
+                                 * on disk.  the charset used in the generated
+                                 * message is stored in parameter. */
   CONTENT *content;             /* structure used to store detailed info about
 				 * the content of the attachment.  this is used
 				 * to determine what content-transfer-encoding
@@ -734,7 +754,9 @@ typedef struct body
   time_t stamp;			/* time stamp of last
 				 * encoding update.
 				 */
-  
+
+  struct envelope *mime_headers; /* memory hole protected headers */
+
   unsigned int type : 4;        /* content-type primary type */
   unsigned int encoding : 3;    /* content-transfer-encoding */
   unsigned int disposition : 2; /* content-disposition */
@@ -747,10 +769,9 @@ typedef struct body
   unsigned int deleted : 1;	/* attachment marked for deletion */
 
   unsigned int noconv : 1;	/* don't do character set conversion */
-  unsigned int force_charset : 1; 
-  				/* send mode: don't adjust the character
-				 * set when in send-mode.
-				 */
+  unsigned int force_charset : 1;  /* send mode: don't adjust the character
+                                    * set when in send-mode.
+                                    */
   unsigned int is_signed_data : 1; /* A lot of MUAs don't indicate
                                       S/MIME signed-data correctly,
                                       e.g. they use foo.p7m even for
@@ -778,7 +799,7 @@ typedef struct mutt_thread THREAD;
 typedef struct header
 {
   unsigned int security : 12;  /* bit 0-8: flags, bit 9,10: application.
-				 see: mutt_crypt.h pgplib.h, smime.h */
+                                  see: mutt_crypt.h pgplib.h, smime.h */
 
   unsigned int mime : 1;    		/* has a MIME-Version header? */
   unsigned int flagged : 1; 		/* marked important? */
@@ -801,8 +822,7 @@ typedef struct header
 					 * This flag is used by the maildir_trash
 					 * option.
 					 */
-  unsigned int xlabel_changed : 1;	/* editable - used for syncing */
-  
+
   /* timezone of the sender of this message */
   unsigned int zhours : 5;
   unsigned int zminutes : 6;
@@ -821,7 +841,7 @@ typedef struct header
   size_t num_hidden;          	/* number of hidden messages in this view */
 
   short recipient;		/* user_is_recipient()'s return value, cached */
-  
+
   int pair; 			/* color-pair to use when displaying in the index */
 
   time_t date_sent;     	/* time when the message was sent (UTC) */
@@ -835,7 +855,7 @@ typedef struct header
   ENVELOPE *env;		/* envelope information */
   BODY *content;		/* list of MIME parts */
   char *path;
-  
+
   char *tree;           	/* character string to print thread tree */
   THREAD *thread;
 
@@ -853,7 +873,7 @@ typedef struct header
 #if defined USE_POP || defined USE_IMAP
   void *data;            	/* driver-specific data */
 #endif
-  
+
   char *maildir_flags;		/* unknown maildir flags */
 } HEADER;
 
@@ -911,7 +931,7 @@ typedef struct pattern_t
   int max;
   struct pattern_t *next;
   struct pattern_t *child;		/* arguments to logical op */
-  union 
+  union
   {
     regex_t *rx;
     group_t *g;
@@ -979,6 +999,7 @@ struct mx_ops
   int (*commit_msg) (struct _context *, struct _message *);
   int (*open_new_msg) (struct _message *, struct _context *, HEADER *);
   int (*msg_padding_size) (struct _context *);
+  int (*save_to_header_cache) (struct _context *, struct header *);
 };
 
 typedef struct _context
@@ -1069,6 +1090,7 @@ typedef struct
 #define state_putc(x,y) fputc(x,(y)->fpout)
 
 void state_mark_attach (STATE *);
+void state_mark_protected_header (STATE *);
 void state_attach_puts (const char *, STATE *);
 void state_prefix_putc (char, STATE *);
 int  state_printf(STATE *, const char *, ...);

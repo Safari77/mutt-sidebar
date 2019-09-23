@@ -45,12 +45,11 @@
 
 /* imap_expand_path: IMAP implementation of mutt_expand_path. Rewrite
  *   an IMAP path in canonical and absolute form.
- * Inputs: a buffer containing an IMAP path, and the number of bytes in
- *   that buffer.
+ * Inputs: a buffer containing an IMAP path.
  * Outputs: The buffer is rewritten in place with the canonical IMAP path.
- * Returns 0 on success, or -1 if imap_parse_path chokes or url_ciss_tostring
+ * Returns 0 on success, or -1 if imap_parse_path chokes or url_ciss_tobuffer
  *   fails, which it might if there isn't enough room in the buffer. */
-int imap_expand_path (char* path, size_t len)
+int imap_expand_path (BUFFER* path)
 {
   IMAP_MBOX mx;
   IMAP_DATA* idata;
@@ -58,7 +57,7 @@ int imap_expand_path (char* path, size_t len)
   char fixedpath[LONG_STRING];
   int rc;
 
-  if (imap_parse_path (path, &mx) < 0)
+  if (imap_parse_path (mutt_b2s (path), &mx) < 0)
     return -1;
 
   idata = imap_conn_find (&mx.account, MUTT_IMAP_CONN_NONEW);
@@ -66,7 +65,7 @@ int imap_expand_path (char* path, size_t len)
   imap_fix_path (idata, mx.mbox, fixedpath, sizeof (fixedpath));
   url.path = fixedpath;
 
-  rc = url_ciss_tostring (&url, path, len, U_DECODE_PASSWD);
+  rc = url_ciss_tobuffer (&url, path, U_DECODE_PASSWD);
   FREE (&mx.mbox);
 
   return rc;
@@ -227,7 +226,6 @@ int imap_hcache_del (IMAP_DATA* idata, unsigned int uid)
 int imap_hcache_store_uid_seqset (IMAP_DATA *idata)
 {
   BUFFER *b;
-  size_t seqset_size;
   int rc;
 
   if (!idata->hcache)
@@ -238,13 +236,9 @@ int imap_hcache_store_uid_seqset (IMAP_DATA *idata)
   mutt_buffer_increase_size (b, HUGE_STRING);
   imap_msn_index_to_uid_seqset (b, idata);
 
-  seqset_size = b->dptr - b->data;
-  if (seqset_size == 0)
-    b->data[0] = '\0';
-
   rc = mutt_hcache_store_raw (idata->hcache, "/UIDSEQSET",
-                               b->data, seqset_size + 1,
-                               imap_hcache_keylen);
+                              b->data, mutt_buffer_len (b) + 1,
+                              imap_hcache_keylen);
   dprint (5, (debugfile, "Stored /UIDSEQSET %s\n", b->data));
   mutt_buffer_free (&b);
   return rc;
@@ -358,7 +352,8 @@ int imap_parse_path (const char* path, IMAP_MBOX* mx)
       return -1;
     }
 
-    if (n > 1) {
+    if (n > 1)
+    {
       if (sscanf (tmp, ":%hu%127s", &(mx->account.port), tmp) >= 1)
 	mx->account.flags |= MUTT_ACCT_PORT;
       if (sscanf (tmp, "/%s", tmp) == 1)
@@ -410,7 +405,7 @@ int imap_mxcmp (const char* mx1, const char* mx2)
 
 /* imap_pretty_mailbox: called by mutt_pretty_mailbox to make IMAP paths
  *   look nice. */
-void imap_pretty_mailbox (char* path)
+void imap_pretty_mailbox (char* path, size_t pathlen)
 {
   IMAP_MBOX home, target;
   ciss_url_t url;
@@ -441,7 +436,8 @@ void imap_pretty_mailbox (char* path)
   }
 
   /* do the '=' substitution */
-  if (home_match) {
+  if (home_match)
+  {
     *path++ = '=';
     /* copy remaining path, skipping delimiter */
     if (! hlen)
@@ -453,10 +449,7 @@ void imap_pretty_mailbox (char* path)
   {
     mutt_account_tourl (&target.account, &url);
     url.path = target.mbox;
-    /* FIXME: That hard-coded constant is bogus. But we need the actual
-     *   size of the buffer from mutt_pretty_mailbox. And these pretty
-     *   operations usually shrink the result. Still... */
-    url_ciss_tostring (&url, path, 1024, 0);
+    url_ciss_tostring (&url, path, pathlen, 0);
   }
 
   FREE (&target.mbox);
@@ -516,7 +509,7 @@ void imap_free_idata (IMAP_DATA** idata)
  * Moreover, IMAP servers may dislike the path ending with the delimiter.
  */
 char *imap_fix_path (IMAP_DATA *idata, const char *mailbox, char *path,
-    size_t plen)
+                     size_t plen)
 {
   int i = 0;
   char delim = '\0';
@@ -619,8 +612,10 @@ char *imap_next_word (char *s)
 {
   int quoted = 0;
 
-  while (*s) {
-    if (*s == '\\') {
+  while (*s)
+  {
+    if (*s == '\\')
+    {
       s++;
       if (*s)
 	s++;
@@ -695,9 +690,9 @@ void imap_make_date (char *buf, time_t timestamp)
   tz /= 60;
 
   snprintf (buf, IMAP_DATELEN, "%02d-%s-%d %02d:%02d:%02d %+03d%02d",
-      tm->tm_mday, Months[tm->tm_mon], tm->tm_year + 1900,
-      tm->tm_hour, tm->tm_min, tm->tm_sec,
-      (int) tz / 60, (int) abs ((int) tz) % 60);
+            tm->tm_mday, Months[tm->tm_mon], tm->tm_year + 1900,
+            tm->tm_hour, tm->tm_min, tm->tm_sec,
+            (int) tz / 60, (int) abs ((int) tz) % 60);
 }
 
 /* imap_qualify_path: make an absolute IMAP folder target, given IMAP_MBOX
@@ -844,7 +839,7 @@ int imap_wordcasecmp(const char *a, const char *b)
   int i;
 
   tmp[SHORT_STRING-1] = 0;
-  for(i=0;i < SHORT_STRING-2;i++,s++)
+  for (i=0;i < SHORT_STRING-2;i++,s++)
   {
     if (!*s || ISSPACE(*s))
     {
@@ -1067,4 +1062,3 @@ void mutt_seqset_iterator_free (SEQSET_ITERATOR **p_iter)
   FREE (&iter->full_seqset);
   FREE (p_iter);               /* __FREE_CHECKED__ */
 }
-

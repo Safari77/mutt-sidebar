@@ -1,16 +1,16 @@
 /*
  * Copyright (C) 2000-2001 Vsevolod Volkov <vvv@mutt.org.ua>
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
@@ -288,19 +288,19 @@ static pop_auth_res_t pop_auth_user (POP_DATA *pop_data, const char *method)
 
       dprint (1, (debugfile, "pop_auth_user: unset USER capability\n"));
       snprintf (pop_data->err_msg, sizeof (pop_data->err_msg), "%s",
-              _("Command USER is not supported by server."));
+                _("Command USER is not supported by server."));
     }
   }
 
   if (ret == 0)
   {
     snprintf (buf, sizeof (buf), "PASS %s\r\n", pop_data->conn->account.pass);
-    ret = pop_query_d (pop_data, buf, sizeof (buf), 
+    ret = pop_query_d (pop_data, buf, sizeof (buf),
 #ifdef DEBUG
-	/* don't print the password unless we're at the ungodly debugging level */
-	debuglevel < MUTT_SOCK_LOG_FULL ? "PASS *\r\n" :
+                       /* don't print the password unless we're at the ungodly debugging level */
+                       debuglevel < MUTT_SOCK_LOG_FULL ? "PASS *\r\n" :
 #endif
-	NULL);
+                       NULL);
   }
 
   switch (ret)
@@ -327,6 +327,10 @@ static pop_auth_res_t pop_auth_oauth (POP_DATA *pop_data, const char *method)
   size_t auth_cmd_len;
   int ret, len;
 
+  /* If they did not explicitly request or configure oauth then fail quietly */
+  if (!(method || (PopOauthRefreshCmd && *PopOauthRefreshCmd)))
+      return POP_A_UNAVAIL;
+
   mutt_message _("Authenticating (OAUTHBEARER)...");
 
   oauthbearer = mutt_account_getoauthbearer (&pop_data->conn->account);
@@ -338,12 +342,12 @@ static pop_auth_res_t pop_auth_oauth (POP_DATA *pop_data, const char *method)
   snprintf (auth_cmd, auth_cmd_len, "AUTH OAUTHBEARER %s\r\n", oauthbearer);
   FREE (&oauthbearer);
 
-  ret = pop_query_d (pop_data, auth_cmd, strlen (auth_cmd), 
+  ret = pop_query_d (pop_data, auth_cmd, strlen (auth_cmd),
 #ifdef DEBUG
-	/* don't print the bearer token unless we're at the ungodly debugging level */
-	debuglevel < MUTT_SOCK_LOG_FULL ? "AUTH OAUTHBEARER *\r\n" :
+                     /* don't print the bearer token unless we're at the ungodly debugging level */
+                     debuglevel < MUTT_SOCK_LOG_FULL ? "AUTH OAUTHBEARER *\r\n" :
 #endif
-	NULL);
+                     NULL);
   FREE (&auth_cmd);
 
   switch (ret)
@@ -388,7 +392,7 @@ static const pop_auth_t pop_authenticators[] = {
  * -1 - connection lost,
  * -2 - login failed,
  * -3 - authentication canceled.
-*/
+ */
 int pop_authenticate (POP_DATA* pop_data)
 {
   ACCOUNT *acct = &pop_data->conn->account;
@@ -459,13 +463,13 @@ int pop_authenticate (POP_DATA* pop_data)
 
     while (authenticator->authenticate)
     {
-      ret = authenticator->authenticate (pop_data, authenticator->method);
+      ret = authenticator->authenticate (pop_data, NULL);
       if (ret == POP_A_SOCKET)
 	switch (pop_connect (pop_data))
 	{
 	  case 0:
 	  {
-	    ret = authenticator->authenticate (pop_data, authenticator->method);
+	    ret = authenticator->authenticate (pop_data, NULL);
 	    break;
 	  }
 	  case -2:

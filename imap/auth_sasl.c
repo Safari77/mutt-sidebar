@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 2000-2006,2012 Brendan Cully <brendan@kublai.com>
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */
 
 /* SASL login/authentication code */
 
@@ -46,7 +46,7 @@ imap_auth_res_t imap_auth_sasl (IMAP_DATA* idata, const char* method)
   if (mutt_sasl_client_new (idata->conn, &saslconn) < 0)
   {
     dprint (1, (debugfile,
-      "imap_auth_sasl: Error allocating SASL connection.\n"));
+                "imap_auth_sasl: Error allocating SASL connection.\n"));
     return IMAP_AUTH_FAILURE;
   }
 
@@ -62,7 +62,8 @@ imap_auth_res_t imap_auth_sasl (IMAP_DATA* idata, const char* method)
      * 2. attempt sasl_client_start with only "AUTH=ANONYMOUS" capability
      * 3. if sasl_client_start fails, fall through... */
 
-    if (mutt_account_getuser (&idata->conn->account)) {
+    if (mutt_account_getuser (&idata->conn->account))
+    {
       sasl_dispose (&saslconn);
       return IMAP_AUTH_FAILURE;
     }
@@ -70,20 +71,22 @@ imap_auth_res_t imap_auth_sasl (IMAP_DATA* idata, const char* method)
     if (mutt_bit_isset (idata->capabilities, AUTH_ANON) &&
 	(!idata->conn->account.user[0] ||
 	 !ascii_strncmp (idata->conn->account.user, "anonymous", 9)))
-      rc = sasl_client_start (saslconn, "AUTH=ANONYMOUS", NULL, &pc, &olen, 
+      rc = sasl_client_start (saslconn, "AUTH=ANONYMOUS", NULL, &pc, &olen,
                               &mech);
-  } else if (!ascii_strcasecmp ("login", method) &&
-	!strstr (NONULL (idata->capstr), "AUTH=LOGIN")) {
+  }
+  else if (!ascii_strcasecmp ("login", method) &&
+           !strstr (NONULL (idata->capstr), "AUTH=LOGIN"))
+  {
     /* do not use SASL login for regular IMAP login (#3556) */
     sasl_dispose (&saslconn);
     return IMAP_AUTH_UNAVAIL;
   }
-  
+
   if (rc != SASL_OK && rc != SASL_CONTINUE)
     do
     {
       rc = sasl_client_start (saslconn, method, &interaction,
-        &pc, &olen, &mech);
+                              &pc, &olen, &mech);
       if (rc == SASL_INTERACT)
 	mutt_sasl_interact (interaction);
     }
@@ -189,7 +192,7 @@ imap_auth_res_t imap_auth_sasl (IMAP_DATA* idata, const char* method)
 	goto bail;
       }
     }
-    
+
     if (irc == IMAP_CMD_RESPOND)
     {
       strfcpy (buf + olen, "\r\n", bufsize - olen);
@@ -202,7 +205,7 @@ imap_auth_res_t imap_auth_sasl (IMAP_DATA* idata, const char* method)
       mutt_socket_write (idata->conn, "*\r\n");
       dprint (1, (debugfile, "imap_auth_sasl: sasl_client_step error %d\n",rc));
     }
-	  
+
     olen = 0;
   }
 
@@ -220,7 +223,7 @@ imap_auth_res_t imap_auth_sasl (IMAP_DATA* idata, const char* method)
     return IMAP_AUTH_SUCCESS;
   }
 
- bail:
+bail:
   sasl_dispose (&saslconn);
   FREE (&buf);
 

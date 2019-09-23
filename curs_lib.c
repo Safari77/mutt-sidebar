@@ -1,21 +1,21 @@
 /*
  * Copyright (C) 1996-2002,2010,2012-2013 Michael R. Elkins <me@mutt.org>
  * Copyright (C) 2004 g10 Code GmbH
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */
 
 #if HAVE_CONFIG_H
 # include "config.h"
@@ -213,7 +213,7 @@ int _mutt_get_field (const char *field, char *buf, size_t buflen, int complete, 
   int x;
 
   ENTER_STATE *es = mutt_new_enter_state();
-  
+
   do
   {
 #if defined (USE_SLANG_CURSES) || defined (HAVE_RESIZETERM)
@@ -260,13 +260,15 @@ void mutt_clear_error (void)
 
 void mutt_edit_file (const char *editor, const char *data)
 {
-  char cmd[LONG_STRING];
-  
+  BUFFER *cmd;
+
+  cmd = mutt_buffer_pool_get ();
+
   mutt_endwin (NULL);
-  mutt_expand_file_fmt (cmd, sizeof (cmd), editor, data);
-  if (mutt_system (cmd))
+  mutt_expand_file_fmt (cmd, editor, data);
+  if (mutt_system (mutt_b2s (cmd)))
   {
-    mutt_error (_("Error running \"%s\"!"), cmd);
+    mutt_error (_("Error running \"%s\"!"), mutt_b2s (cmd));
     mutt_sleep (2);
   }
 #if defined (USE_SLANG_CURSES) || defined (HAVE_RESIZETERM)
@@ -275,6 +277,8 @@ void mutt_edit_file (const char *editor, const char *data)
 #endif
   keypad (stdscr, TRUE);
   clearok (stdscr, TRUE);
+
+  mutt_buffer_pool_release (&cmd);
 }
 
 int mutt_yesorno (const char *msg, int def)
@@ -296,11 +300,11 @@ int mutt_yesorno (const char *msg, int def)
   char answer[2];
 
   answer[1] = 0;
-  
+
   reyes_ok = (expr = nl_langinfo (YESEXPR)) && expr[0] == '^' &&
-	     !REGCOMP (&reyes, expr, REG_NOSUB);
+    !REGCOMP (&reyes, expr, REG_NOSUB);
   reno_ok = (expr = nl_langinfo (NOEXPR)) && expr[0] == '^' &&
-            !REGCOMP (&reno, expr, REG_NOSUB);
+    !REGCOMP (&reno, expr, REG_NOSUB);
 #endif
 
   /*
@@ -369,7 +373,7 @@ int mutt_yesorno (const char *msg, int def)
 
 #ifdef HAVE_LANGINFO_YESEXPR
     answer[0] = ch.ch;
-    if (reyes_ok ? 
+    if (reyes_ok ?
 	(regexec (& reyes, answer, 0, 0, 0) == 0) :
 #else
     if (
@@ -397,7 +401,7 @@ int mutt_yesorno (const char *msg, int def)
 
   FREE (&answer_string);
 
-#ifdef HAVE_LANGINFO_YESEXPR    
+#ifdef HAVE_LANGINFO_YESEXPR
   if (reyes_ok)
     regfree (& reyes);
   if (reno_ok)
@@ -587,7 +591,8 @@ void mutt_progress_init (progress_t* progress, const char *msg,
   progress->flags = flags;
   progress->msg = msg;
   progress->size = size;
-  if (progress->size) {
+  if (progress->size)
+  {
     if (progress->flags & MUTT_PROGRESS_SIZE)
       mutt_pretty_size (progress->sizestr, sizeof (progress->sizestr),
 			progress->size);
@@ -608,7 +613,7 @@ void mutt_progress_init (progress_t* progress, const char *msg,
   /* if timestamp is 0 no time-based suppression is done */
   if (TimeInc)
     progress->timestamp = ((unsigned int) tv.tv_sec * 1000)
-        + (unsigned int) (tv.tv_usec / 1000);
+      + (unsigned int) (tv.tv_usec / 1000);
   mutt_progress_update (progress, 0, 0);
 }
 
@@ -633,9 +638,10 @@ void mutt_progress_update (progress_t* progress, long pos, int percent)
     update = 1;
 
   /* skip refresh if not enough time has passed */
-  if (update && progress->timestamp && !gettimeofday (&tv, NULL)) {
+  if (update && progress->timestamp && !gettimeofday (&tv, NULL))
+  {
     now = ((unsigned int) tv.tv_sec * 1000)
-          + (unsigned int) (tv.tv_usec / 1000);
+      + (unsigned int) (tv.tv_usec / 1000);
     if (now && now - progress->timestamp < TimeInc)
       update = 0;
   }
@@ -664,7 +670,7 @@ void mutt_progress_update (progress_t* progress, long pos, int percent)
     {
       mutt_message ("%s %s/%s (%d%%)", progress->msg, posstr, progress->sizestr,
 		    percent > 0 ? percent :
-		   	(int) (100.0 * (double) progress->pos / progress->size));
+                    (int) (100.0 * (double) progress->pos / progress->size));
     }
     else
     {
@@ -857,7 +863,7 @@ void mutt_show_error (void)
 {
   if (option (OPTKEEPQUIET))
     return;
-  
+
   SETCOLOR (option (OPTMSGERR) ? MT_COLOR_ERROR : MT_COLOR_MESSAGE);
   mutt_window_mvaddstr (MuttMessageWindow, 0, 0, Errorbuf);
   NORMAL_COLOR;
@@ -876,7 +882,7 @@ void mutt_endwin (const char *msg)
     mutt_refresh();
     endwin ();
   }
-  
+
   if (msg && *msg)
   {
     puts (msg);
@@ -890,8 +896,8 @@ void mutt_perror (const char *s)
 {
   char *p = strerror (errno);
 
-  dprint (1, (debugfile, "%s: %s (errno = %d)\n", s, 
-      p ? p : "unknown error", errno));
+  dprint (1, (debugfile, "%s: %s (errno = %d)\n", s,
+              p ? p : "unknown error", errno));
   mutt_error ("%s: %s (errno = %d)", s, p ? p : _("unknown error"), errno);
 }
 
@@ -929,29 +935,48 @@ int mutt_do_pager (const char *banner,
 		   pager_t *info)
 {
   int rc;
-  
+
   if (!Pager || mutt_strcmp (Pager, "builtin") == 0)
     rc = mutt_pager (banner, tempfile, do_color, info);
   else
   {
-    char cmd[STRING];
-    
+    BUFFER *cmd = NULL;
+
+    cmd = mutt_buffer_pool_get ();
     mutt_endwin (NULL);
-    mutt_expand_file_fmt (cmd, sizeof(cmd), Pager, tempfile);
-    if (mutt_system (cmd) == -1)
+    mutt_expand_file_fmt (cmd, Pager, tempfile);
+    if (mutt_system (mutt_b2s (cmd)) == -1)
     {
-      mutt_error (_("Error running \"%s\"!"), cmd);
+      mutt_error (_("Error running \"%s\"!"), mutt_b2s (cmd));
       rc = -1;
     }
     else
       rc = 0;
     mutt_unlink (tempfile);
+    mutt_buffer_pool_release (&cmd);
   }
 
   return rc;
 }
 
-int _mutt_enter_fname (const char *prompt, char *buf, size_t blen, int buffy, int multiple, char ***files, int *numfiles)
+int _mutt_enter_fname (const char *prompt, char *buf, size_t blen, int buffy,
+                       int multiple, char ***files, int *numfiles)
+{
+  BUFFER *fname;
+  int rc;
+
+  fname = mutt_buffer_pool_get ();
+
+  mutt_buffer_addstr (fname, NONULL (buf));
+  rc = _mutt_buffer_enter_fname (prompt, fname, buffy, multiple, files, numfiles);
+  strfcpy (buf, mutt_b2s (fname), blen);
+
+  mutt_buffer_pool_release (&fname);
+  return rc;
+}
+
+int _mutt_buffer_enter_fname (const char *prompt, BUFFER *fname, int buffy,
+                              int multiple, char ***files, int *numfiles)
 {
   event_t ch;
 
@@ -959,8 +984,8 @@ int _mutt_enter_fname (const char *prompt, char *buf, size_t blen, int buffy, in
   mutt_window_mvaddstr (MuttMessageWindow, 0, 0, (char *) prompt);
   addstr (_(" ('?' for list): "));
   NORMAL_COLOR;
-  if (buf[0])
-    addstr (buf);
+  if (mutt_buffer_len (fname))
+    addstr (mutt_b2s (fname));
   mutt_window_clrtoeol (MuttMessageWindow);
   mutt_refresh ();
 
@@ -976,9 +1001,10 @@ int _mutt_enter_fname (const char *prompt, char *buf, size_t blen, int buffy, in
   else if (ch.ch == '?')
   {
     mutt_refresh ();
-    buf[0] = 0;
-    _mutt_select_file (buf, blen, MUTT_SEL_FOLDER | (multiple ? MUTT_SEL_MULTI : 0), 
-		       files, numfiles);
+    mutt_buffer_clear (fname);
+    _mutt_buffer_select_file (fname,
+                              MUTT_SEL_FOLDER | (multiple ? MUTT_SEL_MULTI : 0),
+                              files, numfiles);
   }
   else
   {
@@ -986,9 +1012,14 @@ int _mutt_enter_fname (const char *prompt, char *buf, size_t blen, int buffy, in
 
     sprintf (pc, "%s: ", prompt);	/* __SPRINTF_CHECKED__ */
     mutt_unget_event (ch.op ? 0 : ch.ch, ch.op ? ch.op : 0);
-    if (_mutt_get_field (pc, buf, blen, (buffy ? MUTT_EFILE : MUTT_FILE) | MUTT_CLEAR, multiple, files, numfiles)
-	!= 0)
-      buf[0] = 0;
+
+    mutt_buffer_increase_size (fname, LONG_STRING);
+    if (_mutt_get_field (pc, fname->data, fname->dsize,
+                         (buffy ? MUTT_EFILE : MUTT_FILE) | MUTT_CLEAR,
+                         multiple, files, numfiles) != 0)
+      mutt_buffer_clear (fname);
+    else
+      mutt_buffer_fix_dptr (fname);
     FREE (&pc);
   }
 
@@ -1073,13 +1104,14 @@ void mutt_flushinp (void)
 void mutt_curs_set (int cursor)
 {
   static int SavedCursor = 1;
-  
+
   if (cursor < 0)
     cursor = SavedCursor;
   else
     SavedCursor = cursor;
-  
-  if (curs_set (cursor) == ERR) {
+
+  if (curs_set (cursor) == ERR)
+  {
     if (cursor == 1)	/* cnorm */
       curs_set (2);	/* cvvis */
   }
@@ -1228,8 +1260,8 @@ void mutt_format_string (char *dest, size_t destlen,
 	wc = ' ';
       else
 #endif
-      if (!IsWPrint (wc))
-	wc = '?';
+        if (!IsWPrint (wc))
+          wc = '?';
       w = wcwidth (wc);
     }
     if (w >= 0)

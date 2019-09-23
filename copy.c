@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 1996-2000,2002,2014 Michael R. Elkins <me@mutt.org>
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */
 
 #if HAVE_CONFIG_H
 # include "config.h"
@@ -88,8 +88,8 @@ mutt_copy_hdr (FILE *in, FILE *out, LOFF_T off_start, LOFF_T off_end, int flags,
 	  from = 1;
 	}
 	else if (flags & (CH_NOQFROM) &&
-			ascii_strncasecmp (">From ", buf, 6) == 0)
-		continue;
+                 ascii_strncasecmp (">From ", buf, 6) == 0)
+          continue;
 
 	else if (buf[0] == '\n' || (buf[0] == '\r' && buf[1] == '\n'))
 	  break; /* end of header */
@@ -110,6 +110,9 @@ mutt_copy_hdr (FILE *in, FILE *out, LOFF_T off_start, LOFF_T off_end, int flags,
 	  continue;
         if ((flags & CH_UPDATE_LABEL) &&
             ascii_strncasecmp ("X-Label:", buf, 8) == 0)
+          continue;
+        if ((flags & CH_UPDATE_SUBJECT) &&
+            ascii_strncasecmp ("Subject:", buf, 8) == 0)
           continue;
 
 	ignore = 0;
@@ -157,7 +160,7 @@ mutt_copy_hdr (FILE *in, FILE *out, LOFF_T off_start, LOFF_T off_end, int flags,
       /* Do we have anything pending? */
       if (this_one)
       {
-	if (flags & CH_DECODE) 
+	if (flags & CH_DECODE)
 	{
 	  if (!address_header_decode (&this_one))
 	    rfc2047_decode (&this_one);
@@ -166,7 +169,7 @@ mutt_copy_hdr (FILE *in, FILE *out, LOFF_T off_start, LOFF_T off_end, int flags,
 
 	if (!headers[x])
 	  headers[x] = this_one;
-	else 
+	else
 	{
 	  int hlen = mutt_strlen (headers[x]);
 
@@ -221,6 +224,9 @@ mutt_copy_hdr (FILE *in, FILE *out, LOFF_T off_start, LOFF_T off_end, int flags,
       if ((flags & CH_UPDATE_LABEL) &&
           ascii_strncasecmp ("X-Label:", buf, 8) == 0)
         continue;
+      if ((flags & CH_UPDATE_SUBJECT) &&
+          ascii_strncasecmp ("Subject:", buf, 8) == 0)
+        continue;
 
       /* Find x -- the array entry where this header is to be saved */
       if (flags & CH_REORDER)
@@ -241,10 +247,13 @@ mutt_copy_hdr (FILE *in, FILE *out, LOFF_T off_start, LOFF_T off_end, int flags,
     if (!ignore)
     {
       dprint (2, (debugfile, "Reorder: x = %d; hdr_count = %d\n", x, hdr_count));
-      if (!this_one) {
+      if (!this_one)
+      {
 	this_one = safe_strdup (buf);
 	this_one_len = mutt_strlen (this_one);
-      } else {
+      }
+      else
+      {
 	int blen = mutt_strlen (buf);
 
 	safe_realloc (&this_one, this_one_len + blen + sizeof (char));
@@ -257,16 +266,16 @@ mutt_copy_hdr (FILE *in, FILE *out, LOFF_T off_start, LOFF_T off_end, int flags,
   /* Do we have anything pending?  -- XXX, same code as in above in the loop. */
   if (this_one)
   {
-    if (flags & CH_DECODE) 
+    if (flags & CH_DECODE)
     {
       if (!address_header_decode (&this_one))
 	rfc2047_decode (&this_one);
       this_one_len = mutt_strlen (this_one);
     }
-    
+
     if (!headers[x])
       headers[x] = this_one;
-    else 
+    else
     {
       int hlen = mutt_strlen (headers[x]);
 
@@ -283,18 +292,13 @@ mutt_copy_hdr (FILE *in, FILE *out, LOFF_T off_start, LOFF_T off_end, int flags,
   {
     if (headers[x])
     {
-#if 0
-      if (flags & CH_DECODE)
-	rfc2047_decode (&headers[x]);
-#endif
-
       /* We couldn't do the prefixing when reading because RFC 2047
        * decoding may have concatenated lines.
        */
-      
+
       if (flags & (CH_DECODE|CH_PREFIX))
       {
-	if (mutt_write_one_header (out, 0, headers[x], 
+	if (mutt_write_one_header (out, 0, headers[x],
 				   flags & CH_PREFIX ? prefix : 0,
                                    mutt_window_wrap_cols (MuttIndexWindow, Wrap), flags) == -1)
 	{
@@ -303,7 +307,7 @@ mutt_copy_hdr (FILE *in, FILE *out, LOFF_T off_start, LOFF_T off_end, int flags,
 	}
       }
       else
-      {      
+      {
 	if (fputs (headers[x], out) == EOF)
 	{
 	  error = TRUE;
@@ -324,28 +328,29 @@ mutt_copy_hdr (FILE *in, FILE *out, LOFF_T off_start, LOFF_T off_end, int flags,
   return (0);
 }
 
-/* flags
- 	CH_DECODE	RFC2047 header decoding
- 	CH_FROM		retain the "From " message separator
-        CH_FORCE_FROM	give CH_FROM precedence over CH_WEED
- 	CH_MIME		ignore MIME fields
-	CH_NOLEN	don't write Content-Length: and Lines:
- 	CH_NONEWLINE	don't output a newline after the header
- 	CH_NOSTATUS	ignore the Status: and X-Status:
- 	CH_PREFIX	quote header with $indent_str
- 	CH_REORDER	output header in order specified by `hdr_order'
-  	CH_TXTPLAIN	generate text/plain MIME headers [hack alert.]
- 	CH_UPDATE	write new Status: and X-Status:
- 	CH_UPDATE_LEN	write new Content-Length: and Lines:
- 	CH_XMIT		ignore Lines: and Content-Length:
- 	CH_WEED		do header weeding
-	CH_NOQFROM      ignore ">From " line
-	CH_UPDATE_IRT	update the In-Reply-To: header
-	CH_UPDATE_REFS	update the References: header
+/* flags:
+   CH_DECODE            RFC2047 header decoding
+   CH_FROM              retain the "From " message separator
+   CH_FORCE_FROM        give CH_FROM precedence over CH_WEED
+   CH_MIME              ignore MIME fields
+   CH_NOLEN             don't write Content-Length: and Lines:
+   CH_NONEWLINE         don't output a newline after the header
+   CH_NOSTATUS          ignore the Status: and X-Status:
+   CH_PREFIX            quote header with $indent_str
+   CH_REORDER           output header in order specified by `hdr_order'
+   CH_TXTPLAIN          generate text/plain MIME headers [hack alert.]
+   CH_UPDATE            write new Status: and X-Status:
+   CH_UPDATE_LEN        write new Content-Length: and Lines:
+   CH_XMIT              ignore Lines: and Content-Length:
+   CH_WEED              do header weeding
+   CH_NOQFROM           ignore ">From " line
+   CH_UPDATE_IRT        update the In-Reply-To: header
+   CH_UPDATE_REFS       update the References: header
+   CH_UPDATE_LABEL      update the X-Label: header
 
-   prefix
-   	string to use if CH_PREFIX is set
- */
+   prefix:
+   string to use if CH_PREFIX is set
+*/
 
 int
 mutt_copy_header (FILE *in, HEADER *h, FILE *out, int flags, const char *prefix)
@@ -354,9 +359,11 @@ mutt_copy_header (FILE *in, HEADER *h, FILE *out, int flags, const char *prefix)
   char *temp_hdr = NULL;
 
   if (h->env)
-    flags |= (h->env->irt_changed ? CH_UPDATE_IRT : 0)
-      | (h->env->refs_changed ? CH_UPDATE_REFS : 0);
-  
+    flags |= ((h->env->changed & MUTT_ENV_CHANGED_IRT) ? CH_UPDATE_IRT : 0)
+      | ((h->env->changed & MUTT_ENV_CHANGED_REFS) ? CH_UPDATE_REFS : 0)
+      | ((h->env->changed & MUTT_ENV_CHANGED_XLABEL) ? CH_UPDATE_LABEL : 0)
+      | ((h->env->changed & MUTT_ENV_CHANGED_SUBJECT) ? CH_UPDATE_SUBJECT : 0);
+
   if (mutt_copy_hdr (in, out, h->offset, h->content->offset, flags, prefix) == -1)
     return -1;
 
@@ -424,7 +431,6 @@ mutt_copy_header (FILE *in, HEADER *h, FILE *out, int flags, const char *prefix)
 
   if ((flags & CH_UPDATE_LABEL) && h->env->x_label)
   {
-    h->xlabel_changed = 0;
     temp_hdr = h->env->x_label;
     /* env->x_label isn't currently stored with direct references
      * elsewhere.  Context->label_hash strdups the keys.  But to be
@@ -443,6 +449,25 @@ mutt_copy_header (FILE *in, HEADER *h, FILE *out, int flags, const char *prefix)
       FREE (&temp_hdr);
   }
 
+  if ((flags & CH_UPDATE_SUBJECT) && h->env->subject)
+  {
+    temp_hdr = h->env->subject;
+    /* env->subject is directly referenced in Context->subj_hash, so we
+     * have to be careful not to encode (and thus free) that memory. */
+    if (!(flags & CH_DECODE))
+    {
+      temp_hdr = safe_strdup (temp_hdr);
+      rfc2047_encode_string (&temp_hdr);
+    }
+    if (mutt_write_one_header (out, "Subject", temp_hdr,
+                               flags & CH_PREFIX ? prefix : 0,
+                               mutt_window_wrap_cols (MuttIndexWindow, Wrap),
+                               flags) == -1)
+      return -1;
+    if (!(flags & CH_DECODE))
+      FREE (&temp_hdr);
+  }
+
   if ((flags & CH_NONEWLINE) == 0)
   {
     if (flags & CH_PREFIX)
@@ -452,7 +477,7 @@ mutt_copy_header (FILE *in, HEADER *h, FILE *out, int flags, const char *prefix)
 
   if (ferror (out) || feof (out))
     return -1;
-  
+
   return 0;
 }
 
@@ -489,7 +514,7 @@ static int count_delete_lines (FILE *fp, BODY *b, LOFF_T *length, size_t datelen
 }
 
 /* make a copy of a message
- * 
+ *
  * fpout	where to write output
  * fpin		where to get input
  * hdr		header of message being copied
@@ -502,7 +527,7 @@ static int count_delete_lines (FILE *fp, BODY *b, LOFF_T *length, size_t datelen
  *      MUTT_CM_PRINTING   printing the message
  *	MUTT_CM_UPDATE	update structures in memory after syncing
  *	MUTT_CM_DECODE_PGP	used for decoding PGP messages
- *	MUTT_CM_CHARCONV	perform character set conversion 
+ *	MUTT_CM_CHARCONV	perform character set conversion
  * chflags	flags to mutt_copy_header()
  */
 
@@ -522,9 +547,6 @@ _mutt_copy_message (FILE *fpout, FILE *fpin, HEADER *hdr, BODY *body,
     else
       _mutt_make_string (prefix, sizeof (prefix), NONULL (Prefix), Context, hdr, 0);
   }
-
-  if (hdr->xlabel_changed)
-    chflags |= CH_UPDATE_LABEL;
 
   if ((flags & MUTT_CM_NOHEADER) == 0)
   {
@@ -578,7 +600,7 @@ _mutt_copy_message (FILE *fpout, FILE *fpin, HEADER *hdr, BODY *body,
       }
 #endif
 
-      /* Update original message if we are sync'ing a mailfolder */ 
+      /* Update original message if we are sync'ing a mailfolder */
       if (flags & MUTT_CM_UPDATE)
       {
 	hdr->attach_del = 0;
@@ -626,7 +648,7 @@ _mutt_copy_message (FILE *fpout, FILE *fpin, HEADER *hdr, BODY *body,
       s.flags |= MUTT_CHARCONV;
     if (flags & MUTT_CM_REPLYING)
       s.flags |= MUTT_REPLYING;
-    
+
     if (WithCrypto && flags & MUTT_CM_VERIFY)
       s.flags |= MUTT_VERIFY;
 
@@ -649,7 +671,7 @@ _mutt_copy_message (FILE *fpout, FILE *fpin, HEADER *hdr, BODY *body,
 
     if ((WithCrypto & APPLICATION_SMIME)
         && (flags & MUTT_CM_DECODE_SMIME) && (hdr->security & APPLICATION_SMIME)
-	     && hdr->content->type == TYPEAPPLICATION)
+        && hdr->content->type == TYPEAPPLICATION)
     {
       if (crypt_smime_decrypt_mime (fpin, &fp, hdr->content, &cur))
 	return (-1);
@@ -681,23 +703,23 @@ _mutt_copy_message (FILE *fpout, FILE *fpin, HEADER *hdr, BODY *body,
     {
       int c;
       size_t bytes = body->length;
-      
+
       fputs(prefix, fpout);
-      
-      while((c = fgetc(fpin)) != EOF && bytes--)
+
+      while ((c = fgetc(fpin)) != EOF && bytes--)
       {
 	fputc(c, fpout);
-	if(c == '\n')
+	if (c == '\n')
 	{
 	  fputs(prefix, fpout);
 	}
-      } 
+      }
     }
     else if (mutt_copy_bytes (fpin, fpout, body->length) == -1)
       return -1;
   }
 
-  if ((flags & MUTT_CM_UPDATE) && (flags & MUTT_CM_NOHEADER) == 0 
+  if ((flags & MUTT_CM_UPDATE) && (flags & MUTT_CM_NOHEADER) == 0
       && new_offset != -1)
   {
     body->offset = new_offset;
@@ -715,10 +737,10 @@ mutt_copy_message (FILE *fpout, CONTEXT *src, HEADER *hdr, int flags,
 {
   MESSAGE *msg;
   int r;
-  
+
   if ((msg = mx_open_message (src, hdr->msgno)) == NULL)
     return -1;
-  if ((r = _mutt_copy_message (fpout, msg->fp, hdr, hdr->content, flags, chflags)) == 0 
+  if ((r = _mutt_copy_message (fpout, msg->fp, hdr, hdr->content, flags, chflags)) == 0
       && (ferror (fpout) || feof (fpout)))
   {
     dprint (1, (debugfile, "_mutt_copy_message failed to detect EOF!\n"));
@@ -750,7 +772,7 @@ _mutt_append_message (CONTEXT *dest, FILE *fpin, CONTEXT *src, HEADER *hdr,
   fseeko (fpin, hdr->offset, 0);
   if (fgets (buf, sizeof (buf), fpin) == NULL)
     return -1;
-  
+
   if ((msg = mx_open_new_message (dest, hdr, is_from (buf, NULL, 0, NULL) ? 0 : MUTT_ADD_FROM)) == NULL)
     return -1;
   if (dest->magic == MUTT_MBOX || dest->magic == MUTT_MMDF)
@@ -867,13 +889,13 @@ static int copy_delete_attach (BODY *b, FILE *fpin, FILE *fpout, char *date)
   return 0;
 }
 
-/* 
+/*
  * This function is the equivalent of mutt_write_address_list(),
  * but writes to a buffer instead of writing to a stream.
  * mutt_write_address_list could be re-used if we wouldn't store
- * all the decoded headers in a huge array, first. 
+ * all the decoded headers in a huge array, first.
  *
- * XXX - fix that. 
+ * XXX - fix that.
  */
 
 static void format_address_header (char **h, ADDRESS *a)
@@ -896,8 +918,8 @@ static void format_address_header (char **h, ADDRESS *a)
     *buf = *cbuf = *c2buf = '\0';
     l = rfc822_write_address (buf, sizeof (buf), a, 0);
     a->next = tmp;
-    
-    if (count && linelen + l > 74) 
+
+    if (count && linelen + l > 74)
     {
       strcpy (cbuf, "\n\t");  	/* __STRCPY_CHECKED__ */
       linelen = l + 8;
@@ -930,7 +952,7 @@ static void format_address_header (char **h, ADDRESS *a)
     strcat (p + plen, c2buf);		/* __STRCAT_CHECKED__ */
     plen += c2buflen;
   }
-  
+
   /* Space for this was allocated in the beginning of this function. */
   strcat (p + plen, "\n");		/* __STRCAT_CHECKED__ */
 }
@@ -945,7 +967,7 @@ static int address_header_decode (char **h)
 
   switch (tolower ((unsigned char) *s))
   {
-    case 'r': 
+    case 'r':
     {
       if (ascii_strncasecmp (s, "return-path:", 12) == 0)
       {
@@ -960,10 +982,10 @@ static int address_header_decode (char **h)
       }
       return 0;
     }
-    case 'f': 
+    case 'f':
     {
-      if (ascii_strncasecmp (s, "from:", 5)) 
-	return 0; 
+      if (ascii_strncasecmp (s, "from:", 5))
+	return 0;
       l = 5;
       break;
     }
@@ -973,7 +995,7 @@ static int address_header_decode (char **h)
 	return 0;
       l = 3;
       break;
-      
+
     }
     case 'b':
     {
@@ -1003,12 +1025,12 @@ static int address_header_decode (char **h)
       l = 17;
       break;
     }
-    default: return 0;    
+    default: return 0;
   }
 
   if ((a = rfc822_parse_adrlist (a, s + l)) == NULL)
     return 0;
-  
+
   mutt_addrlist_to_local (a);
   rfc2047_decode_adrlist (a);
   for (cur = a; cur; cur = cur->next)

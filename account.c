@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 2000-2007 Brendan Cully <brendan@kublai.com>
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */
 
 /* remote host account manipulation (POP/IMAP) */
 
@@ -50,7 +50,7 @@ int mutt_account_match (const ACCOUNT* a1, const ACCOUNT* a2)
   if (a1->type == MUTT_ACCT_TYPE_POP && PopUser)
     user = PopUser;
 #endif
-  
+
   if (a1->flags & a2->flags & MUTT_ACCT_USER)
     return (!strcmp (a1->user, a2->user));
   if (a1->flags & MUTT_ACCT_USER)
@@ -280,7 +280,7 @@ char* mutt_account_getoauthbearer (ACCOUNT* account)
        one of your $*_authenticators and (2) you do not have the corresponding
        $*_oauth_refresh_command defined. So the message does not mean "None of
        your $*_oauth_refresh_command's are defined."
-     */
+    */
     mutt_error (_("mutt_account_getoauthbearer: No OAUTH refresh command defined"));
     return NULL;
   }
@@ -306,12 +306,12 @@ char* mutt_account_getoauthbearer (ACCOUNT* account)
   /* Determine the length of the keyed message digest, add 50 for
    * overhead.
    */
-  oalen = strlen (account->login) + strlen (account->host) + strlen (token) + 50; 
+  oalen = strlen (account->login) + strlen (account->host) + strlen (token) + 50;
   oauthbearer = safe_malloc (oalen);
 
   snprintf (oauthbearer, oalen,
-    "n,a=%s,\001host=%s\001port=%d\001auth=Bearer %s\001\001",
-    account->login, account->host, account->port, token);
+            "n,a=%s,\001host=%s\001port=%d\001auth=Bearer %s\001\001",
+            account->login, account->host, account->port, token);
 
   FREE (&token);
 
