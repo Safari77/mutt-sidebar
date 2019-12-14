@@ -41,7 +41,7 @@ int imap_buffy_check (int force, int check_stats);
 int imap_status (const char *path, int queue);
 int imap_search (CONTEXT* ctx, const pattern_t* pat);
 int imap_subscribe (char *path, int subscribe);
-int imap_complete (char* dest, size_t dlen, char* path);
+int imap_complete (char* dest, size_t dlen, const char* path);
 int imap_fast_trash (CONTEXT* ctx, char* dest);
 
 void imap_allow_reopen (CONTEXT *ctx);
@@ -51,12 +51,12 @@ extern struct mx_ops mx_imap_ops;
 
 /* browse.c */
 int imap_browse (const char* path, struct browser_state* state);
-int imap_mailbox_create (const char* folder);
-int imap_mailbox_rename (const char* mailbox);
+int imap_mailbox_create (const char* folder, BUFFER *result);
+int imap_mailbox_rename (const char* mailbox, BUFFER *result);
 
 /* message.c */
 int imap_append_message (CONTEXT* ctx, MESSAGE* msg);
-int imap_copy_messages (CONTEXT* ctx, HEADER* h, char* dest, int delete);
+int imap_copy_messages (CONTEXT* ctx, HEADER* h, const char* dest, int delete);
 
 /* socket.c */
 void imap_logout_all (void);

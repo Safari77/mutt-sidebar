@@ -176,7 +176,7 @@ static char *get_field (char *s)
 }
 
 static int get_field_text (char *field, char **entry,
-			   char *type, char *filename, int line)
+			   const char *type, const char *filename, int line)
 {
   field = mutt_skip_whitespace (field);
   if (*field == '=')
@@ -198,8 +198,8 @@ static int get_field_text (char *field, char **entry,
 }
 
 static int rfc1524_mailcap_parse (BODY *a,
-				  char *filename,
-				  char *type,
+				  const char *filename,
+				  const char *type,
 				  rfc1524_entry *entry,
 				  int opt)
 {
@@ -398,8 +398,12 @@ rfc1524_entry *rfc1524_new_entry(void)
 
 void rfc1524_free_entry(rfc1524_entry **entry)
 {
-  rfc1524_entry *p = *entry;
+  rfc1524_entry *p;
 
+  if (!entry || !*entry)
+    return;
+
+  p = *entry;
   FREE (&p->command);
   FREE (&p->testcommand);
   FREE (&p->composecommand);
@@ -416,10 +420,9 @@ void rfc1524_free_entry(rfc1524_entry **entry)
  * in *entry, and returns 1.  On failure (not found), returns 0.
  * If entry == NULL just return 1 if the given type is found.
  */
-int rfc1524_mailcap_lookup (BODY *a, char *type, rfc1524_entry *entry, int opt)
+int rfc1524_mailcap_lookup (BODY *a, char *type, size_t typelen, rfc1524_entry *entry, int opt)
 {
-  char path[_POSIX_PATH_MAX];
-  int x;
+  BUFFER *path = NULL;
   int found = FALSE;
   char *curr = MailcapPath;
 
@@ -429,34 +432,37 @@ int rfc1524_mailcap_lookup (BODY *a, char *type, rfc1524_entry *entry, int opt)
    * and overridden by the MAILCAPS environment variable, and, just to be nice,
    * we'll make it specifiable in .muttrc
    */
-  if (!curr || !*curr)
+  if (!curr)
   {
     mutt_error _("No mailcap path specified");
     return 0;
   }
 
-  mutt_check_lookup_list (a, type, SHORT_STRING);
+  mutt_check_lookup_list (a, type, typelen);
+
+  path = mutt_buffer_pool_get ();
 
   while (!found && *curr)
   {
-    x = 0;
-    while (*curr && *curr != ':' && x < sizeof (path) - 1)
+    mutt_buffer_clear (path);
+    while (*curr && *curr != ':')
     {
-      path[x++] = *curr;
+      mutt_buffer_addch (path, *curr);
       curr++;
     }
     if (*curr)
       curr++;
 
-    if (!x)
+    if (!mutt_buffer_len (path))
       continue;
 
-    path[x] = '\0';
-    mutt_expand_path (path, sizeof (path));
+    mutt_buffer_expand_path (path);
 
-    dprint(2,(debugfile,"Checking mailcap file: %s\n",path));
-    found = rfc1524_mailcap_parse (a, path, type, entry, opt);
+    dprint(2,(debugfile,"Checking mailcap file: %s\n",mutt_b2s (path)));
+    found = rfc1524_mailcap_parse (a, mutt_b2s (path), type, entry, opt);
   }
+
+  mutt_buffer_pool_release (&path);
 
   if (entry && !found)
     mutt_error (_("mailcap entry for type %s not found"), type);
@@ -465,19 +471,16 @@ int rfc1524_mailcap_lookup (BODY *a, char *type, rfc1524_entry *entry, int opt)
 }
 
 
-/* This routine will create a _temporary_ filename matching the
- * name template given if this needs to be done.
+/* This routine will create a _temporary_ filename, matching the
+ * name template if given.
  *
  * Please note that only the last path element of the
  * template and/or the old file name will be used for the
  * comparison and the temporary file name.
- *
- * Returns 0 if oldfile is fine as is.
- * Returns 1 if newfile specified
  */
-int mutt_rfc1524_expand_filename (const char *nametemplate,
-                                  const char *oldfile,
-                                  BUFFER *newfile)
+void mutt_rfc1524_expand_filename (const char *nametemplate,
+                                   const char *oldfile,
+                                   BUFFER *newfile)
 {
   int i, j, k, ps;
   char *s;
@@ -583,12 +586,6 @@ int mutt_rfc1524_expand_filename (const char *nametemplate,
   }
 
   mutt_adv_mktemp (newfile);
-
-  if (rmatch && lmatch)
-    return 0;
-  else
-    return 1;
-
 }
 
 /* If rfc1524_expand_command() is used on a recv'd message, then

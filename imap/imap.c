@@ -914,16 +914,23 @@ void imap_logout (IMAP_DATA** idata)
 
 static int imap_open_new_message (MESSAGE *msg, CONTEXT *dest, HEADER *hdr)
 {
-  char tmp[_POSIX_PATH_MAX];
+  BUFFER *tmp = NULL;
+  int rc = -1;
 
-  mutt_mktemp (tmp, sizeof (tmp));
-  if ((msg->fp = safe_fopen (tmp, "w")) == NULL)
+  tmp = mutt_buffer_pool_get ();
+  mutt_buffer_mktemp (tmp);
+  if ((msg->fp = safe_fopen (mutt_b2s (tmp), "w")) == NULL)
   {
-    mutt_perror (tmp);
-    return (-1);
+    mutt_perror (mutt_b2s (tmp));
+    goto cleanup;
   }
-  msg->path = safe_strdup(tmp);
-  return 0;
+
+  msg->path = safe_strdup (mutt_b2s (tmp));
+  rc = 0;
+
+cleanup:
+  mutt_buffer_pool_release (&tmp);
+  return rc;
 }
 
 /* imap_set_flag: append str to flags if we currently have permission
@@ -1812,9 +1819,9 @@ IMAP_STATUS* imap_mboxcache_get (IMAP_DATA* idata, const char* mbox, int create)
   IMAP_STATUS scache;
 #ifdef USE_HCACHE
   header_cache_t *hc = NULL;
-  unsigned int *uidvalidity = NULL;
-  unsigned int *uidnext = NULL;
-  unsigned long long *modseq = NULL;
+  void *puidvalidity = NULL;
+  void *puidnext = NULL;
+  void *pmodseq = NULL;
 #endif
 
   for (cur = idata->mboxcache; cur; cur = cur->next)
@@ -1841,28 +1848,36 @@ IMAP_STATUS* imap_mboxcache_get (IMAP_DATA* idata, const char* mbox, int create)
   hc = imap_hcache_open (idata, mbox);
   if (hc)
   {
-    uidvalidity = mutt_hcache_fetch_raw (hc, "/UIDVALIDITY", imap_hcache_keylen);
-    uidnext = mutt_hcache_fetch_raw (hc, "/UIDNEXT", imap_hcache_keylen);
-    modseq = mutt_hcache_fetch_raw (hc, "/MODSEQ", imap_hcache_keylen);
-    if (uidvalidity)
+    puidvalidity = mutt_hcache_fetch_raw (hc, "/UIDVALIDITY", imap_hcache_keylen);
+    puidnext = mutt_hcache_fetch_raw (hc, "/UIDNEXT", imap_hcache_keylen);
+    pmodseq = mutt_hcache_fetch_raw (hc, "/MODSEQ", imap_hcache_keylen);
+    if (puidvalidity)
     {
       if (!status)
       {
-        mutt_hcache_free ((void **)&uidvalidity);
-        mutt_hcache_free ((void **)&uidnext);
-        mutt_hcache_free ((void **)&modseq);
+        mutt_hcache_free ((void **)&puidvalidity);
+        mutt_hcache_free ((void **)&puidnext);
+        mutt_hcache_free ((void **)&pmodseq);
         mutt_hcache_close (hc);
         return imap_mboxcache_get (idata, mbox, 1);
       }
-      status->uidvalidity = *uidvalidity;
-      status->uidnext = uidnext ? *uidnext: 0;
-      status->modseq = modseq ? *modseq: 0;
+      memcpy (&status->uidvalidity, puidvalidity, sizeof(unsigned int));
+
+      if (puidnext)
+        memcpy (&status->uidnext, puidnext, sizeof(unsigned int));
+      else
+        status->uidnext = 0;
+
+      if (pmodseq)
+        memcpy (&status->modseq, pmodseq, sizeof(unsigned long long));
+      else
+        status->modseq = 0;
       dprint (3, (debugfile, "mboxcache: hcache uidvalidity %u, uidnext %u, modseq %llu\n",
                   status->uidvalidity, status->uidnext, status->modseq));
     }
-    mutt_hcache_free ((void **)&uidvalidity);
-    mutt_hcache_free ((void **)&uidnext);
-    mutt_hcache_free ((void **)&modseq);
+    mutt_hcache_free ((void **)&puidvalidity);
+    mutt_hcache_free ((void **)&puidnext);
+    mutt_hcache_free ((void **)&pmodseq);
     mutt_hcache_close (hc);
   }
 #endif
@@ -2175,7 +2190,7 @@ imap_complete_hosts (char *dest, size_t len)
 
 /* imap_complete: given a partial IMAP folder path, return a string which
  *   adds as much to the path as is unique */
-int imap_complete(char* dest, size_t dlen, char* path)
+int imap_complete(char* dest, size_t dlen, const char* path)
 {
   IMAP_DATA* idata;
   char list[LONG_STRING];

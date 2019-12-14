@@ -51,6 +51,10 @@
 #include "monitor.h"
 #endif
 
+#ifdef USE_AUTOCRYPT
+#include "autocrypt/autocrypt.h"
+#endif
+
 #include <string.h>
 #include <stdlib.h>
 #include <locale.h>
@@ -609,6 +613,8 @@ static void start_curses (void)
 int main (int argc, char **argv, char **environ)
 {
   BUFFER *folder = NULL;
+  BUFFER *expanded_infile = NULL;
+  BUFFER *tempfile = NULL;
   char *subject = NULL;
   char *includeFile = NULL;
   char *draftFile = NULL;
@@ -914,28 +920,37 @@ int main (int argc, char **argv, char **environ)
     mutt_message = mutt_curses_message;
   }
 
+  /* Initialize autocrypt after curses messages are working,
+   * because of the initial account setup screens. */
+#ifdef USE_AUTOCRYPT
+  if (option (OPTAUTOCRYPT))
+    mutt_autocrypt_init (!(sendflags & SENDBATCH));
+#endif
+
   /* Create the Maildir directory if it doesn't exist. */
   if (!option (OPTNOCURSES) && Maildir)
   {
     struct stat sb;
-    char fpath[_POSIX_PATH_MAX];
+    BUFFER *fpath;
     char msg[STRING];
 
-    strfcpy (fpath, Maildir, sizeof (fpath));
-    mutt_expand_path (fpath, sizeof (fpath));
+    fpath = mutt_buffer_pool_get ();
+    mutt_buffer_strcpy (fpath, Maildir);
+    mutt_buffer_expand_path (fpath);
 #ifdef USE_IMAP
     /* we're not connected yet - skip mail folder creation */
-    if (!mx_is_imap (fpath))
+    if (!mx_is_imap (mutt_b2s (fpath)))
 #endif
-      if (stat (fpath, &sb) == -1 && errno == ENOENT)
+      if (stat (mutt_b2s (fpath), &sb) == -1 && errno == ENOENT)
       {
         snprintf (msg, sizeof (msg), _("%s does not exist. Create it?"), Maildir);
         if (mutt_yesorno (msg, MUTT_YES) == MUTT_YES)
         {
-          if (mkdir (fpath, 0700) == -1 && errno != EEXIST)
+          if (mkdir (mutt_b2s (fpath), 0700) == -1 && errno != EEXIST)
             mutt_error ( _("Can't create %s: %s."), Maildir, strerror (errno));
         }
       }
+    mutt_buffer_pool_release (&fpath);
   }
 
   if (sendflags & SENDPOSTPONED)
@@ -949,11 +964,10 @@ int main (int argc, char **argv, char **environ)
   {
     FILE *fin = NULL;
     FILE *fout = NULL;
-    char buf[LONG_STRING];
-    char *tempfile = NULL, *infile = NULL;
-    char *bodytext = NULL, *bodyfile = NULL;
+    char *infile = NULL;
+    char *bodytext = NULL;
+    const char *bodyfile = NULL;
     int rv = 0;
-    char expanded_infile[_POSIX_PATH_MAX];
 
     if (!option (OPTNOCURSES))
       mutt_flushinp ();
@@ -1022,16 +1036,17 @@ int main (int argc, char **argv, char **environ)
         }
 	else
 	{
-	  strfcpy (expanded_infile, infile, sizeof (expanded_infile));
-	  mutt_expand_path (expanded_infile, sizeof (expanded_infile));
-	  if ((fin = fopen (expanded_infile, "r")) == NULL)
+          expanded_infile = mutt_buffer_new ();
+	  mutt_buffer_strcpy (expanded_infile, infile);
+	  mutt_buffer_expand_path (expanded_infile);
+	  if ((fin = fopen (mutt_b2s (expanded_infile), "r")) == NULL)
 	  {
 	    if (!option (OPTNOCURSES))
             {
 	      mutt_endwin (NULL);
               set_option (OPTNOCURSES);
             }
-	    perror (expanded_infile);
+	    perror (mutt_b2s (expanded_infile));
             goto cleanup_and_exit;
 	  }
 	}
@@ -1043,19 +1058,18 @@ int main (int argc, char **argv, char **environ)
        */
       if (!edit_infile)
       {
-        mutt_mktemp (buf, sizeof (buf));
-        tempfile = safe_strdup (buf);
+        tempfile = mutt_buffer_new ();
+        mutt_buffer_mktemp (tempfile);
 
-        if ((fout = safe_fopen (tempfile, "w")) == NULL)
+        if ((fout = safe_fopen (mutt_b2s (tempfile), "w")) == NULL)
         {
           if (!option (OPTNOCURSES))
           {
             mutt_endwin (NULL);
             set_option (OPTNOCURSES);
           }
-          perror (tempfile);
+          perror (mutt_b2s (tempfile));
           safe_fclose (&fin);
-          FREE (&tempfile);
           goto cleanup_and_exit;
         }
         if (fin)
@@ -1068,15 +1082,14 @@ int main (int argc, char **argv, char **environ)
           fputs (bodytext, fout);
         safe_fclose (&fout);
 
-        if ((fin = fopen (tempfile, "r")) == NULL)
+        if ((fin = fopen (mutt_b2s (tempfile), "r")) == NULL)
         {
           if (!option (OPTNOCURSES))
           {
             mutt_endwin (NULL);
             set_option (OPTNOCURSES);
           }
-          perror (tempfile);
-          FREE (&tempfile);
+          perror (mutt_b2s (tempfile));
           goto cleanup_and_exit;
         }
       }
@@ -1144,11 +1157,11 @@ int main (int argc, char **argv, char **environ)
        * Note that SENDNOFREEHEADER is set above so it isn't unlinked.
        */
       else if (edit_infile)
-        bodyfile = expanded_infile;
+        bodyfile = mutt_b2s (expanded_infile);
       /* For bodytext and unedited includeFile: use the tempfile.
        */
       else
-        bodyfile = tempfile;
+        bodyfile = mutt_b2s (tempfile);
 
       if (fin)
         safe_fclose (&fin);
@@ -1197,24 +1210,24 @@ int main (int argc, char **argv, char **environ)
         msg->content->unlink = 0;
       else if (draftFile)
       {
-        if (truncate (expanded_infile, 0) == -1)
+        if (truncate (mutt_b2s (expanded_infile), 0) == -1)
         {
           if (!option (OPTNOCURSES))
           {
             mutt_endwin (NULL);
             set_option (OPTNOCURSES);
           }
-          perror (expanded_infile);
+          perror (mutt_b2s (expanded_infile));
           goto cleanup_and_exit;
         }
-        if ((fout = safe_fopen (expanded_infile, "a")) == NULL)
+        if ((fout = safe_fopen (mutt_b2s (expanded_infile), "a")) == NULL)
         {
           if (!option (OPTNOCURSES))
           {
             mutt_endwin (NULL);
             set_option (OPTNOCURSES);
           }
-          perror (expanded_infile);
+          perror (mutt_b2s (expanded_infile));
           goto cleanup_and_exit;
         }
 
@@ -1224,7 +1237,7 @@ int main (int argc, char **argv, char **environ)
         if (rv < 0)
         {
           if (msg->content->next)
-            msg->content = mutt_make_multipart (msg->content);
+            msg->content = mutt_make_multipart_mixed (msg->content);
           mutt_encode_descriptions (msg->content, 1);
           mutt_prepare_envelope (msg->env, 0);
           mutt_env_to_intl (msg->env, NULL, NULL);
@@ -1250,10 +1263,7 @@ int main (int argc, char **argv, char **environ)
 
     /* !edit_infile && draftFile will leave the tempfile around */
     if (tempfile)
-    {
-      unlink (tempfile);
-      FREE (&tempfile);
-    }
+      unlink (mutt_b2s (tempfile));
 
     if (rv)
       goto cleanup_and_exit;
@@ -1343,11 +1353,16 @@ int main (int argc, char **argv, char **environ)
 
 cleanup_and_exit:
   mutt_buffer_free (&folder);
+  mutt_buffer_free (&expanded_infile);
+  mutt_buffer_free (&tempfile);
 #ifdef USE_IMAP
   imap_logout_all ();
 #endif
 #ifdef USE_SASL
   mutt_sasl_done ();
+#endif
+#ifdef USE_AUTOCRYPT
+  mutt_autocrypt_cleanup ();
 #endif
   mutt_browser_cleanup ();
   mutt_free_opts ();

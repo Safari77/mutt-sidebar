@@ -37,6 +37,14 @@ AC_PROG_MKDIR_P
 AC_PROG_RANLIB
 AC_CHECK_TOOL(AR, ar, ar)
 
+AC_CACHE_CHECK([for GNU make],
+        [mutt_cv_gnu_make_command],
+        [mutt_cv_gnu_make_command="no"
+  if ${MAKE:-make} --version 2> /dev/null | grep "GNU Make" 2>&1 > /dev/null ; then
+          mutt_cv_gnu_make_command="yes"
+  fi])
+AM_CONDITIONAL(GNU_MAKE, test x$mutt_cv_gnu_make_command = xyes)
+
 AC_C_INLINE
 AC_C_CONST
 AC_C_BIGENDIAN
@@ -117,20 +125,62 @@ AC_DEFINE_UNQUOTED(SENDMAIL,"$ac_cv_path_SENDMAIL", [Where to find sendmail on y
 
 OPS='$(srcdir)/OPS'
 
-AC_MSG_CHECKING([whether to build with GPGME support])
-AC_ARG_ENABLE(gpgme, AS_HELP_STRING([--enable-gpgme],[Enable GPGME support]),
-[       if test x$enableval = xyes; then
-		enable_gpgme=yes
-	fi
-])
+AC_ARG_WITH(sqlite3,
+        AS_HELP_STRING([--with-sqlite3@<:@=PFX@:>@],
+                [Enable sqlite3 support. Required by autocrypt.]),
+        [],
+        [with_sqlite3=no])
+if test x$with_sqlite3 != xno; then
+  if test x$with_sqlite3 != xyes; then
+    LDFLAGS="$LDFLAGS -L$with_sqlite3/lib"
+    CPPFLAGS="$CPPFLAGS -I$with_sqlite3/include"
+  fi
+  saved_LIBS="$LIBS"
 
-if test x"$enable_gpgme" = xyes; then
+  AC_CHECK_LIB(sqlite3, sqlite3_open, [],
+    AC_MSG_ERROR([Unable to find sqlite3 library]))
+
+  LIBS="$saved_LIBS"
+  MUTTLIBS="$MUTTLIBS -lsqlite3"
+fi
+
+AC_ARG_ENABLE(autocrypt,
+        AS_HELP_STRING([--enable-autocrypt],[Enable autocrypt support]),
+        [],
+        [enable_autocrypt=no])
+if test x$enable_autocrypt = xyes; then
+  if test x$with_sqlite3 = xno; then
+    AC_MSG_ERROR([autocrypt requires --with-sqlite3])
+  fi
+  AC_DEFINE(USE_AUTOCRYPT,1,[ Define if you want support for autocrypt. ])
+  LIBAUTOCRYPT="-Lautocrypt -lautocrypt"
+  LIBAUTOCRYPTDEPS="\$(top_srcdir)/autocrypt/autocrypt.h autocrypt/libautocrypt.a"
+  mutt_enable_gpgme=yes
+  echo "enabling autocrypt..."
+  mutt_gpgme_version="1.8.0"
+  echo "Note: autocrypt requires GPGME version $mutt_gpgme_version or greater"
+fi
+AM_CONDITIONAL(BUILD_AUTOCRYPT, test x$enable_autocrypt = xyes)
+AC_SUBST(LIBAUTOCRYPT)
+AC_SUBST(LIBAUTOCRYPTDEPS)
+
+if test x$mutt_enable_gpgme != xyes; then
+  AC_ARG_ENABLE(gpgme, AS_HELP_STRING([--enable-gpgme],[Enable GPGME support]),
+  [       if test x$enableval = xyes; then
+            mutt_enable_gpgme=yes
+            mutt_gpgme_version="1.4.0"
+          fi
+  ])
+fi
+
+AC_MSG_CHECKING([whether to build with GPGME support])
+if test x"$mutt_enable_gpgme" = xyes; then
    AC_MSG_RESULT(yes)
-   AM_PATH_GPGME(1.4.0, AC_DEFINE(CRYPT_BACKEND_GPGME, 1,
+   AM_PATH_GPGME([$mutt_gpgme_version], AC_DEFINE(CRYPT_BACKEND_GPGME, 1,
 		 [Defined, if GPGME support is enabled]),
 		 [gpgme_found=no])
    if test x"$gpgme_found" = xno; then
-      AC_MSG_ERROR([*** GPGME not found or version is older than 1.4 ***])
+      AC_MSG_ERROR([*** GPGME not found or version is older than $mutt_gpgme_version ***])
    else
       MUTT_LIB_OBJECTS="$MUTT_LIB_OBJECTS crypt-gpgme.o crypt-mod-pgp-gpgme.o crypt-mod-smime-gpgme.o"
       AM_PATH_GPG_ERROR(1.33)
@@ -459,7 +509,8 @@ AC_CHECK_FUNCS(clock_gettime)
 dnl AIX may not have fchdir()
 AC_CHECK_FUNCS(fchdir, , [mutt_cv_fchdir=no])
 
-AC_ARG_WITH(regex, AS_HELP_STRING([--with-regex],[Use the GNU regex library]),
+AC_ARG_WITH(bundled-regex,
+        AS_HELP_STRING([--with-bundled-regex],[Use the bundled GNU regex library]),
         [mutt_cv_regex=yes],
         [AC_CHECK_FUNCS(regcomp, mutt_cv_regex=no, mutt_cv_regex=yes)])
 
@@ -1592,6 +1643,6 @@ if test x$full_doc != xno ; then
 fi
 
 AC_CONFIG_FILES(Makefile contrib/Makefile doc/Makefile imap/Makefile
-        intl/Makefile m4/Makefile po/Makefile.in
+        intl/Makefile m4/Makefile po/Makefile.in autocrypt/Makefile
         hcachever.sh doc/instdoc.sh)
 AC_OUTPUT

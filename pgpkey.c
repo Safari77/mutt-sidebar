@@ -448,7 +448,8 @@ static pgp_key_t pgp_select_key (pgp_key_t keys,
   MUTTMENU *menu;
   int i, done = 0;
   char helpstr[LONG_STRING], buf[LONG_STRING], tmpbuf[STRING];
-  char cmd[LONG_STRING], tempfile[_POSIX_PATH_MAX];
+  char cmd[LONG_STRING];
+  BUFFER *tempfile;
   FILE *fp, *devnull;
   pid_t thepid;
   pgp_key_t kp;
@@ -547,17 +548,19 @@ static pgp_key_t pgp_select_key (pgp_key_t keys,
     {
 
       case OP_VERIFY_KEY:
-
-        mutt_mktemp (tempfile, sizeof (tempfile));
         if ((devnull = fopen ("/dev/null", "w")) == NULL)	/* __FOPEN_CHECKED__ */
         {
           mutt_perror _("Can't open /dev/null");
           break;
         }
-        if ((fp = safe_fopen (tempfile, "w")) == NULL)
+
+        tempfile = mutt_buffer_pool_get ();
+        mutt_buffer_mktemp (tempfile);
+        if ((fp = safe_fopen (mutt_b2s (tempfile), "w")) == NULL)
         {
-          safe_fclose (&devnull);
           mutt_perror _("Can't create temporary file");
+          safe_fclose (&devnull);
+          mutt_buffer_pool_release (&tempfile);
           break;
         }
 
@@ -570,9 +573,11 @@ static pgp_key_t pgp_select_key (pgp_key_t keys,
                                              fileno (fp), fileno (devnull), tmpbuf)) == -1)
         {
           mutt_perror _("Can't create filter");
-          unlink (tempfile);
+          unlink (mutt_b2s (tempfile));
+          mutt_buffer_pool_release (&tempfile);
           safe_fclose (&fp);
           safe_fclose (&devnull);
+          break;
         }
 
         mutt_wait_filter (thepid);
@@ -581,7 +586,8 @@ static pgp_key_t pgp_select_key (pgp_key_t keys,
         mutt_clear_error ();
         snprintf (cmd, sizeof (cmd), _("Key ID: 0x%s"),
                   pgp_keyid (pgp_principal_key (KeyTable[menu->current]->parent)));
-        mutt_do_pager (cmd, tempfile, 0, NULL);
+        mutt_do_pager (cmd, mutt_b2s (tempfile), 0, NULL);
+        mutt_buffer_pool_release (&tempfile);
         menu->redraw = REDRAW_FULL;
 
         break;
@@ -710,11 +716,11 @@ pgp_key_t pgp_ask_for_key (char *tag, char *whatfor,
 
 /* generate a public key attachment */
 
-BODY *pgp_make_key_attachment (char *tempf)
+BODY *pgp_make_key_attachment (void)
 {
-  BODY *att;
-  char buff[LONG_STRING];
-  char tempfb[_POSIX_PATH_MAX], tmp[STRING];
+  BODY *att = NULL;
+  char buff[LONG_STRING], tmp[STRING];
+  BUFFER *tempf = NULL;
   FILE *tempfp;
   FILE *devnull;
   struct stat sb;
@@ -723,31 +729,26 @@ BODY *pgp_make_key_attachment (char *tempf)
   unset_option (OPTPGPCHECKTRUST);
 
   key = pgp_ask_for_key (_("Please enter the key ID: "), NULL, 0, PGP_PUBRING);
-
-  if (!key)    return NULL;
+  if (!key)
+    return NULL;
 
   snprintf (tmp, sizeof (tmp), "0x%s", pgp_fpr_or_lkeyid (pgp_principal_key (key)));
   pgp_free_key (&key);
 
-  if (!tempf)
-  {
-    mutt_mktemp (tempfb, sizeof (tempfb));
-    tempf = tempfb;
-  }
-
-  if ((tempfp = safe_fopen (tempf, tempf == tempfb ? "w" : "a")) == NULL)
+  tempf = mutt_buffer_pool_get ();
+  mutt_buffer_mktemp (tempf);
+  if ((tempfp = safe_fopen (mutt_b2s (tempf), "w")) == NULL)
   {
     mutt_perror _("Can't create temporary file");
-    return NULL;
+    goto cleanup;
   }
 
   if ((devnull = fopen ("/dev/null", "w")) == NULL)	/* __FOPEN_CHECKED__ */
   {
     mutt_perror _("Can't open /dev/null");
     safe_fclose (&tempfp);
-    if (tempf == tempfb)
-      unlink (tempf);
-    return NULL;
+    unlink (mutt_b2s (tempf));
+    goto cleanup;
   }
 
   mutt_message _("Invoking PGP...");
@@ -758,10 +759,10 @@ BODY *pgp_make_key_attachment (char *tempf)
                           fileno (tempfp), fileno (devnull), tmp)) == -1)
   {
     mutt_perror _("Can't create filter");
-    unlink (tempf);
     safe_fclose (&tempfp);
+    unlink (mutt_b2s (tempf));
     safe_fclose (&devnull);
-    return NULL;
+    goto cleanup;
   }
 
   mutt_wait_filter (thepid);
@@ -770,7 +771,7 @@ BODY *pgp_make_key_attachment (char *tempf)
   safe_fclose (&devnull);
 
   att = mutt_new_body ();
-  att->filename = safe_strdup (tempf);
+  att->filename = safe_strdup (mutt_b2s (tempf));
   att->unlink = 1;
   att->use_disp = 0;
   att->type = TYPEAPPLICATION;
@@ -779,9 +780,11 @@ BODY *pgp_make_key_attachment (char *tempf)
   att->description = safe_strdup (buff);
   mutt_update_encoding (att);
 
-  stat (tempf, &sb);
+  stat (mutt_b2s (tempf), &sb);
   att->length = sb.st_size;
 
+cleanup:
+  mutt_buffer_pool_release (&tempf);
   return att;
 }
 

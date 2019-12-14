@@ -216,7 +216,7 @@ static void recode_buf (char *buf, size_t buflen)
 {
   char *s;
 
-  if (!ConfigCharset || !*ConfigCharset || !Charset)
+  if (!ConfigCharset || !Charset)
     return;
   s = safe_strdup (buf);
   if (!s)
@@ -617,11 +617,10 @@ int mutt_addr_is_user (ADDRESS *addr)
 {
   const char *fqdn;
 
-  /* NULL address is assumed to be the user. */
   if (!addr)
   {
-    dprint (5, (debugfile, "mutt_addr_is_user: yes, NULL address\n"));
-    return 1;
+    dprint (5, (debugfile, "mutt_addr_is_user: no, NULL address\n"));
+    return 0;
   }
   if (!addr->mailbox)
   {

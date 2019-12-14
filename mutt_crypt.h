@@ -30,7 +30,7 @@
    information hiding. */
 
 
-
+/* NOTE: adding flags means HEADER.security bit width needs to be increased */
 #define ENCRYPT    (1 << 0)
 #define SIGN       (1 << 1)
 #define GOODSIGN   (1 << 2)
@@ -40,11 +40,14 @@
 #define KEYBLOCK   (1 << 6) /* KEY too generic? */
 #define INLINE     (1 << 7)
 #define OPPENCRYPT (1 << 8) /* Opportunistic encrypt mode */
+#define AUTOCRYPT  (1 << 9) /* Message will be, or was Autocrypt encrypt+signed */
 
-#define APPLICATION_PGP    (1 << 9)
-#define APPLICATION_SMIME  (1 << 10)
+#define AUTOCRYPT_OVERRIDE (1 << 10)  /* Indicates manual set/unset of encryption */
 
-#define PGP_TRADITIONAL_CHECKED (1 << 11)
+#define APPLICATION_PGP    (1 << 11)
+#define APPLICATION_SMIME  (1 << 12)
+
+#define PGP_TRADITIONAL_CHECKED (1 << 13)
 
 #define PGPENCRYPT  (APPLICATION_PGP | ENCRYPT)
 #define PGPSIGN     (APPLICATION_PGP | SIGN)
@@ -108,7 +111,7 @@ typedef struct pgp_keyinfo *pgp_key_t;
 
 /* Some prototypes -- old crypt.h. */
 
-int mutt_protect (HEADER *, char *);
+int mutt_protect (HEADER *, char *, int);
 
 int mutt_is_multipart_encrypted (BODY *);
 
@@ -228,7 +231,7 @@ BODY *crypt_pgp_traditional_encryptsign (BODY *a, int flags, char *keylist);
 void crypt_pgp_free_key (pgp_key_t *kpp);
 
 /* Generate a PGP public key attachment. */
-BODY *crypt_pgp_make_key_attachment (char *tempf);
+BODY *crypt_pgp_make_key_attachment (void);
 
 /* This routine attempts to find the keyids of the recipients of a
    message.  It returns NULL if any of the keys can not be found.
@@ -241,7 +244,7 @@ BODY *crypt_pgp_sign_message (BODY *a);
 
 /* Warning: A is no longer freed in this routine, you need to free it
    later.  This is necessary for $fcc_attach. */
-BODY *crypt_pgp_encrypt_message (BODY *a, char *keylist, int sign);
+BODY *crypt_pgp_encrypt_message (HEADER *msg, BODY *a, char *keylist, int sign);
 
 /* Invoke the PGP command to import a key. */
 void crypt_pgp_invoke_import (const char *fname);
@@ -294,7 +297,7 @@ BODY *crypt_smime_sign_message (BODY *a);
 BODY *crypt_smime_build_smime_entity (BODY *a, char *certlist);
 
 /* Add a certificate and update index file (externally). */
-void crypt_smime_invoke_import (char *infile, char *mailbox);
+void crypt_smime_invoke_import (const char *infile, const char *mailbox);
 
 int crypt_smime_send_menu (HEADER *msg);
 

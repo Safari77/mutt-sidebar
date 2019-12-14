@@ -228,14 +228,15 @@ int imap_read_headers (IMAP_DATA* idata, unsigned int msn_begin, unsigned int ms
   int evalhc = 0;
 
 #if USE_HCACHE
-  unsigned int *uid_validity = NULL;
-  unsigned int *puidnext = NULL;
+  void *puid_validity = NULL;
+  unsigned int uid_validity = 0;
+  void *puidnext = NULL;
   unsigned int uidnext = 0;
   int has_condstore = 0;
   int has_qresync = 0;
   int eval_condstore = 0;
   int eval_qresync = 0;
-  unsigned long long *pmodseq = NULL;
+  void *pmodseq = NULL;
   unsigned long long hc_modseq = 0;
   char *uid_seqset = NULL;
 #endif /* USE_HCACHE */
@@ -257,11 +258,13 @@ int imap_read_headers (IMAP_DATA* idata, unsigned int msn_begin, unsigned int ms
 
   if (idata->hcache && initial_download)
   {
-    uid_validity = mutt_hcache_fetch_raw (idata->hcache, "/UIDVALIDITY", imap_hcache_keylen);
+    puid_validity = mutt_hcache_fetch_raw (idata->hcache, "/UIDVALIDITY", imap_hcache_keylen);
+    if (puid_validity)
+      memcpy (&uid_validity, puid_validity, sizeof(unsigned int));
     puidnext = mutt_hcache_fetch_raw (idata->hcache, "/UIDNEXT", imap_hcache_keylen);
     if (puidnext)
     {
-      uidnext = *puidnext;
+      memcpy (&uidnext, puidnext, sizeof(unsigned int));;
       mutt_hcache_free ((void **)&puidnext);
     }
 
@@ -278,13 +281,13 @@ int imap_read_headers (IMAP_DATA* idata, unsigned int msn_begin, unsigned int ms
         has_qresync = 1;
     }
 
-    if (uid_validity && uidnext && *uid_validity == idata->uid_validity)
+    if (puid_validity && uidnext && (uid_validity == idata->uid_validity))
     {
       evalhc = 1;
       pmodseq = mutt_hcache_fetch_raw (idata->hcache, "/MODSEQ", imap_hcache_keylen);
       if (pmodseq)
       {
-        hc_modseq = *pmodseq;
+        memcpy (&hc_modseq, pmodseq, sizeof(unsigned long long));;
         mutt_hcache_free ((void **)&pmodseq);
       }
       if (hc_modseq)
@@ -300,7 +303,7 @@ int imap_read_headers (IMAP_DATA* idata, unsigned int msn_begin, unsigned int ms
           eval_condstore = 1;
       }
     }
-    mutt_hcache_free ((void **)&uid_validity);
+    mutt_hcache_free ((void **)&puid_validity);
   }
   if (evalhc)
   {
@@ -705,24 +708,39 @@ static int read_headers_fetch_new (IMAP_DATA *idata, unsigned int msn_begin,
   unsigned int fetch_msn_end = 0;
   progress_t progress;
   char *hdrreq = NULL, *cmd;
-  char tempfile[_POSIX_PATH_MAX];
+  BUFFER *tempfile = NULL;
   FILE *fp = NULL;
   IMAP_HEADER h;
-  BUFFER *b = NULL;
+  BUFFER *b = NULL, *hdr_list = NULL;
   static const char * const want_headers = "DATE FROM SENDER SUBJECT TO CC MESSAGE-ID REFERENCES CONTENT-TYPE CONTENT-DESCRIPTION IN-REPLY-TO REPLY-TO LINES LIST-POST X-LABEL";
 
   ctx = idata->ctx;
   idx = ctx->msgcount;
 
+  hdr_list = mutt_buffer_pool_get ();
+  mutt_buffer_strcpy (hdr_list, want_headers);
+  if (ImapHeaders)
+  {
+    mutt_buffer_addch (hdr_list, ' ');
+    mutt_buffer_addstr (hdr_list, ImapHeaders);
+  }
+#ifdef USE_AUTOCRYPT
+  if (option (OPTAUTOCRYPT))
+  {
+    mutt_buffer_addch (hdr_list, ' ');
+    mutt_buffer_addstr (hdr_list, "AUTOCRYPT");
+  }
+#endif
+
   if (mutt_bit_isset (idata->capabilities,IMAP4REV1))
   {
-    safe_asprintf (&hdrreq, "BODY.PEEK[HEADER.FIELDS (%s%s%s)]",
-                   want_headers, ImapHeaders ? " " : "", NONULL (ImapHeaders));
+    safe_asprintf (&hdrreq, "BODY.PEEK[HEADER.FIELDS (%s)]",
+                   mutt_b2s (hdr_list));
   }
   else if (mutt_bit_isset (idata->capabilities,IMAP4))
   {
-    safe_asprintf (&hdrreq, "RFC822.HEADER.LINES (%s%s%s)",
-                   want_headers, ImapHeaders ? " " : "", NONULL (ImapHeaders));
+    safe_asprintf (&hdrreq, "RFC822.HEADER.LINES (%s)",
+                   mutt_b2s (hdr_list));
   }
   else
   {	/* Unable to fetch headers for lower versions */
@@ -731,16 +749,20 @@ static int read_headers_fetch_new (IMAP_DATA *idata, unsigned int msn_begin,
     goto bail;
   }
 
+  mutt_buffer_pool_release (&hdr_list);
+
   /* instead of downloading all headers and then parsing them, we parse them
    * as they come in. */
-  mutt_mktemp (tempfile, sizeof (tempfile));
-  if (!(fp = safe_fopen (tempfile, "w+")))
+  tempfile = mutt_buffer_pool_get ();
+  mutt_buffer_mktemp (tempfile);
+  if (!(fp = safe_fopen (mutt_b2s (tempfile), "w+")))
   {
-    mutt_error (_("Could not create temporary file %s"), tempfile);
+    mutt_error (_("Could not create temporary file %s"), mutt_b2s (tempfile));
     mutt_sleep (2);
     goto bail;
   }
-  unlink (tempfile);
+  unlink (mutt_b2s (tempfile));
+  mutt_buffer_pool_release (&tempfile);
 
   mutt_progress_init (&progress, _("Fetching message headers..."),
 		      MUTT_PROGRESS_MSG, ReadInc, msn_end);
@@ -891,7 +913,9 @@ static int read_headers_fetch_new (IMAP_DATA *idata, unsigned int msn_begin,
   retval = 0;
 
 bail:
+  mutt_buffer_pool_release (&hdr_list);
   mutt_buffer_pool_release (&b);
+  mutt_buffer_pool_release (&tempfile);
   safe_fclose (&fp);
   FREE (&hdrreq);
 
@@ -904,7 +928,6 @@ int imap_fetch_message (CONTEXT *ctx, MESSAGE *msg, int msgno)
   HEADER* h;
   ENVELOPE* newenv;
   char buf[LONG_STRING];
-  char path[_POSIX_PATH_MAX];
   char *pc;
   unsigned int bytes;
   progress_t progressbar;
@@ -955,10 +978,16 @@ int imap_fetch_message (CONTEXT *ctx, MESSAGE *msg, int msgno)
 
   if (!(msg->fp = msg_cache_put (idata, h)))
   {
+    BUFFER *path;
+
     cache->uid = HEADER_DATA(h)->uid;
-    mutt_mktemp (path, sizeof (path));
-    cache->path = safe_strdup (path);
-    if (!(msg->fp = safe_fopen (path, "w+")))
+
+    path = mutt_buffer_pool_get ();
+    mutt_buffer_mktemp (path);
+    cache->path = safe_strdup (mutt_b2s (path));
+    mutt_buffer_pool_release (&path);
+
+    if (!(msg->fp = safe_fopen (cache->path, "w+")))
     {
       FREE (&cache->path);
       return -1;
@@ -1265,7 +1294,7 @@ fail:
  *      -1: error
  *       0: success
  *       1: non-fatal error - try fetch/append */
-int imap_copy_messages (CONTEXT* ctx, HEADER* h, char* dest, int delete)
+int imap_copy_messages (CONTEXT* ctx, HEADER* h, const char* dest, int delete)
 {
   IMAP_DATA* idata;
   BUFFER cmd, sync_cmd;
@@ -1442,19 +1471,23 @@ out:
 
 static body_cache_t *msg_cache_open (IMAP_DATA *idata)
 {
-  char mailbox[_POSIX_PATH_MAX];
+  BUFFER *mailbox;
+  body_cache_t *rv;
 
   if (idata->bcache)
     return idata->bcache;
 
-  imap_cachepath (idata, idata->mailbox, mailbox, sizeof (mailbox));
+  mailbox = mutt_buffer_pool_get ();
+  imap_cachepath (idata, idata->mailbox, mailbox);
+  rv = mutt_bcache_open (&idata->conn->account, mutt_b2s (mailbox));
+  mutt_buffer_pool_release (&mailbox);
 
-  return mutt_bcache_open (&idata->conn->account, mailbox);
+  return rv;
 }
 
 static FILE* msg_cache_get (IMAP_DATA* idata, HEADER* h)
 {
-  char id[_POSIX_PATH_MAX];
+  char id[SHORT_STRING];
 
   if (!idata || !h)
     return NULL;
@@ -1466,7 +1499,7 @@ static FILE* msg_cache_get (IMAP_DATA* idata, HEADER* h)
 
 static FILE* msg_cache_put (IMAP_DATA* idata, HEADER* h)
 {
-  char id[_POSIX_PATH_MAX];
+  char id[SHORT_STRING];
 
   if (!idata || !h)
     return NULL;
@@ -1478,7 +1511,7 @@ static FILE* msg_cache_put (IMAP_DATA* idata, HEADER* h)
 
 static int msg_cache_commit (IMAP_DATA* idata, HEADER* h)
 {
-  char id[_POSIX_PATH_MAX];
+  char id[SHORT_STRING];
 
   if (!idata || !h)
     return -1;
@@ -1491,7 +1524,7 @@ static int msg_cache_commit (IMAP_DATA* idata, HEADER* h)
 
 int imap_cache_del (IMAP_DATA* idata, HEADER* h)
 {
-  char id[_POSIX_PATH_MAX];
+  char id[SHORT_STRING];
 
   if (!idata || !h)
     return -1;

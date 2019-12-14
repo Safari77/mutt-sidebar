@@ -40,7 +40,7 @@ int pgp_gpgme_application_handler (BODY *m, STATE *s);
 int smime_gpgme_application_handler (BODY *a, STATE *s);
 int pgp_gpgme_encrypted_handler (BODY *a, STATE *s);
 
-BODY *pgp_gpgme_make_key_attachment (char *tempf);
+BODY *pgp_gpgme_make_key_attachment (void);
 
 BODY *pgp_gpgme_sign_message (BODY *a);
 BODY *smime_gpgme_sign_message (BODY *a);
@@ -54,5 +54,8 @@ int smime_gpgme_send_menu (HEADER *msg);
 int smime_gpgme_verify_sender (HEADER *h);
 
 void mutt_gpgme_set_sender (const char *sender);
+
+int mutt_gpgme_select_secret_key (BUFFER *keyid);
+
 
 #endif

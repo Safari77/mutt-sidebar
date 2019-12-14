@@ -85,6 +85,7 @@ tlssockdata;
 /* local prototypes */
 static int tls_socket_read (CONNECTION* conn, char* buf, size_t len);
 static int tls_socket_write (CONNECTION* conn, const char* buf, size_t len);
+static int tls_socket_poll (CONNECTION* conn, time_t wait_secs);
 static int tls_socket_open (CONNECTION* conn);
 static int tls_socket_close (CONNECTION* conn);
 static int tls_starttls_close (CONNECTION* conn);
@@ -123,7 +124,7 @@ int mutt_ssl_socket_setup (CONNECTION* conn)
   conn->conn_read	= tls_socket_read;
   conn->conn_write	= tls_socket_write;
   conn->conn_close	= tls_socket_close;
-  conn->conn_poll       = raw_socket_poll;
+  conn->conn_poll       = tls_socket_poll;
 
   return 0;
 }
@@ -188,6 +189,16 @@ static int tls_socket_write (CONNECTION* conn, const char* buf, size_t len)
   return sent;
 }
 
+static int tls_socket_poll (CONNECTION* conn, time_t wait_secs)
+{
+  tlssockdata *data = conn->sockdata;
+
+  if (gnutls_record_check_pending (data->state))
+    return 1;
+  else
+    return raw_socket_poll (conn, wait_secs);
+}
+
 static int tls_socket_open (CONNECTION* conn)
 {
   if (raw_socket_open (conn) < 0)
@@ -213,6 +224,7 @@ int mutt_ssl_starttls (CONNECTION* conn)
   conn->conn_read	= tls_socket_read;
   conn->conn_write	= tls_socket_write;
   conn->conn_close	= tls_starttls_close;
+  conn->conn_poll       = tls_socket_poll;
 
   return 0;
 }
@@ -275,63 +287,70 @@ err_crt:
 #if HAVE_GNUTLS_PRIORITY_SET_DIRECT
 static int tls_set_priority(tlssockdata *data)
 {
-  size_t nproto = 4;
-  char *priority;
-  size_t priority_size;
-  int err;
+  size_t nproto = 5;
+  BUFFER *priority = NULL;
+  int err, rv = -1;
 
-  priority_size = SHORT_STRING + mutt_strlen (SslCiphers);
-  priority = safe_malloc (priority_size);
+  priority = mutt_buffer_pool_get ();
 
-  priority[0] = 0;
   if (SslCiphers)
-    safe_strcat (priority, priority_size, SslCiphers);
+    mutt_buffer_strcpy (priority, SslCiphers);
   else
-    safe_strcat (priority, priority_size, "NORMAL");
+    mutt_buffer_strcpy (priority, "NORMAL");
 
-  if (! option(OPTTLSV1_2))
+  if (!option(OPTTLSV1_3))
   {
     nproto--;
-    safe_strcat (priority, priority_size, ":-VERS-TLS1.2");
+    mutt_buffer_addstr (priority, ":-VERS-TLS1.3");
   }
-  if (! option(OPTTLSV1_1))
+  if (!option(OPTTLSV1_2))
   {
     nproto--;
-    safe_strcat (priority, priority_size, ":-VERS-TLS1.1");
+    mutt_buffer_addstr (priority, ":-VERS-TLS1.2");
   }
-  if (! option(OPTTLSV1))
+  if (!option(OPTTLSV1_1))
   {
     nproto--;
-    safe_strcat (priority, priority_size, ":-VERS-TLS1.0");
+    mutt_buffer_addstr (priority, ":-VERS-TLS1.1");
   }
-  if (! option(OPTSSLV3))
+  if (!option(OPTTLSV1))
   {
     nproto--;
-    safe_strcat (priority, priority_size, ":-VERS-SSL3.0");
+    mutt_buffer_addstr (priority, ":-VERS-TLS1.0");
+  }
+  if (!option(OPTSSLV3))
+  {
+    nproto--;
+    mutt_buffer_addstr (priority, ":-VERS-SSL3.0");
   }
 
   if (nproto == 0)
   {
     mutt_error (_("All available protocols for TLS/SSL connection disabled"));
-    FREE (&priority);
-    return -1;
+    goto cleanup;
   }
 
-  if ((err = gnutls_priority_set_direct (data->state, priority, NULL)) < 0)
+  if ((err = gnutls_priority_set_direct (data->state, mutt_b2s (priority), NULL)) < 0)
   {
-    mutt_error ("gnutls_priority_set_direct(%s): %s", priority, gnutls_strerror(err));
+    mutt_error ("gnutls_priority_set_direct(%s): %s", mutt_b2s (priority), gnutls_strerror(err));
     mutt_sleep (2);
-    FREE (&priority);
-    return -1;
+    goto cleanup;
   }
 
-  FREE (&priority);
-  return 0;
+  rv = 0;
+
+cleanup:
+  mutt_buffer_pool_release (&priority);
+  return rv;
 }
 #else
 /* This array needs to be large enough to hold all the possible values support
  * by Mutt.  The initialized values are just placeholders--the array gets
  * overwrriten in tls_negotiate() depending on the $ssl_use_* options.
+ *
+ * Note: gnutls_protocol_set_priority() was removed in GnuTLS version
+ * 3.4 (2015-04).  TLS 1.3 support wasn't added until version 3.6.5.
+ * Therefore, no attempt is made to support $ssl_use_tlsv1_3 in this code.
  */
 static int protocol_priority[] = {GNUTLS_TLS1_2, GNUTLS_TLS1_1, GNUTLS_TLS1, GNUTLS_SSL3, 0};
 
@@ -523,6 +542,7 @@ static int tls_starttls_close (CONNECTION* conn)
   conn->conn_read = raw_socket_read;
   conn->conn_write = raw_socket_write;
   conn->conn_close = raw_socket_close;
+  conn->conn_poll = raw_socket_poll;
 
   return rc;
 }
@@ -820,7 +840,7 @@ static int tls_check_one_certificate (const gnutls_datum_t *certdata,
   BUFFER *drow = NULL;
   FILE *fp;
   gnutls_datum_t pemdata;
-  int done, ret;
+  int done, ret, reset_ignoremacro = 0;
 
   if (!tls_check_preauth (certdata, certstat, hostname, idx, &certerr,
                           &savedcert))
@@ -1015,7 +1035,11 @@ static int tls_check_one_certificate (const gnutls_datum_t *certdata,
   menu->help = helpstr;
 
   done = 0;
-  set_option (OPTIGNOREMACROEVENTS);
+  if (!option (OPTIGNOREMACROEVENTS))
+  {
+    set_option (OPTIGNOREMACROEVENTS);
+    reset_ignoremacro = 1;
+  }
   while (!done)
   {
     switch (mutt_menuLoop (menu))
@@ -1070,7 +1094,8 @@ static int tls_check_one_certificate (const gnutls_datum_t *certdata,
         break;
     }
   }
-  unset_option (OPTIGNOREMACROEVENTS);
+  if (reset_ignoremacro)
+    unset_option (OPTIGNOREMACROEVENTS);
 
   mutt_buffer_pool_release (&drow);
   mutt_pop_current_menu (menu);

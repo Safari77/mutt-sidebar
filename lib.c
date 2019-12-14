@@ -309,6 +309,41 @@ char *mutt_strlower (char *s)
   return (s);
 }
 
+int mutt_mkdir (char *path, mode_t mode)
+{
+  struct stat sb;
+  char *s;
+  int rv = -1;
+
+  if (stat (path, &sb) >= 0)
+    return 0;
+
+  s = path;
+  do
+  {
+    s = strchr (s + 1, '/');
+    if (s)
+      *s = '\0';
+    if (stat (path, &sb) < 0)
+    {
+      if (errno != ENOENT)
+        goto cleanup;
+      if (mkdir (path, mode) < 0)
+        goto cleanup;
+    }
+    if (s)
+      *s = '/';
+  } while (s);
+
+  rv = 0;
+
+cleanup:
+  if (s)
+    *s = '/';
+
+  return rv;
+}
+
 void mutt_unlink (const char *s)
 {
   int fd;
@@ -747,52 +782,6 @@ void mutt_remove_trailing_ws (char *s)
 
   for (p = s + mutt_strlen (s) - 1 ; p >= s && ISSPACE (*p) ; p--)
     *p = 0;
-}
-
-/*
- * Write the concatened pathname (dir + "/" + fname) into dst.
- * The slash is omitted when dir or fname is of 0 length.
- * Returns NULL on error or a pointer to dst otherwise.
- */
-char *mutt_concatn_path (char *dst, size_t dstlen,
-                         const char *dir, size_t dirlen, const char *fname, size_t fnamelen)
-{
-  size_t req;
-  size_t offset = 0;
-
-  if (dstlen == 0)
-    return NULL; /* probably should not mask errors like this */
-
-  /* size check */
-  req = dirlen + fnamelen + 1; /* +1 for the trailing nul */
-  if (dirlen && fnamelen)
-    req++; /* when both components are non-nul, we add a "/" in between */
-  if (req > dstlen) /* check for condition where the dst length is too short */
-  {
-    /* Two options here:
-     * 1) assert(0) or return NULL to signal error
-     * 2) copy as much of the path as will fit
-     * It doesn't appear that the return value is actually checked anywhere mutt_concat_path()
-     * is called, so we should just copy set dst to nul and let the calling function fail later.
-     */
-    dst[0] = 0; /* safe since we bail out early if dstlen == 0 */
-    return NULL;
-  }
-
-  if (dirlen) /* when dir is not empty */
-  {
-    memcpy(dst, dir, dirlen);
-    offset = dirlen;
-    if (fnamelen)
-      dst[offset++] = '/';
-  }
-  if (fnamelen) /* when fname is not empty */
-  {
-    memcpy(dst + offset, fname, fnamelen);
-    offset += fnamelen;
-  }
-  dst[offset] = 0;
-  return dst;
 }
 
 char *mutt_concat_path (char *d, const char *dir, const char *fname, size_t l)

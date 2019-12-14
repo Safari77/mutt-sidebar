@@ -37,6 +37,10 @@
 
 #include "crypt-mod.h"
 
+#ifdef USE_AUTOCRYPT
+#include "autocrypt.h"
+#endif
+
 /*
 
   Generic
@@ -52,6 +56,7 @@ extern struct crypt_module_specs crypt_mod_smime_classic;
 #endif
 
 #ifdef CRYPT_BACKEND_GPGME
+#include "crypt-gpgme.h"
 extern struct crypt_module_specs crypt_mod_pgp_gpgme;
 extern struct crypt_module_specs crypt_mod_smime_gpgme;
 #endif
@@ -156,6 +161,22 @@ int crypt_pgp_valid_passphrase (void)
 /* Decrypt a PGP/MIME message. */
 int crypt_pgp_decrypt_mime (FILE *a, FILE **b, BODY *c, BODY **d)
 {
+#ifdef USE_AUTOCRYPT
+  int result;
+
+  if (option (OPTAUTOCRYPT))
+  {
+    set_option (OPTAUTOCRYPTGPGME);
+    result = pgp_gpgme_decrypt_mime (a, b, c, d);
+    unset_option (OPTAUTOCRYPTGPGME);
+    if (result == 0)
+    {
+      c->is_autocrypt = 1;
+      return result;
+    }
+  }
+#endif
+
   if (CRYPT_MOD_CALL_CHECK (PGP, decrypt_mime))
     return (CRYPT_MOD_CALL (PGP, decrypt_mime)) (a, b, c, d);
 
@@ -174,6 +195,22 @@ int crypt_pgp_application_pgp_handler (BODY *m, STATE *s)
 /* MIME handler for an PGP/MIME encrypted message. */
 int crypt_pgp_encrypted_handler (BODY *a, STATE *s)
 {
+#ifdef USE_AUTOCRYPT
+  int result;
+
+  if (option (OPTAUTOCRYPT))
+  {
+    set_option (OPTAUTOCRYPTGPGME);
+    result = pgp_gpgme_encrypted_handler (a, s);
+    unset_option (OPTAUTOCRYPTGPGME);
+    if (result == 0)
+    {
+      a->is_autocrypt = 1;
+      return result;
+    }
+  }
+#endif
+
   if (CRYPT_MOD_CALL_CHECK (PGP, encrypted_handler))
     return (CRYPT_MOD_CALL (PGP, encrypted_handler)) (a, s);
 
@@ -206,10 +243,10 @@ BODY *crypt_pgp_traditional_encryptsign (BODY *a, int flags, char *keylist)
 }
 
 /* Generate a PGP public key attachment. */
-BODY *crypt_pgp_make_key_attachment (char *tempf)
+BODY *crypt_pgp_make_key_attachment (void)
 {
   if (CRYPT_MOD_CALL_CHECK (PGP, pgp_make_key_attachment))
-    return (CRYPT_MOD_CALL (PGP, pgp_make_key_attachment)) (tempf);
+    return (CRYPT_MOD_CALL (PGP, pgp_make_key_attachment)) ();
 
   return NULL;
 }
@@ -237,8 +274,24 @@ BODY *crypt_pgp_sign_message (BODY *a)
 
 /* Warning: A is no longer freed in this routine, you need to free it
    later.  This is necessary for $fcc_attach. */
-BODY *crypt_pgp_encrypt_message (BODY *a, char *keylist, int sign)
+BODY *crypt_pgp_encrypt_message (HEADER *msg, BODY *a, char *keylist, int sign)
 {
+#ifdef USE_AUTOCRYPT
+  BODY *result;
+
+  if (msg->security & AUTOCRYPT)
+  {
+    if (mutt_autocrypt_set_sign_as_default_key (msg))
+      return NULL;
+
+    set_option (OPTAUTOCRYPTGPGME);
+    result = pgp_gpgme_encrypt_message (a, keylist, sign);
+    unset_option (OPTAUTOCRYPTGPGME);
+
+    return result;
+  }
+#endif
+
   if (CRYPT_MOD_CALL_CHECK (PGP, pgp_encrypt_message))
     return (CRYPT_MOD_CALL (PGP, pgp_encrypt_message)) (a, keylist, sign);
 
@@ -381,7 +434,7 @@ BODY *crypt_smime_build_smime_entity (BODY *a, char *certlist)
 }
 
 /* Add a certificate and update index file (externally). */
-void crypt_smime_invoke_import (char *infile, char *mailbox)
+void crypt_smime_invoke_import (const char *infile, const char *mailbox)
 {
   if (CRYPT_MOD_CALL_CHECK (SMIME, smime_invoke_import))
     (CRYPT_MOD_CALL (SMIME, smime_invoke_import)) (infile, mailbox);

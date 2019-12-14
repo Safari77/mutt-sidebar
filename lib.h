@@ -145,8 +145,8 @@ void mutt_exit (int);
 
 # ifdef DEBUG
 
-MUTT_LIB_WHERE FILE *debugfile MUTT_LIB_INITVAL(0);
-MUTT_LIB_WHERE int debuglevel MUTT_LIB_INITVAL(0);
+MUTT_LIB_WHERE FILE *debugfile;
+MUTT_LIB_WHERE int debuglevel;
 
 void mutt_debug (FILE *, const char *, ...);
 
@@ -169,7 +169,6 @@ void mutt_debug (FILE *, const char *, ...);
 
 /* The actual library functions. */
 
-char *mutt_concatn_path (char *, size_t, const char *, size_t, const char *, size_t);
 char *mutt_concat_path (char *, const char *, const char *, size_t);
 char *mutt_read_line (char *, size_t *, FILE *, int *, int);
 char *mutt_skip_whitespace (char *);
@@ -218,6 +217,7 @@ void mutt_nocurses_error (const char *, ...);
 void mutt_remove_trailing_ws (char *);
 void mutt_sanitize_filename (char *, short);
 void mutt_str_replace (char **p, const char *s);
+int mutt_mkdir (char *path, mode_t mode);
 void mutt_str_adjust (char **p);
 void mutt_unlink (const char *);
 void safe_free (void *);

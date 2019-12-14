@@ -41,6 +41,10 @@
 #include "imap.h"
 #endif
 
+#ifdef USE_AUTOCRYPT
+#include "autocrypt/autocrypt.h"
+#endif
+
 #include "buffy.h"
 
 #include <errno.h>
@@ -57,12 +61,16 @@ static const char *ExtPagerProgress = "all";
 /* The folder the user last saved to.  Used by ci_save_message() */
 static char LastSaveFolder[_POSIX_PATH_MAX] = "";
 
-static void update_protected_headers (HEADER *cur)
+static void process_protected_headers (HEADER *cur)
 {
   ENVELOPE *prot_headers = NULL;
   regmatch_t pmatch[1];
 
-  if (!option (OPTCRYPTPROTHDRSREAD))
+  if (!option (OPTCRYPTPROTHDRSREAD)
+#ifdef USE_AUTOCRYPT
+      && !option (OPTAUTOCRYPT)
+#endif
+    )
     return;
 
   /* Grab protected headers to update in the index */
@@ -104,7 +112,8 @@ static void update_protected_headers (HEADER *cur)
   }
 
   /* Update protected headers in the index and header cache. */
-  if (prot_headers &&
+  if (option (OPTCRYPTPROTHDRSREAD) &&
+      prot_headers &&
       prot_headers->subject &&
       mutt_strcmp (cur->env->subject, prot_headers->subject))
   {
@@ -131,20 +140,27 @@ static void update_protected_headers (HEADER *cur)
       Context->changed = 1;
     }
   }
+
+#ifdef USE_AUTOCRYPT
+  if (option (OPTAUTOCRYPT) &&
+      (cur->security & ENCRYPT) &&
+      prot_headers &&
+      prot_headers->autocrypt_gossip)
+  {
+    mutt_autocrypt_process_gossip_header (cur, prot_headers);
+  }
+#endif
 }
 
 int mutt_display_message (HEADER *cur)
 {
-  char tempfile[_POSIX_PATH_MAX], buf[LONG_STRING];
+  BUFFER *tempfile = NULL;
   int rc = 0, builtin = 0;
   int cmflags = MUTT_CM_DECODE | MUTT_CM_DISPLAY | MUTT_CM_CHARCONV;
   FILE *fpout = NULL;
   FILE *fpfilterout = NULL;
   pid_t filterpid = -1;
   int res;
-
-  snprintf (buf, sizeof (buf), "%s/%s", TYPE (cur->content),
-	    cur->content->subtype);
 
   mutt_parse_mime_message (Context, cur);
   mutt_message_hook (Context, cur, MUTT_MESSAGEHOOK);
@@ -157,7 +173,7 @@ int mutt_display_message (HEADER *cur)
       if (cur->security & APPLICATION_SMIME)
 	crypt_smime_getkeys (cur->env);
       if (!crypt_valid_passphrase(cur->security))
-	return 0;
+	goto cleanup;
 
       cmflags |= MUTT_CM_VERIFY;
     }
@@ -187,14 +203,15 @@ int mutt_display_message (HEADER *cur)
   }
 
 
-  mutt_mktemp (tempfile, sizeof (tempfile));
-  if ((fpout = safe_fopen (tempfile, "w")) == NULL)
+  tempfile = mutt_buffer_pool_get ();
+  mutt_buffer_mktemp (tempfile);
+  if ((fpout = safe_fopen (mutt_b2s (tempfile), "w")) == NULL)
   {
     mutt_error _("Could not create temporary file!");
-    return (0);
+    goto cleanup;
   }
 
-  if (DisplayFilter && *DisplayFilter)
+  if (DisplayFilter)
   {
     fpfilterout = fpout;
     fpout = NULL;
@@ -205,8 +222,8 @@ int mutt_display_message (HEADER *cur)
     {
       mutt_error (_("Cannot create display filter"));
       safe_fclose (&fpfilterout);
-      unlink (tempfile);
-      return 0;
+      unlink (mutt_b2s (tempfile));
+      goto cleanup;
     }
   }
 
@@ -214,7 +231,9 @@ int mutt_display_message (HEADER *cur)
     builtin = 1;
   else
   {
+    char buf[LONG_STRING];
     struct hdr_format_info hfi;
+
     hfi.ctx = Context;
     hfi.pager_progress = ExtPagerProgress;
     hfi.hdr = cur;
@@ -234,8 +253,8 @@ int mutt_display_message (HEADER *cur)
       mutt_wait_filter (filterpid);
       safe_fclose (&fpfilterout);
     }
-    mutt_unlink (tempfile);
-    return 0;
+    mutt_unlink (mutt_b2s (tempfile));
+    goto cleanup;
   }
 
   if (fpfilterout != NULL && mutt_wait_filter (filterpid) != 0)
@@ -253,8 +272,8 @@ int mutt_display_message (HEADER *cur)
        are color patterns for both ~g and ~V */
     cur->pair = 0;
 
-    /* Grab protected headers and update the header and index */
-    update_protected_headers (cur);
+    /* Process protected headers and autocrypt gossip headers */
+    process_protected_headers (cur);
   }
 
   if (builtin)
@@ -292,17 +311,22 @@ int mutt_display_message (HEADER *cur)
     memset (&info, 0, sizeof (pager_t));
     info.hdr = cur;
     info.ctx = Context;
-    rc = mutt_pager (NULL, tempfile, MUTT_PAGER_MESSAGE, &info);
+    rc = mutt_pager (NULL, mutt_b2s (tempfile), MUTT_PAGER_MESSAGE, &info);
   }
   else
   {
     int r;
+    BUFFER *cmd = NULL;
 
     mutt_endwin (NULL);
-    snprintf (buf, sizeof (buf), "%s %s", NONULL(Pager), tempfile);
-    if ((r = mutt_system (buf)) == -1)
-      mutt_error (_("Error running \"%s\"!"), buf);
-    unlink (tempfile);
+
+    cmd = mutt_buffer_pool_get ();
+    mutt_buffer_printf (cmd, "%s %s", NONULL(Pager), mutt_b2s (tempfile));
+    if ((r = mutt_system (mutt_b2s (cmd))) == -1)
+      mutt_error (_("Error running \"%s\"!"), mutt_b2s (cmd));
+    unlink (mutt_b2s (tempfile));
+    mutt_buffer_pool_release (&cmd);
+
     if (!option (OPTNOCURSES))
       keypad (stdscr, TRUE);
     if (r != -1)
@@ -316,6 +340,8 @@ int mutt_display_message (HEADER *cur)
       rc = 0;
   }
 
+cleanup:
+  mutt_buffer_pool_release (&tempfile);
   return rc;
 }
 
@@ -414,14 +440,21 @@ static void pipe_set_flags (int decode, int print, int *cmflags, int *chflags)
 {
   if (decode)
   {
-    *cmflags |= MUTT_CM_DECODE | MUTT_CM_CHARCONV;
     *chflags |= CH_DECODE | CH_REORDER;
+    *cmflags |= MUTT_CM_DECODE | MUTT_CM_CHARCONV;
 
     if (option (OPTWEED))
     {
       *chflags |= CH_WEED;
       *cmflags |= MUTT_CM_WEED;
     }
+
+    /* Just as with copy-decode, we need to update the
+     * mime fields to avoid confusing programs that may
+     * process the email.  However, we don't want to force
+     * those fields to appear in printouts. */
+    if (!print)
+      *chflags |= CH_MIME | CH_TXTPLAIN;
   }
 
   if (print)
@@ -585,7 +618,7 @@ void mutt_pipe_message (HEADER *h)
 void mutt_print_message (HEADER *h)
 {
 
-  if (quadoption (OPT_PRINT) && (!PrintCmd || !*PrintCmd))
+  if (quadoption (OPT_PRINT) && !PrintCmd)
   {
     mutt_message (_("No printing command has been defined."));
     return;
@@ -819,9 +852,13 @@ int mutt_save_message (HEADER *h, int delete, int decode, int decrypt)
 {
   int i, need_buffy_cleanup;
   int need_passphrase = 0, app=0;
-  char prompt[SHORT_STRING], buf[_POSIX_PATH_MAX];
+  int rc = -1;
+  char prompt[SHORT_STRING];
+  BUFFER *buf = NULL;
   CONTEXT ctx;
   struct stat st;
+
+  buf = mutt_buffer_pool_get ();
 
   snprintf (prompt, sizeof (prompt),
 	    decode  ? (delete ? _("Decode-save%s to mailbox") :
@@ -840,7 +877,8 @@ int mutt_save_message (HEADER *h, int delete, int decode, int decrypt)
       app = h->security;
     }
     mutt_message_hook (Context, h, MUTT_MESSAGEHOOK);
-    mutt_default_save (buf, sizeof (buf), h);
+    mutt_default_save (buf->data, buf->dsize, h);
+    mutt_buffer_fix_dptr (buf);
   }
   else
   {
@@ -859,7 +897,8 @@ int mutt_save_message (HEADER *h, int delete, int decode, int decrypt)
     if (h)
     {
       mutt_message_hook (Context, h, MUTT_MESSAGEHOOK);
-      mutt_default_save (buf, sizeof (buf), h);
+      mutt_default_save (buf->data, buf->dsize, h);
+      mutt_buffer_fix_dptr (buf);
       if (WithCrypto)
       {
         need_passphrase = h->security & ENCRYPT;
@@ -869,57 +908,61 @@ int mutt_save_message (HEADER *h, int delete, int decode, int decrypt)
     }
   }
 
-  mutt_pretty_mailbox (buf, sizeof (buf));
-  if (mutt_enter_fname (prompt, buf, sizeof (buf), 0) == -1)
-    return (-1);
-
-  if (!buf[0])
-    return (-1);
+  mutt_buffer_pretty_mailbox (buf);
+  if (mutt_buffer_enter_fname (prompt, buf, 0) == -1)
+    goto cleanup;
+  if (!mutt_buffer_len (buf))
+    goto cleanup;
 
   /* This is an undocumented feature of ELM pointed out to me by Felix von
    * Leitner <leitner@prz.fu-berlin.de>
    */
-  if (mutt_strcmp (buf, ".") == 0)
-    strfcpy (buf, LastSaveFolder, sizeof (buf));
+  if (mutt_strcmp (mutt_b2s (buf), ".") == 0)
+    mutt_buffer_strcpy (buf, LastSaveFolder);
   else
-    strfcpy (LastSaveFolder, buf, sizeof (LastSaveFolder));
+    strfcpy (LastSaveFolder, mutt_b2s (buf), sizeof (LastSaveFolder));
 
-  mutt_expand_path (buf, sizeof (buf));
+  mutt_buffer_expand_path (buf);
 
   /* check to make sure that this file is really the one the user wants */
-  if (mutt_save_confirm (buf, &st) != 0)
-    return -1;
+  if (mutt_save_confirm (mutt_b2s (buf), &st) != 0)
+    goto cleanup;
 
   if (WithCrypto && need_passphrase && (decode || decrypt)
       && !crypt_valid_passphrase(app))
-    return -1;
+    goto cleanup;
 
-  mutt_message (_("Copying to %s..."), buf);
+  mutt_message (_("Copying to %s..."), mutt_b2s (buf));
 
 #ifdef USE_IMAP
   if (Context->magic == MUTT_IMAP &&
-      !(decode || decrypt) && mx_is_imap (buf))
+      !(decode || decrypt) && mx_is_imap (mutt_b2s (buf)))
   {
-    switch (imap_copy_messages (Context, h, buf, delete))
+    switch (imap_copy_messages (Context, h, mutt_b2s (buf), delete))
     {
       /* success */
-      case 0: mutt_clear_error (); return 0;
+      case 0:
+        mutt_clear_error ();
+        rc = 0;
+        goto cleanup;
       /* non-fatal error: fall through to fetch/append */
-      case 1: break;
+      case 1:
+        break;
       /* fatal error, abort */
-      case -1: return -1;
+      case -1:
+        goto cleanup;
     }
   }
 #endif
 
-  if (mx_open_mailbox (buf, MUTT_APPEND, &ctx) != NULL)
+  if (mx_open_mailbox (mutt_b2s (buf), MUTT_APPEND, &ctx) != NULL)
   {
     if (h)
     {
       if (_mutt_save_message(h, &ctx, delete, decode, decrypt) != 0)
       {
         mx_close_mailbox (&ctx, NULL);
-        return -1;
+        goto cleanup;
       }
     }
     else
@@ -933,7 +976,7 @@ int mutt_save_message (HEADER *h, int delete, int decode, int decrypt)
                                  &ctx, delete, decode, decrypt) != 0)
           {
             mx_close_mailbox (&ctx, NULL);
-            return -1;
+            goto cleanup;
           }
 	}
       }
@@ -944,13 +987,15 @@ int mutt_save_message (HEADER *h, int delete, int decode, int decrypt)
     mx_close_mailbox (&ctx, NULL);
 
     if (need_buffy_cleanup)
-      mutt_buffy_cleanup (buf, &st);
+      mutt_buffy_cleanup (mutt_b2s (buf), &st);
 
     mutt_clear_error ();
-    return (0);
+    rc = 0;
   }
 
-  return -1;
+cleanup:
+  mutt_buffer_pool_release (&buf);
+  return rc;
 }
 
 

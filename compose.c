@@ -26,6 +26,7 @@
 #include "mutt_curses.h"
 #include "mutt_idna.h"
 #include "mutt_menu.h"
+#include "mutt_crypt.h"
 #include "rfc1524.h"
 #include "mime.h"
 #include "attach.h"
@@ -33,9 +34,14 @@
 #include "mailbox.h"
 #include "sort.h"
 #include "charset.h"
+#include "rfc3676.h"
 
 #ifdef MIXMASTER
 #include "remailer.h"
+#endif
+
+#ifdef USE_AUTOCRYPT
+#include "autocrypt/autocrypt.h"
 #endif
 
 #include <errno.h>
@@ -68,11 +74,15 @@ enum
 
   HDR_CRYPT,
   HDR_CRYPTINFO,
+#ifdef USE_AUTOCRYPT
+  HDR_AUTOCRYPT,
+#endif
 
-  HDR_ATTACH  = (HDR_FCC + 5) /* where to start printing the attachments */
+  HDR_ATTACH_TITLE,     /* the "-- Attachments" line */
+  HDR_ATTACH            /* where to start printing the attachments */
 };
 
-int HeaderPadding[HDR_CRYPTINFO + 1] = {0};
+int HeaderPadding[HDR_ATTACH_TITLE] = {0};
 int MaxHeaderWidth = 0;
 
 #define HDR_XOFFSET MaxHeaderWidth
@@ -109,7 +119,13 @@ static const char * const Prompts[] =
    * Since it shares the row with "Encrypt with:", it should not be longer
    * than 15-20 character cells.
    */
-  N_("Sign as: ")
+  N_("Sign as: "),
+#ifdef USE_AUTOCRYPT
+  /* L10N:
+     The compose menu autocrypt line
+   */
+  N_("Autocrypt: ")
+#endif
 };
 
 static const struct mapping_t ComposeHelp[] = {
@@ -126,6 +142,41 @@ static const struct mapping_t ComposeHelp[] = {
   { N_("Help"),    OP_HELP },
   { NULL,	0 }
 };
+
+#ifdef USE_AUTOCRYPT
+static const char *AutocryptRecUiFlags[] = {
+  /* L10N: Autocrypt recommendation flag: off.
+   * This is displayed when Autocrypt is turned off. */
+  N_("Off"),
+  /* L10N: Autocrypt recommendation flag: no.
+   * This is displayed when Autocrypt cannot encrypt to the recipients. */
+  N_("No"),
+  /* L10N: Autocrypt recommendation flag: discouraged.
+   * This is displayed when Autocrypt believes encryption should not be used.
+   * This might occur if one of the recipient Autocrypt Keys has not been
+   * used recently, or if the only key available is a Gossip Header key. */
+  N_("Discouraged"),
+  /* L10N: Autocrypt recommendation flag: available.
+   * This is displayed when Autocrypt believes encryption is possible, but
+   * leaves enabling it up to the sender.  Probably because "prefer encrypt"
+   * is not set in both the sender and recipient keys. */
+  N_("Available"),
+  /* L10N: Autocrypt recommendation flag: yes.
+   * This is displayed when Autocrypt would normally enable encryption
+   * automatically. */
+  N_("Yes"),
+};
+#endif
+
+typedef struct
+{
+  HEADER *msg;
+  BUFFER *fcc;
+#ifdef USE_AUTOCRYPT
+  autocrypt_rec_t autocrypt_rec;
+  int autocrypt_rec_override;
+#endif
+} compose_redraw_data_t;
 
 static void calc_header_width_padding (int idx, const char *header, int calc_max)
 {
@@ -154,15 +205,19 @@ static void init_header_padding (void)
     return;
   done = 1;
 
-  for (i = 0; i <= HDR_CRYPT; i++)
+  for (i = 0; i < HDR_ATTACH_TITLE; i++)
+  {
+    if (i == HDR_CRYPTINFO)
+      continue;
     calc_header_width_padding (i, _(Prompts[i]), 1);
+  }
 
   /* Don't include "Sign as: " in the MaxHeaderWidth calculation.  It
    * doesn't show up by default, and so can make the indentation of
    * the other fields look funny. */
   calc_header_width_padding (HDR_CRYPTINFO, _(Prompts[HDR_CRYPTINFO]), 0);
 
-  for (i = 0; i <= HDR_CRYPTINFO; i++)
+  for (i = 0; i < HDR_ATTACH_TITLE; i++)
   {
     HeaderPadding[i] += MaxHeaderWidth;
     if (HeaderPadding[i] < 0)
@@ -179,12 +234,52 @@ static void snd_entry (char *b, size_t blen, MUTTMENU *menu, int num)
                      MUTT_FORMAT_STAT_FILE | MUTT_FORMAT_ARROWCURSOR);
 }
 
-
-
-#include "mutt_crypt.h"
-
-static void redraw_crypt_lines (HEADER *msg)
+#ifdef USE_AUTOCRYPT
+static void autocrypt_compose_menu (HEADER *msg)
 {
+  char *prompt, *letters;
+  int choice;
+
+  msg->security |= APPLICATION_PGP;
+
+  /* L10N:
+     The compose menu autocrypt prompt.
+     (e)ncrypt enables encryption via autocrypt.
+     (c)lear sets cleartext.
+     (a)utomatic defers to the recommendation.
+  */
+  prompt = _("Autocrypt: (e)ncrypt, (c)lear, (a)utomatic? ");
+
+  /* L10N:
+     The letter corresponding to the compose menu autocrypt prompt
+     (e)ncrypt, (c)lear, (a)utomatic
+   */
+  letters = _("eca");
+
+  choice = mutt_multi_choice (prompt, letters);
+  switch (choice)
+  {
+    case 1:
+      msg->security |= (AUTOCRYPT | AUTOCRYPT_OVERRIDE);
+      msg->security &= ~(ENCRYPT | SIGN | OPPENCRYPT | INLINE);
+      break;
+    case 2:
+      msg->security &= ~AUTOCRYPT;
+      msg->security |= AUTOCRYPT_OVERRIDE;
+      break;
+    case 3:
+      msg->security &= ~AUTOCRYPT_OVERRIDE;
+      if (option (OPTCRYPTOPPORTUNISTICENCRYPT))
+        msg->security |= OPPENCRYPT;
+      break;
+  }
+}
+#endif
+
+static void redraw_crypt_lines (compose_redraw_data_t *rd)
+{
+  HEADER *msg = rd->msg;
+
   SETCOLOR (MT_COLOR_COMPOSE_HEADER);
   mutt_window_mvprintw (MuttIndexWindow, HDR_CRYPT, 0,
                         "%*s", HeaderPadding[HDR_CRYPT], _(Prompts[HDR_CRYPT]));
@@ -260,14 +355,81 @@ static void redraw_crypt_lines (HEADER *msg)
   if ((WithCrypto & APPLICATION_SMIME)
       && (msg->security & APPLICATION_SMIME)
       && (msg->security & ENCRYPT)
-      && SmimeCryptAlg
-      && *SmimeCryptAlg)
+      && SmimeCryptAlg)
   {
     SETCOLOR (MT_COLOR_COMPOSE_HEADER);
     mutt_window_mvprintw (MuttIndexWindow, HDR_CRYPTINFO, 40, "%s", _("Encrypt with: "));
     NORMAL_COLOR;
     printw ("%s", NONULL(SmimeCryptAlg));
   }
+
+#ifdef USE_AUTOCRYPT
+  mutt_window_move (MuttIndexWindow, HDR_AUTOCRYPT, 0);
+  mutt_window_clrtoeol (MuttIndexWindow);
+  if (option (OPTAUTOCRYPT))
+  {
+    SETCOLOR (MT_COLOR_COMPOSE_HEADER);
+    printw ("%*s", HeaderPadding[HDR_AUTOCRYPT], _(Prompts[HDR_AUTOCRYPT]));
+    NORMAL_COLOR;
+    if (msg->security & AUTOCRYPT)
+    {
+      SETCOLOR (MT_COLOR_COMPOSE_SECURITY_ENCRYPT);
+      addstr (_("Encrypt"));
+    }
+    else
+    {
+      SETCOLOR (MT_COLOR_COMPOSE_SECURITY_NONE);
+      addstr (_("Off"));
+    }
+
+    SETCOLOR (MT_COLOR_COMPOSE_HEADER);
+    mutt_window_mvprintw (MuttIndexWindow, HDR_AUTOCRYPT, 40, "%s",
+                          /* L10N:
+                             The autocrypt compose menu Recommendation field.
+                             Displays the output of the recommendation engine
+                             (Off, No, Discouraged, Available, Yes)
+                          */
+                          _("Recommendation: "));
+    NORMAL_COLOR;
+    printw ("%s", _(AutocryptRecUiFlags[rd->autocrypt_rec]));
+  }
+#endif
+}
+
+static void update_crypt_info (compose_redraw_data_t *rd)
+{
+  HEADER *msg = rd->msg;
+
+  if (option (OPTCRYPTOPPORTUNISTICENCRYPT))
+    crypt_opportunistic_encrypt (msg);
+
+#ifdef USE_AUTOCRYPT
+  if (option (OPTAUTOCRYPT))
+  {
+    rd->autocrypt_rec = mutt_autocrypt_ui_recommendation (msg, NULL);
+
+    /* Anything that enables ENCRYPT or SIGN, or turns on SMIME
+     * overrides autocrypt, be it oppenc or the user having turned on
+     * those flags manually. */
+    if (msg->security & (ENCRYPT | SIGN | APPLICATION_SMIME))
+      msg->security &= ~(AUTOCRYPT | AUTOCRYPT_OVERRIDE);
+    else
+    {
+      if (!(msg->security & AUTOCRYPT_OVERRIDE))
+      {
+        if (rd->autocrypt_rec == AUTOCRYPT_REC_YES)
+        {
+          msg->security |= (AUTOCRYPT | APPLICATION_PGP);
+          msg->security &= ~(INLINE | APPLICATION_SMIME);
+        }
+        else
+          msg->security &= ~AUTOCRYPT;
+      }
+    }
+  }
+#endif
+
+  redraw_crypt_lines (rd);
 }
 
 
@@ -311,35 +473,62 @@ static void redraw_mix_line (LIST *chain)
 static int
 check_attachments(ATTACH_CONTEXT *actx)
 {
-  int i, r;
+  int i, r, rc = -1;
   struct stat st;
-  char pretty[_POSIX_PATH_MAX], msg[_POSIX_PATH_MAX + SHORT_STRING];
+  BUFFER *pretty = NULL, *msg = NULL;
 
   for (i = 0; i < actx->idxlen; i++)
   {
-    strfcpy(pretty, actx->idx[i]->content->filename, sizeof(pretty));
     if (stat(actx->idx[i]->content->filename, &st) != 0)
     {
-      mutt_pretty_mailbox(pretty, sizeof (pretty));
-      mutt_error(_("%s [#%d] no longer exists!"),
-		 pretty, i+1);
-      return -1;
+      if (!pretty)
+        pretty = mutt_buffer_pool_get ();
+      mutt_buffer_strcpy (pretty, actx->idx[i]->content->filename);
+      mutt_buffer_pretty_mailbox (pretty);
+      /* L10N:
+         This message is displayed in the compose menu when an attachment
+         doesn't stat.  %d is the attachment number and %s is the
+         attachment filename.
+         The filename is located last to avoid a long path hiding the
+         error message.
+      */
+      mutt_error (_("Attachment #%d no longer exists: %s"),
+                  i+1, mutt_b2s (pretty));
+      goto cleanup;
     }
 
     if (actx->idx[i]->content->stamp < st.st_mtime)
     {
-      mutt_pretty_mailbox(pretty, sizeof (pretty));
-      snprintf(msg, sizeof(msg), _("%s [#%d] modified. Update encoding?"),
-	       pretty, i+1);
+      if (!pretty)
+        pretty = mutt_buffer_pool_get ();
+      mutt_buffer_strcpy (pretty, actx->idx[i]->content->filename);
+      mutt_buffer_pretty_mailbox (pretty);
 
-      if ((r = mutt_yesorno(msg, MUTT_YES)) == MUTT_YES)
-	mutt_update_encoding(actx->idx[i]->content);
+      if (!msg)
+        msg = mutt_buffer_pool_get ();
+      /* L10N:
+         This message is displayed in the compose menu when an attachment
+         is modified behind the scenes.  %d is the attachment number
+         and %s is the attachment filename.
+         The filename is located last to avoid a long path hiding the
+         prompt question.
+      */
+      mutt_buffer_printf (msg, _("Attachment #%d modified. Update encoding for %s?"),
+                          i+1, mutt_b2s (pretty));
+
+      if ((r = mutt_yesorno (mutt_b2s (msg), MUTT_YES)) == MUTT_YES)
+	mutt_update_encoding (actx->idx[i]->content);
       else if (r == -1)
-	return -1;
+	goto cleanup;
     }
   }
 
-  return 0;
+  rc = 0;
+
+cleanup:
+  mutt_buffer_pool_release (&pretty);
+  mutt_buffer_pool_release (&msg);
+  return rc;
 }
 
 static void draw_envelope_addr (int line, ADDRESS *addr)
@@ -355,8 +544,11 @@ static void draw_envelope_addr (int line, ADDRESS *addr)
   mutt_paddstr (W, buf);
 }
 
-static void draw_envelope (HEADER *msg, char *fcc)
+static void draw_envelope (compose_redraw_data_t *rd)
 {
+  HEADER *msg = rd->msg;
+  const char *fcc = mutt_b2s (rd->fcc);
+
   draw_envelope_addr (HDR_FROM, msg->env->from);
   draw_envelope_addr (HDR_TO, msg->env->to);
   draw_envelope_addr (HDR_CC, msg->env->cc);
@@ -377,14 +569,14 @@ static void draw_envelope (HEADER *msg, char *fcc)
   mutt_paddstr (W, fcc);
 
   if (WithCrypto)
-    redraw_crypt_lines (msg);
+    redraw_crypt_lines (rd);
 
 #ifdef MIXMASTER
   redraw_mix_line (msg->chain);
 #endif
 
   SETCOLOR (MT_COLOR_STATUS);
-  mutt_window_mvaddstr (MuttIndexWindow, HDR_ATTACH - 1, 0, _("-- Attachments"));
+  mutt_window_mvaddstr (MuttIndexWindow, HDR_ATTACH_TITLE, 0, _("-- Attachments"));
   mutt_window_clrtoeol (MuttIndexWindow);
 
   NORMAL_COLOR;
@@ -441,7 +633,22 @@ static int delete_attachment (ATTACH_CONTEXT *actx, int x)
   }
 
   idx[rindex]->content->next = NULL;
-  idx[rindex]->content->parts = NULL;
+  /* mutt_make_message_attach() creates body->parts, shared by
+   * body->hdr->content.  If we NULL out that, it creates a memory
+   * leak because mutt_free_body() frees body->parts, not
+   * body->hdr->content.
+   *
+   * Other ci_send_message() message constructors are careful to free
+   * any body->parts, removing depth:
+   *  - mutt_prepare_template() used by postponed, resent, and draft files
+   *  - mutt_copy_body() used by the recvattach menu and $forward_attachments.
+   *
+   * I believe it is safe to completely remove the "content->parts =
+   * NULL" statement.  But for safety, am doing so only for the case
+   * it must be avoided: message attachments.
+   */
+  if (!idx[rindex]->content->hdr)
+    idx[rindex]->content->parts = NULL;
   mutt_free_body (&(idx[rindex]->content));
   FREE (&idx[rindex]->tree);
   FREE (&idx[rindex]);
@@ -636,12 +843,6 @@ static void compose_status_line (char *buf, size_t buflen, size_t col, int cols,
                      (unsigned long) menu, 0);
 }
 
-typedef struct
-{
-  HEADER *msg;
-  char *fcc;
-} compose_redraw_data_t;
-
 static void compose_menu_redraw (MUTTMENU *menu)
 {
   char buf[LONG_STRING];
@@ -654,7 +855,7 @@ static void compose_menu_redraw (MUTTMENU *menu)
   {
     menu_redraw_full (menu);
 
-    draw_envelope (rd->msg, rd->fcc);
+    draw_envelope (rd);
     menu->offset = HDR_ATTACH;
     menu->pagelen = MuttIndexWindow->rows - HDR_ATTACH;
   }
@@ -692,14 +893,13 @@ static void compose_menu_redraw (MUTTMENU *menu)
  * -1	abort message
  */
 int mutt_compose_menu (HEADER *msg,   /* structure for new message */
-                       char *fcc,     /* where to save a copy of the message */
-                       size_t fcclen,
+                       BUFFER *fcc,     /* where to save a copy of the message */
                        HEADER *cur,   /* current message */
                        int flags)
 {
   char helpstr[LONG_STRING];
   char buf[LONG_STRING];
-  char fname[_POSIX_PATH_MAX];
+  BUFFER *fname = NULL;
   MUTTMENU *menu;
   ATTACH_CONTEXT *actx;
   ATTACHPTR *new;
@@ -712,7 +912,7 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
   /* Sort, SortAux could be changed in mutt_index_menu() */
   int oldSort, oldSortAux;
   struct stat st;
-  compose_redraw_data_t rd;
+  compose_redraw_data_t rd = {0};
 
   init_header_padding ();
 
@@ -732,39 +932,34 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
   actx->hdr = msg;
   mutt_update_compose_menu (actx, menu, 1);
 
+  update_crypt_info (&rd);
+
+  /* Since this is rather long lived, we don't use the pool */
+  fname = mutt_buffer_new ();
+  mutt_buffer_increase_size (fname, LONG_STRING);
+
   while (loop)
   {
     switch (op = mutt_menuLoop (menu))
     {
       case OP_COMPOSE_EDIT_FROM:
 	edit_address_list (HDR_FROM, &msg->env->from);
+        update_crypt_info (&rd);
         mutt_message_hook (NULL, msg, MUTT_SEND2HOOK);
 	break;
       case OP_COMPOSE_EDIT_TO:
 	edit_address_list (HDR_TO, &msg->env->to);
-	if (option (OPTCRYPTOPPORTUNISTICENCRYPT))
-	{
-	  crypt_opportunistic_encrypt (msg);
-	  redraw_crypt_lines (msg);
-	}
+        update_crypt_info (&rd);
         mutt_message_hook (NULL, msg, MUTT_SEND2HOOK);
         break;
       case OP_COMPOSE_EDIT_BCC:
 	edit_address_list (HDR_BCC, &msg->env->bcc);
-	if (option (OPTCRYPTOPPORTUNISTICENCRYPT))
-	{
-	  crypt_opportunistic_encrypt (msg);
-	  redraw_crypt_lines (msg);
-	}
+        update_crypt_info (&rd);
         mutt_message_hook (NULL, msg, MUTT_SEND2HOOK);
 	break;
       case OP_COMPOSE_EDIT_CC:
 	edit_address_list (HDR_CC, &msg->env->cc);
-	if (option (OPTCRYPTOPPORTUNISTICENCRYPT))
-	{
-	  crypt_opportunistic_encrypt (msg);
-	  redraw_crypt_lines (msg);
-	}
+        update_crypt_info (&rd);
         mutt_message_hook (NULL, msg, MUTT_SEND2HOOK);
         break;
       case OP_COMPOSE_EDIT_SUBJECT:
@@ -788,13 +983,13 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
         mutt_message_hook (NULL, msg, MUTT_SEND2HOOK);
 	break;
       case OP_COMPOSE_EDIT_FCC:
-	strfcpy (buf, fcc, sizeof (buf));
-	if (mutt_get_field (_("Fcc: "), buf, sizeof (buf), MUTT_FILE | MUTT_CLEAR) == 0)
+	mutt_buffer_strcpy (fname, mutt_b2s (fcc));
+	if (mutt_buffer_get_field (_("Fcc: "), fname, MUTT_FILE | MUTT_CLEAR) == 0)
 	{
-	  strfcpy (fcc, buf, fcclen);
-	  mutt_pretty_mailbox (fcc, fcclen);
+	  mutt_buffer_strcpy (fcc, mutt_b2s (fname));
+	  mutt_buffer_pretty_mailbox (fcc);
 	  mutt_window_move (MuttIndexWindow, HDR_FCC, HDR_XOFFSET);
-	  mutt_paddstr (W, fcc);
+	  mutt_paddstr (W, mutt_b2s (fcc));
 	  fccSet = 1;
 	}
         mutt_message_hook (NULL, msg, MUTT_SEND2HOOK);
@@ -802,7 +997,9 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
       case OP_COMPOSE_EDIT_MESSAGE:
 	if (Editor && (mutt_strcmp ("builtin", Editor) != 0) && !option (OPTEDITHDRS))
 	{
+          mutt_rfc3676_space_unstuff (msg);
 	  mutt_edit_file (Editor, msg->content->filename);
+          mutt_rfc3676_space_stuff (msg);
 	  mutt_update_encoding (msg->content);
 	  menu->redraw = REDRAW_FULL;
 	  mutt_message_hook (NULL, msg, MUTT_SEND2HOOK);
@@ -810,6 +1007,8 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
 	}
 	/* fall through */
       case OP_COMPOSE_EDIT_HEADERS:
+        mutt_rfc3676_space_unstuff (msg);
+
 	if (mutt_strcmp ("builtin", Editor) != 0 &&
 	    (op == OP_COMPOSE_EDIT_HEADERS ||
              (op == OP_COMPOSE_EDIT_MESSAGE && option (OPTEDITHDRS))))
@@ -817,14 +1016,13 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
 	  char *tag = NULL, *err = NULL;
 	  mutt_env_to_local (msg->env);
 	  mutt_edit_headers (NONULL (Editor), msg->content->filename, msg,
-			     fcc, fcclen);
+			     fcc);
 	  if (mutt_env_to_intl (msg->env, &tag, &err))
 	  {
 	    mutt_error (_("Bad IDN in \"%s\": '%s'"), tag, err);
 	    FREE (&err);
 	  }
-	  if (option (OPTCRYPTOPPORTUNISTICENCRYPT))
-	    crypt_opportunistic_encrypt (msg);
+          update_crypt_info (&rd);
 	}
 	else
 	{
@@ -834,6 +1032,8 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
 	     code below to regenerate the index array */
 	  mutt_builtin_editor (msg->content->filename, msg, cur);
 	}
+
+        mutt_rfc3676_space_stuff (msg);
 	mutt_update_encoding (msg->content);
 
 	/* attachments may have been added */
@@ -854,7 +1054,7 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
           break;
 
 	new = (ATTACHPTR *) safe_calloc (1, sizeof (ATTACHPTR));
-	if ((new->content = crypt_pgp_make_key_attachment(NULL)) != NULL)
+	if ((new->content = crypt_pgp_make_key_attachment()) != NULL)
 	{
 	  update_idx (menu, actx, new);
 	  menu->redraw |= REDRAW_INDEX;
@@ -873,13 +1073,13 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
         char *prompt, **files;
         int error, numfiles;
 
-        fname[0] = 0;
+        mutt_buffer_clear (fname);
         prompt = _("Attach file");
         numfiles = 0;
         files = NULL;
 
-        if (_mutt_enter_fname (prompt, fname, sizeof (fname), 0, 1, &files, &numfiles) == -1 ||
-            *fname == '\0')
+        if ((_mutt_buffer_enter_fname (prompt, fname, 0, 1, &files, &numfiles) == -1) ||
+            !mutt_buffer_len (fname))
           break;
 
         error = 0;
@@ -915,38 +1115,39 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
         char *prompt;
         HEADER *h;
 
-        fname[0] = 0;
+        mutt_buffer_clear (fname);
         prompt = _("Open mailbox to attach message from");
 
         if (Context)
         {
-          strfcpy (fname, NONULL (Context->path), sizeof (fname));
-          mutt_pretty_mailbox (fname, sizeof (fname));
+          mutt_buffer_strcpy (fname, NONULL (Context->path));
+          mutt_buffer_pretty_mailbox (fname);
         }
 
-        if (mutt_enter_fname (prompt, fname, sizeof (fname), 1) == -1 || !fname[0])
+        if ((mutt_buffer_enter_fname (prompt, fname, 1) == -1) ||
+            !mutt_buffer_len (fname))
           break;
 
-        mutt_expand_path (fname, sizeof (fname));
+        mutt_buffer_expand_path (fname);
 #ifdef USE_IMAP
-        if (!mx_is_imap (fname))
+        if (!mx_is_imap (mutt_b2s (fname)))
 #endif
 #ifdef USE_POP
-          if (!mx_is_pop (fname))
+          if (!mx_is_pop (mutt_b2s (fname)))
 #endif
             /* check to make sure the file exists and is readable */
-            if (access (fname, R_OK) == -1)
+            if (access (mutt_b2s (fname), R_OK) == -1)
             {
-              mutt_perror (fname);
+              mutt_perror (mutt_b2s (fname));
               break;
             }
 
         menu->redraw = REDRAW_FULL;
 
-        ctx = mx_open_mailbox (fname, MUTT_READONLY, NULL);
+        ctx = mx_open_mailbox (mutt_b2s (fname), MUTT_READONLY, NULL);
         if (ctx == NULL)
         {
-          mutt_error (_("Unable to open mailbox %s"), fname);
+          mutt_error (_("Unable to open mailbox %s"), mutt_b2s (fname));
           break;
         }
 
@@ -1133,13 +1334,13 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
 	  break;
 #endif
 
-	if (!fccSet && *fcc)
+	if (!fccSet && mutt_buffer_len (fcc))
 	{
 	  if ((i = query_quadoption (OPT_COPY,
                                      _("Save a copy of this message?"))) == -1)
 	    break;
 	  else if (i == MUTT_NO)
-	    *fcc = 0;
+	    mutt_buffer_clear (fcc);
 	}
 
 	loop = 0;
@@ -1189,16 +1390,16 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
           src = CURATTACH->content->d_filename;
         else
           src = CURATTACH->content->filename;
-        strfcpy (fname, mutt_basename (NONULL (src)), sizeof (fname));
-        ret = mutt_get_field (_("Send attachment with name: "),
-                              fname, sizeof (fname), MUTT_FILE);
+        mutt_buffer_strcpy (fname, mutt_basename (NONULL (src)));
+        ret = mutt_buffer_get_field (_("Send attachment with name: "),
+                                     fname, MUTT_FILE);
         if (ret == 0)
         {
           /*
            * As opposed to RENAME_FILE, we don't check fname[0] because it's
            * valid to set an empty string here, to erase what was set
            */
-          mutt_str_replace (&CURATTACH->content->d_filename, fname);
+          mutt_str_replace (&CURATTACH->content->d_filename, mutt_b2s (fname));
           menu->redraw = REDRAW_CURRENT;
         }
       }
@@ -1206,30 +1407,31 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
 
       case OP_COMPOSE_RENAME_FILE:
 	CHECK_COUNT;
-	strfcpy (fname, CURATTACH->content->filename, sizeof (fname));
-	mutt_pretty_mailbox (fname, sizeof (fname));
-	if ((mutt_get_field (_("Rename to: "), fname, sizeof (fname), MUTT_FILE) == 0)
-            && fname[0])
-	{
-	  if (stat(CURATTACH->content->filename, &st) == -1)
-	  {
+	mutt_buffer_strcpy (fname, CURATTACH->content->filename);
+	mutt_buffer_pretty_mailbox (fname);
+
+	if ((mutt_buffer_get_field (_("Rename to: "), fname, MUTT_FILE) == 0) &&
+            mutt_buffer_len (fname))
+        {
+          if (stat(CURATTACH->content->filename, &st) == -1)
+          {
             /* L10N:
                "stat" is a system call. Do "man 2 stat" for more information. */
-	    mutt_error (_("Can't stat %s: %s"), fname, strerror (errno));
-	    break;
-	  }
+            mutt_error (_("Can't stat %s: %s"), mutt_b2s (fname), strerror (errno));
+            break;
+          }
 
-	  mutt_expand_path (fname, sizeof (fname));
-	  if (mutt_rename_file (CURATTACH->content->filename, fname))
-	    break;
+          mutt_buffer_expand_path (fname);
+          if (mutt_rename_file (CURATTACH->content->filename, mutt_b2s (fname)))
+            break;
 
-	  mutt_str_replace (&CURATTACH->content->filename, fname);
-	  menu->redraw = REDRAW_CURRENT;
+          mutt_str_replace (&CURATTACH->content->filename, mutt_b2s (fname));
+          menu->redraw = REDRAW_CURRENT;
 
-	  if (CURATTACH->content->stamp >= st.st_mtime)
-	    mutt_stamp_attachment(CURATTACH->content);
+          if (CURATTACH->content->stamp >= st.st_mtime)
+            mutt_stamp_attachment(CURATTACH->content);
+        }
 
-	}
         mutt_message_hook (NULL, msg, MUTT_SEND2HOOK);
         break;
 
@@ -1241,11 +1443,11 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
         FILE *fp;
 
         mutt_window_clearline (MuttMessageWindow, 0);
-        fname[0] = 0;
-        if (mutt_get_field (_("New file: "), fname, sizeof (fname), MUTT_FILE)
-            != 0 || !fname[0])
+        mutt_buffer_clear (fname);
+        if ((mutt_buffer_get_field (_("New file: "), fname, MUTT_FILE) != 0) ||
+            !mutt_buffer_len (fname))
           continue;
-        mutt_expand_path (fname, sizeof (fname));
+        mutt_buffer_expand_path (fname);
 
         /* Call to lookup_mime_type () ?  maybe later */
         type[0] = 0;
@@ -1267,15 +1469,15 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
 
         new = (ATTACHPTR *) safe_calloc (1, sizeof (ATTACHPTR));
         /* Touch the file */
-        if (!(fp = safe_fopen (fname, "w")))
+        if (!(fp = safe_fopen (mutt_b2s (fname), "w")))
         {
-          mutt_error (_("Can't create file %s"), fname);
+          mutt_error (_("Can't create file %s"), mutt_b2s (fname));
           FREE (&new);
           continue;
         }
         safe_fclose (&fp);
 
-        if ((new->content = mutt_make_file_attach (fname)) == NULL)
+        if ((new->content = mutt_make_file_attach (mutt_b2s (fname))) == NULL)
         {
           mutt_error _("What we have here is a failure to make an attachment");
           FREE (&new);
@@ -1306,6 +1508,37 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
 	}
         mutt_message_hook (NULL, msg, MUTT_SEND2HOOK);
         break;
+
+      case OP_COMPOSE_VIEW_ALT:
+      case OP_COMPOSE_VIEW_ALT_TEXT:
+      case OP_COMPOSE_VIEW_ALT_MAILCAP:
+      {
+        BODY *alternative;
+
+        if (!SendMultipartAltFilter)
+        {
+          mutt_error _("$send_multipart_alternative_filter is not set");
+          break;
+        }
+        alternative = mutt_run_send_alternative_filter (msg->content);
+        if (!alternative)
+          break;
+	switch (op)
+	{
+	  case OP_COMPOSE_VIEW_ALT_TEXT:
+	    op = MUTT_AS_TEXT;
+	    break;
+	  case OP_COMPOSE_VIEW_ALT_MAILCAP:
+	    op = MUTT_MAILCAP;
+	    break;
+	  default:
+	    op = MUTT_REGULAR;
+	    break;
+	}
+        mutt_view_attachment (NULL, alternative, op, NULL, actx);
+        mutt_free_body (&alternative);
+        break;
+      }
 
       case OP_VIEW_ATTACH:
       case OP_DISPLAY_HEADERS:
@@ -1350,7 +1583,9 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
             {
               /* avoid freeing other attachments */
               actx->idx[i]->content->next = NULL;
-              actx->idx[i]->content->parts = NULL;
+              /* See the comment in delete_attachment() */
+              if (!actx->idx[i]->content->hdr)
+                actx->idx[i]->content->parts = NULL;
               mutt_free_body (&actx->idx[i]->content);
             }
           }
@@ -1361,7 +1596,7 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
 	else if (i == -1)
 	  break; /* abort */
 
-	/* fall through to postpone! */
+	/* fall through */
 
       case OP_COMPOSE_POSTPONE_MESSAGE:
 
@@ -1389,27 +1624,28 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
 
       case OP_COMPOSE_WRITE_MESSAGE:
 
-        fname[0] = '\0';
+        mutt_buffer_clear (fname);
         if (Context)
         {
-          strfcpy (fname, NONULL (Context->path), sizeof (fname));
-          mutt_pretty_mailbox (fname, sizeof (fname));
+          mutt_buffer_strcpy (fname, NONULL (Context->path));
+          mutt_buffer_pretty_mailbox (fname);
         }
         if (actx->idxlen)
           msg->content = actx->idx[0]->content;
-        if (mutt_enter_fname (_("Write message to mailbox"), fname, sizeof (fname),
-                              1) != -1 && fname[0])
+        if ((mutt_buffer_enter_fname (_("Write message to mailbox"), fname,
+                                      1) != -1) &&
+            mutt_buffer_len (fname))
         {
-          mutt_message (_("Writing message to %s ..."), fname);
-          mutt_expand_path (fname, sizeof (fname));
+          mutt_message (_("Writing message to %s ..."), mutt_b2s (fname));
+          mutt_buffer_expand_path (fname);
 
           if (msg->content->next)
-            msg->content = mutt_make_multipart (msg->content);
+            msg->content = mutt_make_multipart_mixed (msg->content);
 
-          if (mutt_write_fcc (fname, msg, NULL, 0, NULL) < 0)
-            msg->content = mutt_remove_multipart (msg->content);
-          else
+          if (mutt_write_fcc (mutt_b2s (fname), msg, NULL, 0, NULL) == 0)
             mutt_message _("Message written.");
+
+          msg->content = mutt_remove_multipart_mixed (msg->content);
         }
         break;
 
@@ -1438,11 +1674,10 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
           }
 	  msg->security &= ~APPLICATION_SMIME;
 	  msg->security |= APPLICATION_PGP;
-          crypt_opportunistic_encrypt (msg);
-          redraw_crypt_lines (msg);
+          update_crypt_info (&rd);
 	}
 	msg->security = crypt_pgp_send_menu (msg);
-	redraw_crypt_lines (msg);
+	update_crypt_info (&rd);
         mutt_message_hook (NULL, msg, MUTT_SEND2HOOK);
         break;
 
@@ -1476,11 +1711,10 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
           }
 	  msg->security &= ~APPLICATION_PGP;
 	  msg->security |= APPLICATION_SMIME;
-          crypt_opportunistic_encrypt (msg);
-          redraw_crypt_lines (msg);
+          update_crypt_info (&rd);
 	}
 	msg->security = crypt_smime_send_menu(msg);
-	redraw_crypt_lines (msg);
+	update_crypt_info (&rd);
         mutt_message_hook (NULL, msg, MUTT_SEND2HOOK);
         break;
 
@@ -1493,8 +1727,46 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
         break;
 #endif
 
+#ifdef USE_AUTOCRYPT
+      case OP_COMPOSE_AUTOCRYPT_MENU:
+        if (!option (OPTAUTOCRYPT))
+          break;
+
+	if ((WithCrypto & APPLICATION_SMIME)
+            && (msg->security & APPLICATION_SMIME))
+	{
+          if (msg->security & (ENCRYPT | SIGN))
+          {
+            if (mutt_yesorno (_("S/MIME already selected. Clear & continue ? "),
+                              MUTT_YES) != MUTT_YES)
+            {
+              mutt_clear_error ();
+              break;
+            }
+            msg->security &= ~(ENCRYPT | SIGN);
+          }
+	  msg->security &= ~APPLICATION_SMIME;
+	  msg->security |= APPLICATION_PGP;
+          update_crypt_info (&rd);
+	}
+	autocrypt_compose_menu (msg);
+	update_crypt_info (&rd);
+        mutt_message_hook (NULL, msg, MUTT_SEND2HOOK);
+        break;
+#endif
     }
   }
+
+  mutt_buffer_free (&fname);
+
+#ifdef USE_AUTOCRYPT
+  /* This is a fail-safe to make sure the bit isn't somehow turned
+   * on.  The user could have disabled the option after setting AUTOCRYPT,
+   * or perhaps resuming or replying to an autocrypt message.
+   */
+  if (!option (OPTAUTOCRYPT))
+    msg->security &= ~AUTOCRYPT;
+#endif
 
   mutt_pop_current_menu (menu);
   mutt_menuDestroy (&menu);

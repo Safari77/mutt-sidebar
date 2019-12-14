@@ -31,6 +31,7 @@
 #include "imap.h"
 #endif
 #include "mutt_crypt.h"
+#include "rfc3676.h"
 
 #include <ctype.h>
 #include <unistd.h>
@@ -112,15 +113,19 @@ int mutt_num_postponed (int force)
   {
     /* if we have a maildir mailbox, we need to stat the "new" dir */
 
-    char buf[PATH_MAX];
+    BUFFER *buf;
 
-    snprintf (buf, sizeof (buf), "%s/new", Postponed);
-    if (access (buf, F_OK) == 0 && stat (buf, &st) == -1)
+    buf = mutt_buffer_pool_get ();
+    mutt_buffer_printf (buf, "%s/new", Postponed);
+    if (access (mutt_b2s (buf), F_OK) == 0 &&
+        stat (mutt_b2s (buf), &st) == -1)
     {
       PostCount = 0;
       LastModify = 0;
+      mutt_buffer_pool_release (&buf);
       return 0;
     }
+    mutt_buffer_pool_release (&buf);
   }
 
   if (LastModify < st.st_mtime)
@@ -222,14 +227,13 @@ static HEADER *select_msg (void)
  *	cur	if message was a reply, `cur' is set to the message which
  *		`hdr' is in reply to
  *	fcc	fcc for the recalled message
- *	fcclen	max length of fcc
  *
  * return vals:
  *	-1		error/no messages
  *	0		normal exit
  *	SENDREPLY	recalled message is a reply
  */
-int mutt_get_postponed (CONTEXT *ctx, HEADER *hdr, HEADER **cur, char *fcc, size_t fcclen)
+int mutt_get_postponed (CONTEXT *ctx, HEADER *hdr, HEADER **cur, BUFFER *fcc)
 {
   HEADER *h;
   int code = SENDPOSTPONED;
@@ -321,8 +325,8 @@ int mutt_get_postponed (CONTEXT *ctx, HEADER *hdr, HEADER **cur, char *fcc, size
     else if (ascii_strncasecmp ("X-Mutt-Fcc:", tmp->data, 11) == 0)
     {
       p = skip_email_wsp(tmp->data + 11);
-      strfcpy (fcc, p, fcclen);
-      mutt_pretty_mailbox (fcc, fcclen);
+      mutt_buffer_strcpy (fcc, p);
+      mutt_buffer_pretty_mailbox (fcc);
 
       /* remove the X-Mutt-Fcc: header field */
       next = tmp->next;
@@ -440,6 +444,20 @@ int mutt_parse_crypt_hdr (const char *p, int set_empty_signas, int crypt_app)
       case 'o':
       case 'O':
         flags |= OPPENCRYPT;
+        break;
+
+      case 'a':
+      case 'A':
+#ifdef USE_AUTOCRYPT
+        flags |= AUTOCRYPT;
+#endif
+        break;
+
+      case 'z':
+      case 'Z':
+#ifdef USE_AUTOCRYPT
+        flags |= AUTOCRYPT_OVERRIDE;
+#endif
         break;
 
       case 's':
@@ -645,15 +663,17 @@ int mutt_prepare_template (FILE *fp, CONTEXT *ctx, HEADER *newhdr, HEADER *hdr,
   /*
    * We don't need no primary multipart.
    * Note: We _do_ preserve messages!
-   *
-   * XXX - we don't handle multipart/alternative in any
-   * smart way when sending messages.  However, one may
-   * consider this a feature.
-   *
    */
-
   if (newhdr->content->type == TYPEMULTIPART)
-    newhdr->content = mutt_remove_multipart (newhdr->content);
+    newhdr->content = mutt_remove_multipart_mixed (newhdr->content);
+
+  /* Note: this just uses the *first* alternative and strips the rest.
+   * It might be better to scan for text/plain.  On the other hand,
+   * mutt's alternative generation filter in theory allows composing
+   * text/html and generating the text/plain from that.  This way will
+   * preserve the alternative originally composed by the user.
+   */
+  newhdr->content = mutt_remove_multipart_alternative (newhdr->content);
 
   s.fpin = bfp;
 
@@ -791,6 +811,8 @@ int mutt_prepare_template (FILE *fp, CONTEXT *ctx, HEADER *newhdr, HEADER *hdr,
     else
       newhdr->security &= ~APPLICATION_SMIME;
   }
+
+  mutt_rfc3676_space_unstuff (newhdr);
 
   rv = 0;
 

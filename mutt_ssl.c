@@ -38,6 +38,12 @@
 #define X509_getm_notBefore X509_get_notBefore
 #define X509_getm_notAfter X509_get_notAfter
 #define X509_STORE_CTX_get0_chain X509_STORE_CTX_get_chain
+#define SSL_has_pending SSL_pending
+#endif
+
+/* Unimplemented OpenSSL 1.1 api calls */
+#if (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x2070000fL)
+#define SSL_has_pending SSL_pending
 #endif
 
 #undef _
@@ -94,6 +100,7 @@ static int ssl_init (void);
 static int add_entropy (const char *file);
 static int ssl_socket_read (CONNECTION* conn, char* buf, size_t len);
 static int ssl_socket_write (CONNECTION* conn, const char* buf, size_t len);
+static int ssl_socket_poll (CONNECTION* conn, time_t wait_secs);
 static int ssl_socket_open (CONNECTION * conn);
 static int ssl_socket_close (CONNECTION * conn);
 static int tls_close (CONNECTION* conn);
@@ -208,6 +215,10 @@ int mutt_ssl_starttls (CONNECTION* conn)
     dprint (1, (debugfile, "mutt_ssl_starttls: Error allocating SSL_CTX\n"));
     goto bail_ssldata;
   }
+#ifdef SSL_OP_NO_TLSv1_3
+  if (!option(OPTTLSV1_3))
+    ssl_options |= SSL_OP_NO_TLSv1_3;
+#endif
 #ifdef SSL_OP_NO_TLSv1_2
   if (!option(OPTTLSV1_2))
     ssl_options |= SSL_OP_NO_TLSv1_2;
@@ -284,6 +295,7 @@ int mutt_ssl_starttls (CONNECTION* conn)
   conn->conn_read = ssl_socket_read;
   conn->conn_write = ssl_socket_write;
   conn->conn_close = tls_close;
+  conn->conn_poll = ssl_socket_poll;
 
   conn->ssf = SSL_CIPHER_get_bits (SSL_get_current_cipher (ssldata->ssl),
                                    &maxbits);
@@ -314,7 +326,7 @@ bail:
  */
 static int ssl_init (void)
 {
-  char path[_POSIX_PATH_MAX];
+  BUFFER *path = NULL;
   static unsigned char init_complete = 0;
 
   if (init_complete)
@@ -324,18 +336,22 @@ static int ssl_init (void)
   {
     /* load entropy from files */
     add_entropy (SslEntropyFile);
-    add_entropy (RAND_file_name (path, sizeof (path)));
+
+    path = mutt_buffer_pool_get ();
+    add_entropy (RAND_file_name (path->data, path->dsize));
 
     /* load entropy from egd sockets */
 #ifdef HAVE_RAND_EGD
     add_entropy (getenv ("EGDSOCKET"));
-    snprintf (path, sizeof(path), "%s/.entropy", NONULL(Homedir));
-    add_entropy (path);
+    mutt_buffer_printf (path, "%s/.entropy", NONULL(Homedir));
+    add_entropy (mutt_b2s (path));
     add_entropy ("/tmp/entropy");
 #endif
 
     /* shuffle $RANDFILE (or ~/.rnd if unset) */
-    RAND_write_file (RAND_file_name (path, sizeof (path)));
+    RAND_write_file (RAND_file_name (path->data, path->dsize));
+    mutt_buffer_pool_release (&path);
+
     mutt_clear_error ();
     if (! HAVE_ENTROPY())
     {
@@ -413,7 +429,7 @@ int mutt_ssl_socket_setup (CONNECTION * conn)
   conn->conn_read	= ssl_socket_read;
   conn->conn_write	= ssl_socket_write;
   conn->conn_close	= ssl_socket_close;
-  conn->conn_poll       = raw_socket_poll;
+  conn->conn_poll       = ssl_socket_poll;
 
   return 0;
 }
@@ -443,6 +459,16 @@ static int ssl_socket_write (CONNECTION* conn, const char* buf, size_t len)
     ssl_err (data, rc);
 
   return rc;
+}
+
+static int ssl_socket_poll (CONNECTION* conn, time_t wait_secs)
+{
+  sslsockdata *data = conn->sockdata;
+
+  if (SSL_has_pending (data->ssl))
+    return 1;
+  else
+    return raw_socket_poll (conn, wait_secs);
 }
 
 static int ssl_socket_open (CONNECTION * conn)
@@ -486,6 +512,12 @@ static int ssl_socket_open (CONNECTION * conn)
   if (!option(OPTTLSV1_2))
   {
     SSL_CTX_set_options(data->ctx, SSL_OP_NO_TLSv1_2);
+  }
+#endif
+#ifdef SSL_OP_NO_TLSv1_3
+  if (!option(OPTTLSV1_3))
+  {
+    SSL_CTX_set_options(data->ctx, SSL_OP_NO_TLSv1_3);
   }
 #endif
   if (!option(OPTSSLV2))
@@ -659,6 +691,7 @@ static int tls_close (CONNECTION* conn)
   conn->conn_read = raw_socket_read;
   conn->conn_write = raw_socket_write;
   conn->conn_close = raw_socket_close;
+  conn->conn_poll = raw_socket_poll;
 
   return rc;
 }
@@ -1206,7 +1239,7 @@ static int interactive_check_cert (X509 *cert, int idx, int len, SSL *ssl, int a
   BUFFER *drow = NULL;
   unsigned u;
   FILE *fp;
-  int allow_skip = 0;
+  int allow_skip = 0, reset_ignoremacro = 0;
 
   mutt_push_current_menu (menu);
 
@@ -1304,7 +1337,12 @@ static int interactive_check_cert (X509 *cert, int idx, int len, SSL *ssl, int a
   menu->help = helpstr;
 
   done = 0;
-  set_option(OPTIGNOREMACROEVENTS);
+
+  if (!option (OPTIGNOREMACROEVENTS))
+  {
+    set_option (OPTIGNOREMACROEVENTS);
+    reset_ignoremacro = 1;
+  }
   while (!done)
   {
     switch (mutt_menuLoop (menu))
@@ -1348,7 +1386,8 @@ static int interactive_check_cert (X509 *cert, int idx, int len, SSL *ssl, int a
         break;
     }
   }
-  unset_option(OPTIGNOREMACROEVENTS);
+  if (reset_ignoremacro)
+    unset_option (OPTIGNOREMACROEVENTS);
 
   mutt_buffer_pool_release (&drow);
   mutt_pop_current_menu (menu);

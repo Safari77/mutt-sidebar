@@ -37,6 +37,10 @@
 #include "mutt_idna.h"
 #include "buffy.h"
 
+#ifdef USE_AUTOCRYPT
+#include "autocrypt.h"
+#endif
+
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -413,8 +417,15 @@ int mutt_write_mime_header (BODY *a, FILE *f)
   if (a->encoding != ENC7BIT)
     fprintf(f, "Content-Transfer-Encoding: %s\n", ENCODING (a->encoding));
 
-  if (option (OPTCRYPTPROTHDRSWRITE) && a->mime_headers)
+  if ((option (OPTCRYPTPROTHDRSWRITE)
+#ifdef USE_AUTOCRYPT
+       || option (OPTAUTOCRYPT)
+#endif
+        ) &&
+      a->mime_headers)
+  {
     mutt_write_rfc822_header (f, a->mime_headers, NULL, MUTT_WRITE_HEADER_MIME, 0, 0);
+  }
 
   /* Do NOT add the terminator here!!! */
   return (ferror (f) ? -1 : 0);
@@ -910,8 +921,7 @@ CONTENT *mutt_get_content_info (const char *fname, BODY *b)
   if (b != NULL && b->type == TYPETEXT && (!b->noconv && !b->force_charset))
   {
     char *chs = mutt_get_parameter ("charset", b->parameter);
-    char *fchs = b->use_disp ? ((AttachCharset && *AttachCharset) ?
-                                AttachCharset : Charset) : Charset;
+    char *fchs = b->use_disp ? (AttachCharset ? AttachCharset : Charset) : Charset;
     if (Charset && (chs || SendCharset) &&
         convert_file_from_to (fp, fchs, chs ? chs : SendCharset,
                               &fromcode, &tocode, info) != (size_t)(-1))
@@ -1056,8 +1066,7 @@ bye:
 
 void mutt_message_to_7bit (BODY *a, FILE *fp)
 {
-  char temp[_POSIX_PATH_MAX];
-  char *line = NULL;
+  BUFFER *temp = NULL;
   FILE *fpin = NULL;
   FILE *fpout = NULL;
   struct stat sb;
@@ -1076,12 +1085,15 @@ void mutt_message_to_7bit (BODY *a, FILE *fp)
     {
       mutt_perror ("stat");
       safe_fclose (&fpin);
+      goto cleanup;
     }
     a->length = sb.st_size;
   }
 
-  mutt_mktemp (temp, sizeof (temp));
-  if (!(fpout = safe_fopen (temp, "w+")))
+  /* Avoid buffer pool due to recursion */
+  temp = mutt_buffer_new ();
+  mutt_buffer_mktemp (temp);
+  if (!(fpout = safe_fopen (mutt_b2s (temp), "w+")))
   {
     mutt_perror ("fopen");
     goto cleanup;
@@ -1100,36 +1112,42 @@ void mutt_message_to_7bit (BODY *a, FILE *fp)
   fputc ('\n', fpout);
   mutt_write_mime_body (a->parts, fpout);
 
-cleanup:
-  FREE (&line);
-
-  if (fpin && fpin != fp)
+  if (fpin != fp)
     safe_fclose (&fpin);
-  if (fpout)
-    safe_fclose (&fpout);
-  else
-    return;
+  safe_fclose (&fpout);
 
   a->encoding = ENC7BIT;
   FREE (&a->d_filename);
   a->d_filename = a->filename;
   if (a->filename && a->unlink)
     unlink (a->filename);
-  a->filename = safe_strdup (temp);
+  a->filename = safe_strdup (mutt_b2s (temp));
   a->unlink = 1;
   if (stat (a->filename, &sb) == -1)
   {
     mutt_perror ("stat");
-    return;
+    goto cleanup;
   }
   a->length = sb.st_size;
   mutt_free_body (&a->parts);
   a->hdr->content = NULL;
+
+cleanup:
+  if (fpin && fpin != fp)
+    safe_fclose (&fpin);
+
+  if (fpout)
+  {
+    safe_fclose (&fpout);
+    mutt_unlink (mutt_b2s (temp));
+  }
+
+  mutt_buffer_free (&temp);
 }
 
 static void transform_to_7bit (BODY *a, FILE *fpin)
 {
-  char buff[_POSIX_PATH_MAX];
+  BUFFER *buff;
   STATE s;
   struct stat sb;
 
@@ -1152,10 +1170,14 @@ static void transform_to_7bit (BODY *a, FILE *fpin)
       a->noconv = 1;
       a->force_charset = 1;
 
-      mutt_mktemp (buff, sizeof (buff));
-      if ((s.fpout = safe_fopen (buff, "w")) == NULL)
+      /* Because of the potential recursion in message types, we
+       * restrict the lifetime of the buffer tightly */
+      buff = mutt_buffer_pool_get ();
+      mutt_buffer_mktemp (buff);
+      if ((s.fpout = safe_fopen (mutt_b2s (buff), "w")) == NULL)
       {
 	mutt_perror ("fopen");
+        mutt_buffer_pool_release (&buff);
 	return;
       }
       s.fpin = fpin;
@@ -1163,7 +1185,8 @@ static void transform_to_7bit (BODY *a, FILE *fpin)
       safe_fclose (&s.fpout);
       FREE (&a->d_filename);
       a->d_filename = a->filename;
-      a->filename = safe_strdup (buff);
+      a->filename = safe_strdup (mutt_b2s (buff));
+      mutt_buffer_pool_release (&buff);
       a->unlink = 1;
       if (stat (a->filename, &sb) == -1)
       {
@@ -1362,6 +1385,123 @@ BODY *mutt_make_message_attach (CONTEXT *ctx, HEADER *hdr, int attach_msg)
   return (body);
 }
 
+BODY *mutt_run_send_alternative_filter (BODY *b)
+{
+  BUFFER *alt_file = NULL;
+  FILE *b_fp = NULL, *alt_fp = NULL;
+  FILE *filter_in = NULL, *filter_out = NULL, *filter_err = NULL;
+  BODY *alternative = NULL;
+  pid_t thepid = 0;
+  char *mime = NULL;
+  char *buf = NULL;
+  size_t buflen;
+
+  if (!SendMultipartAltFilter)
+    return NULL;
+
+  if ((b_fp = safe_fopen (b->filename, "r")) == NULL)
+  {
+    mutt_perror (b->filename);
+    goto cleanup;
+  }
+
+  alt_file = mutt_buffer_pool_get ();
+  mutt_buffer_mktemp (alt_file);
+  if ((alt_fp = safe_fopen (mutt_b2s (alt_file), "w")) == NULL)
+  {
+    mutt_perror (mutt_b2s (alt_file));
+    goto cleanup;
+  }
+
+  if ((thepid = mutt_create_filter (SendMultipartAltFilter, &filter_in, &filter_out, &filter_err)) < 0)
+  {
+    mutt_error (_("Error running \"%s\"!"), SendMultipartAltFilter);
+    goto cleanup;
+  }
+
+  mutt_copy_stream (b_fp, filter_in);
+  safe_fclose (&b_fp);
+  safe_fclose (&filter_in);
+
+  mime = mutt_read_line (NULL, &buflen, filter_out, NULL, 0);
+  if (!mime || !strchr (mime, '/'))
+  {
+    /* L10N:
+       The first line of output from $send_multipart_alternative_filter
+       should be a mime type, e.g. text/html.  This error is generated
+       if that is missing.
+    */
+    mutt_error (_("Missing mime type from output of \"%s\"!"), SendMultipartAltFilter);
+    goto cleanup;
+  }
+
+  buf = mutt_read_line (NULL, &buflen, filter_out, NULL, 0);
+  if (!buf || mutt_strlen (buf))
+  {
+    /* L10N:
+       The second line of output from $send_multipart_alternative_filter
+       should be a blank line.  This error is generated if the blank line
+       is missing.
+    */
+    mutt_error (_("Missing blank line separator from output of \"%s\"!"), SendMultipartAltFilter);
+    goto cleanup;
+  }
+
+  mutt_copy_stream (filter_out, alt_fp);
+  safe_fclose (&filter_out);
+  safe_fclose (&filter_err);
+
+  if (mutt_wait_filter (thepid) != 0)
+  {
+    mutt_error (_("Error running \"%s\"!"), SendMultipartAltFilter);
+    thepid = 0;
+    goto cleanup;
+  }
+  thepid = 0;
+  safe_fclose (&alt_fp);
+
+  alternative = mutt_new_body ();
+  alternative->filename = safe_strdup (mutt_b2s (alt_file));
+  alternative->unlink = 1;
+  alternative->use_disp = 0;
+  alternative->disposition = DISPINLINE;
+
+  mutt_parse_content_type (mime, alternative);
+  if (alternative->type == TYPEMULTIPART)
+  {
+    /* L10N:
+       Some clever people may try to generate a multipart/mixed
+       "alternative" using $send_multipart_alternative_filter.  The
+       actual sending for this will not work, because the data
+       structures will not be properly generated.  To preempt bug
+       reports, this error is displayed, and the generation is blocked
+       at the filter level.
+     */
+    mutt_error _("$send_multipart_alternative_filter does not support multipart type generation.");
+    mutt_free_body (&alternative);
+    goto cleanup;
+  }
+  mutt_update_encoding (alternative);
+
+cleanup:
+  safe_fclose (&b_fp);
+  if (alt_fp)
+  {
+    safe_fclose (&alt_fp);
+    mutt_unlink (mutt_b2s (alt_file));
+  }
+  mutt_buffer_pool_release (&alt_file);
+  safe_fclose (&filter_in);
+  safe_fclose (&filter_out);
+  safe_fclose (&filter_err);
+  if (thepid > 0)
+    mutt_wait_filter (thepid);
+  FREE (&buf);
+  FREE (&mime);
+
+  return alternative;
+}
+
 static void run_mime_type_query (BODY *att)
 {
   FILE *fp, *fperr;
@@ -1402,8 +1542,7 @@ BODY *mutt_make_file_attach (const char *path)
   att = mutt_new_body ();
   att->filename = safe_strdup (path);
 
-  if (MimeTypeQueryCmd && *MimeTypeQueryCmd &&
-      option (OPTMIMETYPEQUERYFIRST))
+  if (MimeTypeQueryCmd && option (OPTMIMETYPEQUERYFIRST))
     run_mime_type_query (att);
 
   /* Attempt to determine the appropriate content-type based on the filename
@@ -1413,7 +1552,7 @@ BODY *mutt_make_file_attach (const char *path)
     mutt_lookup_mime_type (att, path);
 
   if (!att->subtype &&
-      MimeTypeQueryCmd && *MimeTypeQueryCmd &&
+      MimeTypeQueryCmd &&
       !option (OPTMIMETYPEQUERYFIRST))
     run_mime_type_query (att);
 
@@ -1479,13 +1618,13 @@ static int mutt_check_boundary (const char* boundary, BODY *b)
   return 0;
 }
 
-BODY *mutt_make_multipart (BODY *b)
+static BODY *mutt_make_multipart (BODY *b, const char *subtype)
 {
   BODY *new;
 
   new = mutt_new_body ();
   new->type = TYPEMULTIPART;
-  new->subtype = safe_strdup ("mixed");
+  new->subtype = safe_strdup (subtype);
   new->encoding = get_toplevel_encoding (b);
   do
   {
@@ -1514,6 +1653,54 @@ BODY *mutt_remove_multipart (BODY *b)
     t->parts = NULL;
     mutt_free_body (&t);
   }
+  return b;
+}
+
+BODY *mutt_make_multipart_mixed (BODY *b)
+{
+  return mutt_make_multipart (b, "mixed");
+}
+
+/* remove the multipart/mixed body if it exists */
+BODY *mutt_remove_multipart_mixed (BODY *b)
+{
+  if ((b->type == TYPEMULTIPART) &&
+      !ascii_strcasecmp (b->subtype, "mixed"))
+    return mutt_remove_multipart (b);
+
+  return b;
+}
+
+BODY *mutt_make_multipart_alternative (BODY *b, BODY *alternative)
+{
+  BODY *attachments, *mp;
+
+  attachments = b->next;
+
+  b->next = alternative;
+  mp = mutt_make_multipart (b, "alternative");
+
+  mp->next = attachments;
+
+  return mp;
+}
+
+BODY *mutt_remove_multipart_alternative (BODY *b)
+{
+  BODY *attachments;
+
+  if ((b->type != TYPEMULTIPART) ||
+      ascii_strcasecmp (b->subtype, "alternative"))
+    return b;
+
+  attachments = b->next;
+  b->next = NULL;
+
+  b = mutt_remove_multipart (b);
+
+  mutt_free_body (&b->next);
+  b->next = attachments;
+
   return b;
 }
 
@@ -1967,6 +2154,7 @@ out:
  *
  * mode == MUTT_WRITE_HEADER_EDITHDRS  => "lite" mode (used for edit_hdrs)
  * mode == MUTT_WRITE_HEADER_NORMAL    => normal mode.  write full header + MIME headers
+ * mode == MUTT_WRITE_HEADER_FCC       => fcc mode, like normal mode but for Bcc header
  * mode == MUTT_WRITE_HEADER_POSTPONE  => write just the envelope info
  * mode == MUTT_WRITE_HEADER_MIME      => for writing protected headers
  *
@@ -1987,7 +2175,8 @@ int mutt_write_rfc822_header (FILE *fp, ENVELOPE *env, BODY *attach,
   LIST *tmp = env->userhdrs;
   int has_agent = 0; /* user defined user-agent header field exists */
 
-  if (mode == MUTT_WRITE_HEADER_NORMAL && !privacy)
+  if ((mode == MUTT_WRITE_HEADER_NORMAL || mode == MUTT_WRITE_HEADER_FCC) &&
+      !privacy)
     fputs (mutt_make_date (buffer, sizeof(buffer)), fp);
 
   /* OPTUSEFROM is not consulted here so that we can still write a From:
@@ -2027,6 +2216,7 @@ int mutt_write_rfc822_header (FILE *fp, ENVELOPE *env, BODY *attach,
   {
     if (mode == MUTT_WRITE_HEADER_POSTPONE ||
         mode == MUTT_WRITE_HEADER_EDITHDRS ||
+        mode == MUTT_WRITE_HEADER_FCC ||
         (mode == MUTT_WRITE_HEADER_NORMAL && option(OPTWRITEBCC)))
     {
       fputs ("Bcc: ", fp);
@@ -2040,6 +2230,7 @@ int mutt_write_rfc822_header (FILE *fp, ENVELOPE *env, BODY *attach,
   {
     if (hide_protected_subject &&
         (mode == MUTT_WRITE_HEADER_NORMAL ||
+         mode == MUTT_WRITE_HEADER_FCC ||
          mode == MUTT_WRITE_HEADER_POSTPONE))
       mutt_write_one_header (fp, "Subject", ProtHdrSubject, NULL, 0, 0);
     else
@@ -2067,6 +2258,7 @@ int mutt_write_rfc822_header (FILE *fp, ENVELOPE *env, BODY *attach,
   }
 
   if (mode == MUTT_WRITE_HEADER_NORMAL ||
+      mode == MUTT_WRITE_HEADER_FCC ||
       mode == MUTT_WRITE_HEADER_POSTPONE)
   {
     if (env->references)
@@ -2087,6 +2279,16 @@ int mutt_write_rfc822_header (FILE *fp, ENVELOPE *env, BODY *attach,
     mutt_write_references (env->in_reply_to, fp, 0);
     fputc ('\n', fp);
   }
+
+#ifdef USE_AUTOCRYPT
+  if (option (OPTAUTOCRYPT))
+  {
+    if (mode == MUTT_WRITE_HEADER_NORMAL || mode == MUTT_WRITE_HEADER_FCC)
+      mutt_autocrypt_write_autocrypt_header (env, fp);
+    if (mode == MUTT_WRITE_HEADER_MIME)
+      mutt_autocrypt_write_gossip_headers (env, fp);
+  }
+#endif
 
   /* Add any user defined headers */
   for (; tmp; tmp = tmp->next)
@@ -2120,7 +2322,8 @@ int mutt_write_rfc822_header (FILE *fp, ENVELOPE *env, BODY *attach,
     }
   }
 
-  if (mode == MUTT_WRITE_HEADER_NORMAL && !privacy &&
+  if ((mode == MUTT_WRITE_HEADER_NORMAL || mode == MUTT_WRITE_HEADER_FCC) &&
+      !privacy &&
       option (OPTXMAILER) && !has_agent)
   {
     /* Add a vanity header */
@@ -2229,10 +2432,12 @@ send_msg (const char *path, char **args, const char *msg, char **tempfile)
 
   if (SendmailWait >= 0 && tempfile)
   {
-    char tmp[_POSIX_PATH_MAX];
+    BUFFER *tmp;
 
-    mutt_mktemp (tmp, sizeof (tmp));
-    *tempfile = safe_strdup (tmp);
+    tmp = mutt_buffer_pool_get ();
+    mutt_buffer_mktemp (tmp);
+    *tempfile = safe_strdup (mutt_b2s (tmp));
+    mutt_buffer_pool_release (&tmp);
   }
 
   if ((pid = fork ()) == 0)
@@ -2591,7 +2796,8 @@ static int _mutt_bounce_message (FILE *fp, HEADER *h, ADDRESS *to, const char *r
 {
   int i, ret = 0;
   FILE *f;
-  char date[SHORT_STRING], tempfile[_POSIX_PATH_MAX];
+  char date[SHORT_STRING];
+  BUFFER *tempfile;
   MESSAGE *msg = NULL;
 
   if (!h)
@@ -2609,8 +2815,9 @@ static int _mutt_bounce_message (FILE *fp, HEADER *h, ADDRESS *to, const char *r
 
   if (!fp) fp = msg->fp;
 
-  mutt_mktemp (tempfile, sizeof (tempfile));
-  if ((f = safe_fopen (tempfile, "w")) != NULL)
+  tempfile = mutt_buffer_pool_get ();
+  mutt_buffer_mktemp (tempfile);
+  if ((f = safe_fopen (mutt_b2s (tempfile), "w")) != NULL)
   {
     int ch_flags = CH_XMIT | CH_NONEWLINE | CH_NOQFROM;
     char* msgid_str;
@@ -2636,13 +2843,15 @@ static int _mutt_bounce_message (FILE *fp, HEADER *h, ADDRESS *to, const char *r
     }
 #if USE_SMTP
     if (SmtpUrl)
-      ret = mutt_smtp_send (env_from, to, NULL, NULL, tempfile,
+      ret = mutt_smtp_send (env_from, to, NULL, NULL, mutt_b2s (tempfile),
                             h->content->encoding == ENC8BIT);
     else
 #endif /* USE_SMTP */
-      ret = mutt_invoke_sendmail (env_from, to, NULL, NULL, tempfile,
+      ret = mutt_invoke_sendmail (env_from, to, NULL, NULL, mutt_b2s (tempfile),
                                   h->content->encoding == ENC8BIT);
   }
+
+  mutt_buffer_pool_release (&tempfile);
 
   if (msg)
     mx_close_message (Context, &msg);
@@ -2760,13 +2969,13 @@ static void set_noconv_flags (BODY *b, short flag)
   }
 }
 
-int mutt_write_fcc (const char *path, HEADER *hdr, const char *msgid, int post, char *fcc)
+int mutt_write_fcc (const char *path, HEADER *hdr, const char *msgid, int post, const char *fcc)
 {
   CONTEXT f;
   MESSAGE *msg;
-  char tempfile[_POSIX_PATH_MAX];
+  BUFFER *tempfile = NULL;
   FILE *tempfp = NULL;
-  int r, need_buffy_cleanup = 0;
+  int r = -1, need_buffy_cleanup = 0;
   struct stat st;
   char buf[SHORT_STRING];
   int onm_flags;
@@ -2778,7 +2987,7 @@ int mutt_write_fcc (const char *path, HEADER *hdr, const char *msgid, int post, 
   {
     dprint (1, (debugfile, "mutt_write_fcc(): unable to open mailbox %s in append-mode, aborting.\n",
 		path));
-    return (-1);
+    goto cleanup;
   }
 
   /* We need to add a Content-Length field to avoid problems where a line in
@@ -2786,12 +2995,13 @@ int mutt_write_fcc (const char *path, HEADER *hdr, const char *msgid, int post, 
    */
   if (f.magic == MUTT_MMDF || f.magic == MUTT_MBOX)
   {
-    mutt_mktemp (tempfile, sizeof (tempfile));
-    if ((tempfp = safe_fopen (tempfile, "w+")) == NULL)
+    tempfile = mutt_buffer_pool_get ();
+    mutt_buffer_mktemp (tempfile);
+    if ((tempfp = safe_fopen (mutt_b2s (tempfile), "w+")) == NULL)
     {
-      mutt_perror (tempfile);
+      mutt_perror (mutt_b2s (tempfile));
       mx_close_mailbox (&f, NULL);
-      return (-1);
+      goto cleanup;
     }
     /* remember new mail status before appending message */
     need_buffy_cleanup = 1;
@@ -2805,14 +3015,14 @@ int mutt_write_fcc (const char *path, HEADER *hdr, const char *msgid, int post, 
   if ((msg = mx_open_new_message (&f, hdr, onm_flags)) == NULL)
   {
     mx_close_mailbox (&f, NULL);
-    return (-1);
+    goto cleanup;
   }
 
   /* post == 1 => postpone message.
-   * post == 0 => Normal mode.
+   * post == 0 => fcc mode.
    * */
   mutt_write_rfc822_header (msg->fp, hdr->env, hdr->content,
-                            post ? MUTT_WRITE_HEADER_POSTPONE : MUTT_WRITE_HEADER_NORMAL,
+                            post ? MUTT_WRITE_HEADER_POSTPONE : MUTT_WRITE_HEADER_FCC,
                             0,
                             option (OPTCRYPTPROTHDRSREAD) &&
                             mutt_should_hide_protected_subject (hdr));
@@ -2852,11 +3062,17 @@ int mutt_write_fcc (const char *path, HEADER *hdr, const char *msgid, int post, 
     if (hdr->security & SIGN)
     {
       fputc ('S', msg->fp);
-      if (PgpSignAs && *PgpSignAs)
+      if (PgpSignAs)
         fprintf (msg->fp, "<%s>", PgpSignAs);
     }
     if (hdr->security & INLINE)
       fputc ('I', msg->fp);
+#ifdef USE_AUTOCRYPT
+    if (hdr->security & AUTOCRYPT)
+      fputc ('A', msg->fp);
+    if (hdr->security & AUTOCRYPT_OVERRIDE)
+      fputc ('Z', msg->fp);
+#endif
     fputc ('\n', msg->fp);
   }
 
@@ -2868,7 +3084,7 @@ int mutt_write_fcc (const char *path, HEADER *hdr, const char *msgid, int post, 
     if (hdr->security & ENCRYPT)
     {
       fputc ('E', msg->fp);
-      if (SmimeCryptAlg && *SmimeCryptAlg)
+      if (SmimeCryptAlg)
         fprintf (msg->fp, "C<%s>", SmimeCryptAlg);
     }
     if (hdr->security & OPPENCRYPT)
@@ -2876,7 +3092,7 @@ int mutt_write_fcc (const char *path, HEADER *hdr, const char *msgid, int post, 
     if (hdr->security & SIGN)
     {
       fputc ('S', msg->fp);
-      if (SmimeSignAs && *SmimeSignAs)
+      if (SmimeSignAs)
         fprintf (msg->fp, "<%s>", SmimeSignAs);
     }
     if (hdr->security & INLINE)
@@ -2922,13 +3138,13 @@ int mutt_write_fcc (const char *path, HEADER *hdr, const char *msgid, int post, 
     fflush (tempfp);
     if (ferror (tempfp))
     {
-      dprint (1, (debugfile, "mutt_write_fcc(): %s: write failed.\n", tempfile));
+      dprint (1, (debugfile, "mutt_write_fcc(): %s: write failed.\n", mutt_b2s (tempfile)));
       safe_fclose (&tempfp);
-      unlink (tempfile);
+      unlink (mutt_b2s (tempfile));
       mx_commit_message (msg, &f);	/* XXX - really? */
       mx_close_message (&f, &msg);
       mx_close_mailbox (&f, NULL);
-      return -1;
+      goto cleanup;
     }
 
     /* count the number of lines */
@@ -2941,11 +3157,11 @@ int mutt_write_fcc (const char *path, HEADER *hdr, const char *msgid, int post, 
     /* copy the body and clean up */
     rewind (tempfp);
     r = mutt_copy_stream (tempfp, msg->fp);
-    if (fclose (tempfp) != 0)
+    if (safe_fclose (&tempfp) != 0)
       r = -1;
     /* if there was an error, leave the temp version */
     if (!r)
-      unlink (tempfile);
+      unlink (mutt_b2s (tempfile));
   }
   else
   {
@@ -2963,6 +3179,14 @@ int mutt_write_fcc (const char *path, HEADER *hdr, const char *msgid, int post, 
 
   if (post)
     set_noconv_flags (hdr->content, 0);
+
+cleanup:
+  if (tempfp)
+  {
+    safe_fclose (&tempfp);
+    unlink (mutt_b2s (tempfile));
+  }
+  mutt_buffer_pool_release (&tempfile);
 
   return r;
 }

@@ -84,6 +84,8 @@ int mutt_socket_close (CONNECTION* conn)
 
   conn->fd = -1;
   conn->ssf = 0;
+  conn->bufpos = 0;
+  conn->available = 0;
 
   return rc;
 }
@@ -265,7 +267,7 @@ CONNECTION* mutt_conn_find (const CONNECTION* start, const ACCOUNT* account)
   conn->next = Connections;
   Connections = conn;
 
-  if (Tunnel && *Tunnel)
+  if (Tunnel)
     mutt_tunnel_socket_setup (conn);
   else if (account->flags & MUTT_ACCT_SSL)
   {

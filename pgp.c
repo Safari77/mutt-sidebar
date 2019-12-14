@@ -403,14 +403,15 @@ int pgp_application_pgp_handler (BODY *m, STATE *s)
 {
   int could_not_decrypt, decrypt_okay_rc;
   int needpass = -1, pgp_keyblock = 0;
-  int clearsign = 0, rv, rc;
+  int clearsign = 0;
+  int rc = -1;
   int c = 1; /* silence GCC warning */
   long bytes;
   LOFF_T last_pos, offset;
   char buf[HUGE_STRING];
-  char pgpoutfile[_POSIX_PATH_MAX];
-  char pgperrfile[_POSIX_PATH_MAX];
-  char tmpfname[_POSIX_PATH_MAX];
+  BUFFER *pgpoutfile = NULL;
+  BUFFER *pgperrfile = NULL;
+  BUFFER *tmpfname = NULL;
   FILE *pgpout = NULL, *pgpin = NULL, *pgperr = NULL;
   FILE *tmpfp = NULL;
   pid_t thepid;
@@ -420,9 +421,12 @@ int pgp_application_pgp_handler (BODY *m, STATE *s)
 
   char *gpgcharset = NULL;
   char body_charset[STRING];
+
   mutt_get_body_charset (body_charset, sizeof (body_charset), m);
 
-  rc = 0;	/* silence false compiler warning if (s->flags & MUTT_DISPLAY) */
+  pgpoutfile = mutt_buffer_pool_get ();
+  pgperrfile = mutt_buffer_pool_get ();
+  tmpfname = mutt_buffer_pool_get ();
 
   fseeko (s->fpin, m->offset, 0);
   last_pos = m->offset;
@@ -466,11 +470,11 @@ int pgp_application_pgp_handler (BODY *m, STATE *s)
       have_any_sigs = have_any_sigs || (clearsign && (s->flags & MUTT_VERIFY));
 
       /* Copy PGP material to temporary file */
-      mutt_mktemp (tmpfname, sizeof (tmpfname));
-      if ((tmpfp = safe_fopen (tmpfname, "w+")) == NULL)
+      mutt_buffer_mktemp (tmpfname);
+      if ((tmpfp = safe_fopen (mutt_b2s (tmpfname), "w+")) == NULL)
       {
-	mutt_perror (tmpfname);
-	return -1;
+	mutt_perror (mutt_b2s (tmpfname));
+	goto out;
       }
 
       fputs (buf, tmpfp);
@@ -505,27 +509,25 @@ int pgp_application_pgp_handler (BODY *m, STATE *s)
       /* Invoke PGP if needed */
       if (!clearsign || (s->flags & MUTT_VERIFY))
       {
-	mutt_mktemp (pgpoutfile, sizeof (pgpoutfile));
-	if ((pgpout = safe_fopen (pgpoutfile, "w+")) == NULL)
+	mutt_buffer_mktemp (pgpoutfile);
+	if ((pgpout = safe_fopen (mutt_b2s (pgpoutfile), "w+")) == NULL)
 	{
-	  mutt_perror (pgpoutfile);
-          rc = -1;
+	  mutt_perror (mutt_b2s (pgpoutfile));
           goto out;
 	}
-        unlink (pgpoutfile);
+        unlink (mutt_b2s (pgpoutfile));
 
-        mutt_mktemp (pgperrfile, sizeof (pgperrfile));
-        if ((pgperr = safe_fopen (pgperrfile, "w+")) == NULL)
+        mutt_buffer_mktemp (pgperrfile);
+        if ((pgperr = safe_fopen (mutt_b2s (pgperrfile), "w+")) == NULL)
         {
-          mutt_perror (pgperrfile);
-          rc = -1;
+          mutt_perror (mutt_b2s (pgperrfile));
           goto out;
         }
-        unlink (pgperrfile);
+        unlink (mutt_b2s (pgperrfile));
 
 	if ((thepid = pgp_invoke_decode (&pgpin, NULL, NULL,
                                          -1, fileno (pgpout), fileno (pgperr),
-                                         tmpfname, needpass)) == -1)
+                                         mutt_b2s (tmpfname), needpass)) == -1)
 	{
 	  safe_fclose (&pgpout);
 	  maybe_goodsig = 0;
@@ -534,6 +536,8 @@ int pgp_application_pgp_handler (BODY *m, STATE *s)
 	}
 	else /* PGP started successfully */
 	{
+          int wait_filter_rc, checksig_rc;
+
 	  if (needpass)
 	  {
 	    if (!pgp_valid_passphrase ()) pgp_void_passphrase();
@@ -544,7 +548,7 @@ int pgp_application_pgp_handler (BODY *m, STATE *s)
 
 	  safe_fclose (&pgpin);
 
-	  rv = mutt_wait_filter (thepid);
+	  wait_filter_rc = mutt_wait_filter (thepid);
 
           fflush (pgperr);
           /* If we are expecting an encrypted message, verify status fd output.
@@ -566,16 +570,18 @@ int pgp_application_pgp_handler (BODY *m, STATE *s)
 	  {
             rewind (pgperr);
 	    crypt_current_time (s, "PGP");
-	    rc = pgp_copy_checksig (pgperr, s->fpout);
+	    checksig_rc = pgp_copy_checksig (pgperr, s->fpout);
 
-	    if (rc == 0) have_any_sigs = 1;
+	    if (checksig_rc == 0)
+              have_any_sigs = 1;
 	    /*
 	     * Sig is bad if
 	     * gpg_good_sign-pattern did not match || pgp_decode_command returned not 0
 	     * Sig _is_ correct if
 	     *  gpg_good_sign="" && pgp_decode_command returned 0
 	     */
-	    if (rc == -1 || rv) maybe_goodsig = 0;
+	    if (checksig_rc == -1 || wait_filter_rc)
+              maybe_goodsig = 0;
 
 	    state_attach_puts (_("[-- End of PGP output --]\n\n"), s);
 	  }
@@ -602,7 +608,6 @@ int pgp_application_pgp_handler (BODY *m, STATE *s)
 	{
           mutt_error _("Could not decrypt PGP message");
 	  mutt_sleep (1);
-	  rc = -1;
 	  goto out;
         }
       }
@@ -649,7 +654,7 @@ int pgp_application_pgp_handler (BODY *m, STATE *s)
        * unlinked inside the loop.
        */
       safe_fclose (&tmpfp);
-      mutt_unlink (tmpfname);
+      mutt_unlink (mutt_b2s (tmpfname));
       safe_fclose (&pgpout);
       safe_fclose (&pgperr);
 
@@ -694,10 +699,14 @@ out:
   if (tmpfp)
   {
     safe_fclose (&tmpfp);
-    mutt_unlink (tmpfname);
+    mutt_unlink (mutt_b2s (tmpfname));
   }
   safe_fclose (&pgpout);
   safe_fclose (&pgperr);
+
+  mutt_buffer_pool_release (&pgpoutfile);
+  mutt_buffer_pool_release (&pgperrfile);
+  mutt_buffer_pool_release (&tmpfname);
 
   FREE(&gpgcharset);
 
@@ -712,28 +721,30 @@ out:
 
 static int pgp_check_traditional_one_body (FILE *fp, BODY *b)
 {
-  char tempfile[_POSIX_PATH_MAX];
+  BUFFER *tempfile = NULL;
   char buf[HUGE_STRING];
   FILE *tfp;
+  int rc = 0;
 
   short sgn = 0;
   short enc = 0;
   short key = 0;
 
   if (b->type != TYPETEXT)
-    return 0;
+    goto cleanup;
 
-  mutt_mktemp (tempfile, sizeof (tempfile));
-  if (mutt_decode_save_attachment (fp, b, tempfile, 0, 0) != 0)
+  tempfile = mutt_buffer_pool_get ();
+  mutt_buffer_mktemp (tempfile);
+  if (mutt_decode_save_attachment (fp, b, mutt_b2s (tempfile), 0, 0) != 0)
   {
-    unlink (tempfile);
-    return 0;
+    unlink (mutt_b2s (tempfile));
+    goto cleanup;
   }
 
-  if ((tfp = fopen (tempfile, "r")) == NULL)
+  if ((tfp = fopen (mutt_b2s (tempfile), "r")) == NULL)
   {
-    unlink (tempfile);
-    return 0;
+    unlink (mutt_b2s (tempfile));
+    goto cleanup;
   }
 
   while (fgets (buf, sizeof (buf), tfp))
@@ -749,10 +760,10 @@ static int pgp_check_traditional_one_body (FILE *fp, BODY *b)
     }
   }
   safe_fclose (&tfp);
-  unlink (tempfile);
+  unlink (mutt_b2s (tempfile));
 
   if (!enc && !sgn && !key)
-    return 0;
+    goto cleanup;
 
   /* fix the content type */
 
@@ -764,7 +775,11 @@ static int pgp_check_traditional_one_body (FILE *fp, BODY *b)
   else if (key)
     mutt_set_parameter ("x-action", "pgp-keys", &b->parameter);
 
-  return 1;
+  rc = 1;
+
+cleanup:
+  mutt_buffer_pool_release (&tempfile);
+  return rc;
 }
 
 int pgp_check_traditional (FILE *fp, BODY *b, int just_one)
@@ -796,37 +811,39 @@ int pgp_check_traditional (FILE *fp, BODY *b, int just_one)
 
 int pgp_verify_one (BODY *sigbdy, STATE *s, const char *tempfile)
 {
-  char sigfile[_POSIX_PATH_MAX], pgperrfile[_POSIX_PATH_MAX];
+  BUFFER *sigfile = NULL, *pgperrfile = NULL;
   FILE *fp, *pgpout, *pgperr;
   pid_t thepid;
   int badsig = -1;
   int rv;
 
-  snprintf (sigfile, sizeof (sigfile), "%s.asc", tempfile);
+  sigfile = mutt_buffer_pool_get ();
+  pgperrfile = mutt_buffer_pool_get ();
 
-  if (!(fp = safe_fopen (sigfile, "w")))
+  mutt_buffer_printf (sigfile, "%s.asc", tempfile);
+  if (!(fp = safe_fopen (mutt_b2s (sigfile), "w")))
   {
-    mutt_perror(sigfile);
-    return -1;
+    mutt_perror (mutt_b2s (sigfile));
+    goto cleanup;
   }
 
   fseeko (s->fpin, sigbdy->offset, 0);
   mutt_copy_bytes (s->fpin, fp, sigbdy->length);
   safe_fclose (&fp);
 
-  mutt_mktemp (pgperrfile, sizeof (pgperrfile));
-  if (!(pgperr = safe_fopen(pgperrfile, "w+")))
+  mutt_buffer_mktemp (pgperrfile);
+  if (!(pgperr = safe_fopen (mutt_b2s (pgperrfile), "w+")))
   {
-    mutt_perror(pgperrfile);
-    unlink(sigfile);
-    return -1;
+    mutt_perror (mutt_b2s (pgperrfile));
+    unlink (mutt_b2s (sigfile));
+    goto cleanup;
   }
 
   crypt_current_time (s, "PGP");
 
   if ((thepid = pgp_invoke_verify (NULL, &pgpout, NULL,
                                    -1, -1, fileno(pgperr),
-                                   tempfile, sigfile)) != -1)
+                                   tempfile, mutt_b2s (sigfile))) != -1)
   {
     if (pgp_copy_checksig (pgpout, s->fpout) >= 0)
       badsig = 0;
@@ -836,7 +853,7 @@ int pgp_verify_one (BODY *sigbdy, STATE *s, const char *tempfile)
     fflush (pgperr);
     rewind (pgperr);
 
-    if (pgp_copy_checksig  (pgperr, s->fpout) >= 0)
+    if (pgp_copy_checksig (pgperr, s->fpout) >= 0)
       badsig = 0;
 
     if ((rv = mutt_wait_filter (thepid)))
@@ -849,11 +866,14 @@ int pgp_verify_one (BODY *sigbdy, STATE *s, const char *tempfile)
 
   state_attach_puts (_("[-- End of PGP output --]\n\n"), s);
 
-  mutt_unlink (sigfile);
-  mutt_unlink (pgperrfile);
+  mutt_unlink (mutt_b2s (sigfile));
+  mutt_unlink (mutt_b2s (pgperrfile));
+
+cleanup:
+  mutt_buffer_pool_release (&sigfile);
+  mutt_buffer_pool_release (&pgperrfile);
 
   dprint (1, (debugfile, "pgp_verify_one: returning %d.\n", badsig));
-
   return badsig;
 }
 
@@ -864,13 +884,14 @@ static void pgp_extract_keys_from_attachment (FILE *fp, BODY *top)
 {
   STATE s;
   FILE *tempfp;
-  char tempfname[_POSIX_PATH_MAX];
+  BUFFER *tempfname = NULL;
 
-  mutt_mktemp (tempfname, sizeof (tempfname));
-  if (!(tempfp = safe_fopen (tempfname, "w")))
+  tempfname = mutt_buffer_pool_get ();
+  mutt_buffer_mktemp (tempfname);
+  if (!(tempfp = safe_fopen (mutt_b2s (tempfname), "w")))
   {
-    mutt_perror (tempfname);
-    return;
+    mutt_perror (mutt_b2s (tempfname));
+    goto cleanup;
   }
 
   memset (&s, 0, sizeof (STATE));
@@ -882,10 +903,13 @@ static void pgp_extract_keys_from_attachment (FILE *fp, BODY *top)
 
   safe_fclose (&tempfp);
 
-  pgp_invoke_import (tempfname);
+  pgp_invoke_import (mutt_b2s (tempfname));
   mutt_any_key_to_continue (NULL);
 
-  mutt_unlink (tempfname);
+  mutt_unlink (mutt_b2s (tempfname));
+
+cleanup:
+  mutt_buffer_pool_release (&tempfname);
 }
 
 void pgp_extract_keys_from_attachment_list (FILE *fp, int tag, BODY *top)
@@ -916,27 +940,29 @@ BODY *pgp_decrypt_part (BODY *a, STATE *s, FILE *fpout, BODY *p)
   char buf[LONG_STRING];
   FILE *pgpin, *pgpout, *pgperr, *pgptmp;
   struct stat info;
-  BODY *tattach;
+  BODY *tattach = NULL;
   int len;
-  char pgperrfile[_POSIX_PATH_MAX];
-  char pgptmpfile[_POSIX_PATH_MAX];
+  BUFFER *pgperrfile = NULL, *pgptmpfile = NULL;
   pid_t thepid;
   int rv;
 
-  mutt_mktemp (pgperrfile, sizeof (pgperrfile));
-  if ((pgperr = safe_fopen (pgperrfile, "w+")) == NULL)
-  {
-    mutt_perror (pgperrfile);
-    return NULL;
-  }
-  unlink (pgperrfile);
+  pgperrfile = mutt_buffer_pool_get ();
+  pgptmpfile = mutt_buffer_pool_get ();
 
-  mutt_mktemp (pgptmpfile, sizeof (pgptmpfile));
-  if ((pgptmp = safe_fopen (pgptmpfile, "w")) == NULL)
+  mutt_buffer_mktemp (pgperrfile);
+  if ((pgperr = safe_fopen (mutt_b2s (pgperrfile), "w+")) == NULL)
   {
-    mutt_perror (pgptmpfile);
+    mutt_perror (mutt_b2s (pgperrfile));
+    goto cleanup;
+  }
+  unlink (mutt_b2s (pgperrfile));
+
+  mutt_buffer_mktemp (pgptmpfile);
+  if ((pgptmp = safe_fopen (mutt_b2s (pgptmpfile), "w")) == NULL)
+  {
+    mutt_perror (mutt_b2s (pgptmpfile));
     safe_fclose (&pgperr);
-    return NULL;
+    goto cleanup;
   }
 
   /* Position the stream at the beginning of the body, and send the data to
@@ -948,13 +974,13 @@ BODY *pgp_decrypt_part (BODY *a, STATE *s, FILE *fpout, BODY *p)
   safe_fclose (&pgptmp);
 
   if ((thepid = pgp_invoke_decrypt (&pgpin, &pgpout, NULL, -1, -1,
-				    fileno (pgperr), pgptmpfile)) == -1)
+				    fileno (pgperr), mutt_b2s (pgptmpfile))) == -1)
   {
     safe_fclose (&pgperr);
-    unlink (pgptmpfile);
+    unlink (mutt_b2s (pgptmpfile));
     if (s->flags & MUTT_DISPLAY)
       state_attach_puts (_("[-- Error: could not create a PGP subprocess! --]\n\n"), s);
-    return (NULL);
+    goto cleanup;
   }
 
   /* send the PGP passphrase to the subprocess.  Never do this if the
@@ -978,7 +1004,7 @@ BODY *pgp_decrypt_part (BODY *a, STATE *s, FILE *fpout, BODY *p)
 
   safe_fclose (&pgpout);
   rv = mutt_wait_filter (thepid);
-  mutt_unlink(pgptmpfile);
+  mutt_unlink (mutt_b2s (pgptmpfile));
 
   fflush (pgperr);
   rewind (pgperr);
@@ -986,7 +1012,7 @@ BODY *pgp_decrypt_part (BODY *a, STATE *s, FILE *fpout, BODY *p)
   {
     mutt_error _("Decryption failed");
     pgp_void_passphrase ();
-    return NULL;
+    goto cleanup;
   }
 
   if (s->flags & MUTT_DISPLAY)
@@ -1012,7 +1038,7 @@ BODY *pgp_decrypt_part (BODY *a, STATE *s, FILE *fpout, BODY *p)
   {
     mutt_error _("Decryption failed");
     pgp_void_passphrase ();
-    return NULL;
+    goto cleanup;
   }
 
   rewind (fpout);
@@ -1030,12 +1056,15 @@ BODY *pgp_decrypt_part (BODY *a, STATE *s, FILE *fpout, BODY *p)
     mutt_parse_part (fpout, tattach);
   }
 
+cleanup:
+  mutt_buffer_pool_release (&pgperrfile);
+  mutt_buffer_pool_release (&pgptmpfile);
   return (tattach);
 }
 
 int pgp_decrypt_mime (FILE *fpin, FILE **fpout, BODY *b, BODY **cur)
 {
-  char tempfile[_POSIX_PATH_MAX];
+  BUFFER *tempfile = NULL;
   STATE s;
   BODY *p = b;
   int need_decode = 0;
@@ -1043,7 +1072,7 @@ int pgp_decrypt_mime (FILE *fpin, FILE **fpout, BODY *b, BODY **cur)
   LOFF_T saved_offset;
   size_t saved_length;
   FILE *decoded_fp = NULL;
-  int rv = 0;
+  int rv = -1;
 
   if (mutt_is_valid_multipart_pgp_encrypted (b))
   {
@@ -1060,6 +1089,8 @@ int pgp_decrypt_mime (FILE *fpin, FILE **fpout, BODY *b, BODY **cur)
   else
     return -1;
 
+  tempfile = mutt_buffer_pool_get ();
+
   memset (&s, 0, sizeof (s));
   s.fpin = fpin;
 
@@ -1069,13 +1100,13 @@ int pgp_decrypt_mime (FILE *fpin, FILE **fpout, BODY *b, BODY **cur)
     saved_offset = b->offset;
     saved_length = b->length;
 
-    mutt_mktemp (tempfile, sizeof (tempfile));
-    if ((decoded_fp = safe_fopen (tempfile, "w+")) == NULL)
+    mutt_buffer_mktemp (tempfile);
+    if ((decoded_fp = safe_fopen (mutt_b2s (tempfile), "w+")) == NULL)
     {
-      mutt_perror (tempfile);
-      return (-1);
+      mutt_perror (mutt_b2s (tempfile));
+      goto bail;
     }
-    unlink (tempfile);
+    unlink (mutt_b2s (tempfile));
 
     fseeko (s.fpin, b->offset, 0);
     s.fpout = decoded_fp;
@@ -1090,17 +1121,16 @@ int pgp_decrypt_mime (FILE *fpin, FILE **fpout, BODY *b, BODY **cur)
     s.fpout = 0;
   }
 
-  mutt_mktemp (tempfile, sizeof (tempfile));
-  if ((*fpout = safe_fopen (tempfile, "w+")) == NULL)
+  mutt_buffer_mktemp (tempfile);
+  if ((*fpout = safe_fopen (mutt_b2s (tempfile), "w+")) == NULL)
   {
-    mutt_perror (tempfile);
-    rv = -1;
+    mutt_perror (mutt_b2s (tempfile));
     goto bail;
   }
-  unlink (tempfile);
+  unlink (mutt_b2s (tempfile));
 
-  if ((*cur = pgp_decrypt_part (b, &s, *fpout, p)) == NULL)
-    rv = -1;
+  if ((*cur = pgp_decrypt_part (b, &s, *fpout, p)) != NULL)
+    rv = 0;
   rewind (*fpout);
 
 bail:
@@ -1112,6 +1142,7 @@ bail:
     safe_fclose (&decoded_fp);
   }
 
+  mutt_buffer_pool_release (&tempfile);
   return rv;
 }
 
@@ -1121,17 +1152,18 @@ bail:
  */
 int pgp_encrypted_handler (BODY *a, STATE *s)
 {
-  char tempfile[_POSIX_PATH_MAX];
+  BUFFER *tempfile = NULL;
   FILE *fpout, *fpin;
   BODY *tattach;
-  int rc = 0;
+  int rc = -1;
 
-  mutt_mktemp (tempfile, sizeof (tempfile));
-  if ((fpout = safe_fopen (tempfile, "w+")) == NULL)
+  tempfile = mutt_buffer_pool_get ();
+  mutt_buffer_mktemp (tempfile);
+  if ((fpout = safe_fopen (mutt_b2s (tempfile), "w+")) == NULL)
   {
     if (s->flags & MUTT_DISPLAY)
       state_attach_puts (_("[-- Error: could not create temporary file! --]\n"), s);
-    return -1;
+    goto cleanup;
   }
 
   if (s->flags & MUTT_DISPLAY) crypt_current_time (s, "PGP");
@@ -1196,12 +1228,13 @@ int pgp_encrypted_handler (BODY *a, STATE *s)
     mutt_sleep (2);
     /* void the passphrase, even if it's not necessarily the problem */
     pgp_void_passphrase ();
-    rc = -1;
   }
 
   safe_fclose (&fpout);
-  mutt_unlink(tempfile);
+  mutt_unlink (mutt_b2s (tempfile));
 
+cleanup:
+  mutt_buffer_pool_release (&tempfile);
   return rc;
 }
 
@@ -1212,29 +1245,32 @@ int pgp_encrypted_handler (BODY *a, STATE *s)
 
 BODY *pgp_sign_message (BODY *a)
 {
-  BODY *t;
+  BODY *t, *rv = NULL;
   char buffer[LONG_STRING];
-  char sigfile[_POSIX_PATH_MAX], signedfile[_POSIX_PATH_MAX];
+  BUFFER *sigfile, *signedfile;
   FILE *pgpin, *pgpout, *pgperr, *fp, *sfp;
   int err = 0;
   int empty = 1;
   pid_t thepid;
 
+  sigfile = mutt_buffer_pool_get ();
+  signedfile = mutt_buffer_pool_get ();
+
   convert_to_7bit (a); /* Signed data _must_ be in 7-bit format. */
 
-  mutt_mktemp (sigfile, sizeof (sigfile));
-  if ((fp = safe_fopen (sigfile, "w")) == NULL)
+  mutt_buffer_mktemp (sigfile);
+  if ((fp = safe_fopen (mutt_b2s (sigfile), "w")) == NULL)
   {
-    return (NULL);
+    goto cleanup;
   }
 
-  mutt_mktemp (signedfile, sizeof (signedfile));
-  if ((sfp = safe_fopen(signedfile, "w")) == NULL)
+  mutt_buffer_mktemp (signedfile);
+  if ((sfp = safe_fopen (mutt_b2s (signedfile), "w")) == NULL)
   {
-    mutt_perror(signedfile);
+    mutt_perror (mutt_b2s (signedfile));
     safe_fclose (&fp);
-    unlink(sigfile);
-    return NULL;
+    unlink (mutt_b2s (sigfile));
+    goto cleanup;
   }
 
   mutt_write_mime_header (a, sfp);
@@ -1243,13 +1279,13 @@ BODY *pgp_sign_message (BODY *a)
   safe_fclose (&sfp);
 
   if ((thepid = pgp_invoke_sign (&pgpin, &pgpout, &pgperr,
-				 -1, -1, -1, signedfile)) == -1)
+				 -1, -1, -1, mutt_b2s (signedfile))) == -1)
   {
     mutt_perror _("Can't open PGP subprocess!");
     safe_fclose (&fp);
-    unlink(sigfile);
-    unlink(signedfile);
-    return NULL;
+    unlink (mutt_b2s (sigfile));
+    unlink (mutt_b2s (signedfile));
+    goto cleanup;
   }
 
   if (!pgp_use_gpg_agent())
@@ -1285,26 +1321,26 @@ BODY *pgp_sign_message (BODY *a)
 
   safe_fclose (&pgperr);
   safe_fclose (&pgpout);
-  unlink (signedfile);
+  unlink (mutt_b2s (signedfile));
 
   if (fclose (fp) != 0)
   {
     mutt_perror ("fclose");
-    unlink (sigfile);
-    return (NULL);
+    unlink (mutt_b2s (sigfile));
+    goto cleanup;
   }
 
   if (err)
     mutt_any_key_to_continue (NULL);
   if (empty)
   {
-    unlink (sigfile);
+    unlink (mutt_b2s (sigfile));
     /* most likely error is a bad passphrase, so automatically forget it */
     pgp_void_passphrase ();
-    return (NULL); /* fatal error while signing */
+    goto cleanup; /* fatal error while signing */
   }
 
-  t = mutt_new_body ();
+  rv = t = mutt_new_body ();
   t->type = TYPEMULTIPART;
   t->subtype = safe_strdup ("signed");
   t->encoding = ENC7BIT;
@@ -1313,23 +1349,25 @@ BODY *pgp_sign_message (BODY *a)
 
   mutt_generate_boundary (&t->parameter);
   mutt_set_parameter ("protocol", "application/pgp-signature", &t->parameter);
-  mutt_set_parameter ("micalg", pgp_micalg (sigfile), &t->parameter);
+  mutt_set_parameter ("micalg", pgp_micalg (mutt_b2s (sigfile)), &t->parameter);
 
   t->parts = a;
-  a = t;
 
   t->parts->next = mutt_new_body ();
   t = t->parts->next;
   t->type = TYPEAPPLICATION;
   t->subtype = safe_strdup ("pgp-signature");
-  t->filename = safe_strdup (sigfile);
+  t->filename = safe_strdup (mutt_b2s (sigfile));
   t->use_disp = 0;
   t->disposition = DISPNONE;
   t->encoding = ENC7BIT;
   t->unlink = 1; /* ok to remove this file after sending. */
   mutt_set_parameter ("name", "signature.asc", &t->parameter);
 
-  return (a);
+cleanup:
+  mutt_buffer_pool_release (&sigfile);
+  mutt_buffer_pool_release (&signedfile);
+  return (rv);
 }
 
 /* This routine attempts to find the keyids of the recipients of a message.
@@ -1459,39 +1497,42 @@ char *pgp_findKeys (ADDRESS *adrlist, int oppenc_mode)
 BODY *pgp_encrypt_message (BODY *a, char *keylist, int sign)
 {
   char buf[LONG_STRING];
-  char tempfile[_POSIX_PATH_MAX], pgperrfile[_POSIX_PATH_MAX];
-  char pgpinfile[_POSIX_PATH_MAX];
+  BUFFER *tempfile, *pgperrfile, *pgpinfile;
   FILE *pgpin, *pgperr, *fpout, *fptmp;
-  BODY *t;
+  BODY *t = NULL;
   int err = 0;
   int empty = 0;
   pid_t thepid;
 
-  mutt_mktemp (tempfile, sizeof (tempfile));
-  if ((fpout = safe_fopen (tempfile, "w+")) == NULL)
+  tempfile = mutt_buffer_pool_get ();
+  pgperrfile = mutt_buffer_pool_get ();
+  pgpinfile = mutt_buffer_pool_get ();
+
+  mutt_buffer_mktemp (tempfile);
+  if ((fpout = safe_fopen (mutt_b2s (tempfile), "w+")) == NULL)
   {
-    mutt_perror (tempfile);
-    return (NULL);
+    mutt_perror (mutt_b2s (tempfile));
+    goto cleanup;
   }
 
-  mutt_mktemp (pgperrfile, sizeof (pgperrfile));
-  if ((pgperr = safe_fopen (pgperrfile, "w+")) == NULL)
+  mutt_buffer_mktemp (pgperrfile);
+  if ((pgperr = safe_fopen (mutt_b2s (pgperrfile), "w+")) == NULL)
   {
-    mutt_perror (pgperrfile);
-    unlink(tempfile);
+    mutt_perror (mutt_b2s (pgperrfile));
+    unlink (mutt_b2s (tempfile));
     safe_fclose (&fpout);
-    return NULL;
+    goto cleanup;
   }
-  unlink (pgperrfile);
+  unlink (mutt_b2s (pgperrfile));
 
-  mutt_mktemp (pgpinfile, sizeof (pgpinfile));
-  if ((fptmp = safe_fopen(pgpinfile, "w")) == NULL)
+  mutt_buffer_mktemp (pgpinfile);
+  if ((fptmp = safe_fopen (mutt_b2s (pgpinfile), "w")) == NULL)
   {
-    mutt_perror(pgpinfile);
-    unlink(tempfile);
+    mutt_perror (mutt_b2s (pgpinfile));
+    unlink (mutt_b2s (tempfile));
     safe_fclose (&fpout);
     safe_fclose (&pgperr);
-    return NULL;
+    goto cleanup;
   }
 
   if (sign)
@@ -1504,11 +1545,11 @@ BODY *pgp_encrypt_message (BODY *a, char *keylist, int sign)
 
   if ((thepid = pgp_invoke_encrypt (&pgpin, NULL, NULL, -1,
 				    fileno (fpout), fileno (pgperr),
-				    pgpinfile, keylist, sign)) == -1)
+				    mutt_b2s (pgpinfile), keylist, sign)) == -1)
   {
     safe_fclose (&pgperr);
-    unlink(pgpinfile);
-    return (NULL);
+    unlink (mutt_b2s (pgpinfile));
+    goto cleanup;
   }
 
   if (sign)
@@ -1522,7 +1563,7 @@ BODY *pgp_encrypt_message (BODY *a, char *keylist, int sign)
   if (mutt_wait_filter (thepid) && option(OPTPGPCHECKEXIT))
     empty=1;
 
-  unlink(pgpinfile);
+  unlink (mutt_b2s (pgpinfile));
 
   fflush (fpout);
   rewind (fpout);
@@ -1548,8 +1589,8 @@ BODY *pgp_encrypt_message (BODY *a, char *keylist, int sign)
     /* fatal error while trying to encrypt message */
     if (sign)
       pgp_void_passphrase (); /* just in case */
-    unlink (tempfile);
-    return (NULL);
+    unlink (mutt_b2s (tempfile));
+    goto cleanup;
   }
 
   t = mutt_new_body ();
@@ -1571,35 +1612,31 @@ BODY *pgp_encrypt_message (BODY *a, char *keylist, int sign)
   t->parts->next->type = TYPEAPPLICATION;
   t->parts->next->subtype = safe_strdup ("octet-stream");
   t->parts->next->encoding = ENC7BIT;
-  t->parts->next->filename = safe_strdup (tempfile);
+  t->parts->next->filename = safe_strdup (mutt_b2s (tempfile));
   t->parts->next->use_disp = 1;
   t->parts->next->disposition = DISPATTACH;
   t->parts->next->unlink = 1; /* delete after sending the message */
   t->parts->next->d_filename = safe_strdup ("msg.asc"); /* non pgp/mime can save */
 
+cleanup:
+  mutt_buffer_pool_release (&tempfile);
+  mutt_buffer_pool_release (&pgperrfile);
+  mutt_buffer_pool_release (&pgpinfile);
   return (t);
 }
 
 BODY *pgp_traditional_encryptsign (BODY *a, int flags, char *keylist)
 {
-  BODY *b;
-
-  char pgpoutfile[_POSIX_PATH_MAX];
-  char pgperrfile[_POSIX_PATH_MAX];
-  char pgpinfile[_POSIX_PATH_MAX];
-
+  BODY *b = NULL;
+  BUFFER *pgpinfile, *pgpoutfile, *pgperrfile;
   char body_charset[STRING];
   char *from_charset;
   const char *send_charset;
-
   FILE *pgpout = NULL, *pgperr = NULL, *pgpin = NULL;
   FILE *fp;
-
   int empty = 0;
   int err;
-
   char buff[STRING];
-
   pid_t thepid;
 
   if (a->type != TYPETEXT)
@@ -1613,12 +1650,16 @@ BODY *pgp_traditional_encryptsign (BODY *a, int flags, char *keylist)
     return NULL;
   }
 
-  mutt_mktemp (pgpinfile, sizeof (pgpinfile));
-  if ((pgpin = safe_fopen (pgpinfile, "w")) == NULL)
+  pgpinfile = mutt_buffer_pool_get ();
+  pgpoutfile = mutt_buffer_pool_get ();
+  pgperrfile = mutt_buffer_pool_get ();
+
+  mutt_buffer_mktemp (pgpinfile);
+  if ((pgpin = safe_fopen (mutt_b2s (pgpinfile), "w")) == NULL)
   {
-    mutt_perror (pgpinfile);
+    mutt_perror (mutt_b2s (pgpinfile));
     safe_fclose (&fp);
-    return NULL;
+    goto cleanup;
   }
 
   /* The following code is really correct:  If noconv is set,
@@ -1658,33 +1699,33 @@ BODY *pgp_traditional_encryptsign (BODY *a, int flags, char *keylist)
   safe_fclose (&fp);
   safe_fclose (&pgpin);
 
-  mutt_mktemp (pgpoutfile, sizeof (pgpoutfile));
-  mutt_mktemp (pgperrfile, sizeof (pgperrfile));
-  if ((pgpout = safe_fopen (pgpoutfile, "w+")) == NULL ||
-      (pgperr = safe_fopen (pgperrfile, "w+")) == NULL)
+  mutt_buffer_mktemp (pgpoutfile);
+  mutt_buffer_mktemp (pgperrfile);
+  if ((pgpout = safe_fopen (mutt_b2s (pgpoutfile), "w+")) == NULL ||
+      (pgperr = safe_fopen (mutt_b2s (pgperrfile), "w+")) == NULL)
   {
-    mutt_perror (pgpout ? pgperrfile : pgpoutfile);
-    unlink (pgpinfile);
+    mutt_perror (pgpout ? mutt_b2s (pgperrfile) : mutt_b2s (pgpoutfile));
+    unlink (mutt_b2s (pgpinfile));
     if (pgpout)
     {
       safe_fclose (&pgpout);
-      unlink (pgpoutfile);
+      unlink (mutt_b2s (pgpoutfile));
     }
-    return NULL;
+    goto cleanup;
   }
 
-  unlink (pgperrfile);
+  unlink (mutt_b2s (pgperrfile));
 
   if ((thepid = pgp_invoke_traditional (&pgpin, NULL, NULL,
 					-1, fileno (pgpout), fileno (pgperr),
-					pgpinfile, keylist, flags)) == -1)
+					mutt_b2s (pgpinfile), keylist, flags)) == -1)
   {
     mutt_perror _("Can't invoke PGP");
     safe_fclose (&pgpout);
     safe_fclose (&pgperr);
-    mutt_unlink (pgpinfile);
-    unlink (pgpoutfile);
-    return NULL;
+    mutt_unlink (mutt_b2s (pgpinfile));
+    unlink (mutt_b2s (pgpoutfile));
+    goto cleanup;
   }
 
   if (pgp_use_gpg_agent())
@@ -1696,7 +1737,7 @@ BODY *pgp_traditional_encryptsign (BODY *a, int flags, char *keylist)
   if (mutt_wait_filter (thepid) && option(OPTPGPCHECKEXIT))
     empty=1;
 
-  mutt_unlink (pgpinfile);
+  mutt_unlink (mutt_b2s (pgpinfile));
 
   fflush (pgpout);
   fflush (pgperr);
@@ -1725,8 +1766,8 @@ BODY *pgp_traditional_encryptsign (BODY *a, int flags, char *keylist)
   {
     if (flags & SIGN)
       pgp_void_passphrase (); /* just in case */
-    unlink (pgpoutfile);
-    return NULL;
+    unlink (mutt_b2s (pgpoutfile));
+    goto cleanup;
   }
 
   b = mutt_new_body ();
@@ -1740,7 +1781,7 @@ BODY *pgp_traditional_encryptsign (BODY *a, int flags, char *keylist)
 		      &b->parameter);
   mutt_set_parameter ("charset", send_charset, &b->parameter);
 
-  b->filename = safe_strdup (pgpoutfile);
+  b->filename = safe_strdup (mutt_b2s (pgpoutfile));
 
   b->disposition = DISPNONE;
   b->unlink   = 1;
@@ -1751,6 +1792,10 @@ BODY *pgp_traditional_encryptsign (BODY *a, int flags, char *keylist)
   if (!(flags & ENCRYPT))
     b->encoding = a->encoding;
 
+cleanup:
+  mutt_buffer_pool_release (&pgpinfile);
+  mutt_buffer_pool_release (&pgpoutfile);
+  mutt_buffer_pool_release (&pgperrfile);
   return b;
 }
 

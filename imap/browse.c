@@ -229,7 +229,7 @@ fail:
 }
 
 /* imap_mailbox_create: Prompt for a new mailbox name, and try to create it */
-int imap_mailbox_create (const char* folder)
+int imap_mailbox_create (const char* folder, BUFFER *result)
 {
   IMAP_DATA* idata;
   IMAP_MBOX mx;
@@ -272,6 +272,8 @@ int imap_mailbox_create (const char* folder)
   if (imap_create_mailbox (idata, buf) < 0)
     goto fail;
 
+  imap_buffer_qualify_path (result, &mx, buf);
+
   mutt_message _("Mailbox created.");
   mutt_sleep (0);
 
@@ -283,7 +285,7 @@ fail:
   return -1;
 }
 
-int imap_mailbox_rename(const char* mailbox)
+int imap_mailbox_rename(const char* mailbox, BUFFER *result)
 {
   IMAP_DATA* idata;
   IMAP_MBOX mx;
@@ -330,6 +332,8 @@ int imap_mailbox_rename(const char* mailbox)
     mutt_sleep (1);
     goto fail;
   }
+
+  imap_buffer_qualify_path (result, &mx, buf);
 
   mutt_message (_("Mailbox renamed."));
   mutt_sleep (0);
@@ -426,7 +430,7 @@ static void imap_add_folder (char delim, char *folder, int noselect,
   }
 
   imap_qualify_path (tmp, sizeof (tmp), &mx, folder);
-  (state->entry)[state->entrylen].name = safe_strdup (tmp);
+  (state->entry)[state->entrylen].full_path = safe_strdup (tmp);
 
   /* mark desc with delim in browser if it can have subfolders */
   if (!isparent && !noinferiors && strlen (relpath) < sizeof (relpath) - 1)
@@ -435,7 +439,7 @@ static void imap_add_folder (char delim, char *folder, int noselect,
     relpath[strlen (relpath)] = delim;
   }
 
-  (state->entry)[state->entrylen].desc = safe_strdup (relpath);
+  (state->entry)[state->entrylen].display_name = safe_strdup (relpath);
 
   (state->entry)[state->entrylen].imap = 1;
   /* delimiter at the root is useless. */
@@ -469,5 +473,5 @@ static void imap_add_folder (char delim, char *folder, int noselect,
 
 static int compare_names(struct folder_file *a, struct folder_file *b)
 {
-  return mutt_strcmp(a->name, b->name);
+  return mutt_strcmp(a->full_path, b->full_path);
 }

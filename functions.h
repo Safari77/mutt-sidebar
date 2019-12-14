@@ -86,8 +86,13 @@ const struct binding_t OpGeneric[] = { /* map: generic */
 
 const struct binding_t OpMain[] = { /* map: index */
   { "create-alias",		OP_CREATE_ALIAS,		"a" },
+#ifdef USE_AUTOCRYPT
+  { "autocrypt-acct-menu",	OP_AUTOCRYPT_ACCT_MENU,		"A" },
+#endif
   { "bounce-message",		OP_BOUNCE_MESSAGE,		"b" },
   { "break-thread",		OP_MAIN_BREAK_THREAD,		"#" },
+  { "browse-mailboxes",		OP_MAIN_BROWSE_MAILBOXES,	"y" },
+  { "browse-mailboxes-readonly", OP_MAIN_BROWSE_MAILBOXES_READONLY, NULL },
   { "change-folder",		OP_MAIN_CHANGE_FOLDER,		"c" },
   { "change-folder-readonly",	OP_MAIN_CHANGE_FOLDER_READONLY,	"\033c" },
   { "next-unread-mailbox",	OP_MAIN_NEXT_UNREAD_MAILBOX,    NULL },
@@ -192,6 +197,8 @@ const struct binding_t OpMain[] = { /* map: index */
 
 const struct binding_t OpPager[] = { /* map: pager */
   { "break-thread",	OP_MAIN_BREAK_THREAD,		"#" },
+  { "browse-mailboxes",	OP_MAIN_BROWSE_MAILBOXES,	"y" },
+  { "browse-mailboxes-readonly", OP_MAIN_BROWSE_MAILBOXES_READONLY, NULL },
   { "create-alias",	OP_CREATE_ALIAS,		"a" },
   { "bounce-message",	OP_BOUNCE_MESSAGE,		"b" },
   { "change-folder",	OP_MAIN_CHANGE_FOLDER,		"c" },
@@ -362,6 +369,9 @@ const struct binding_t OpCompose[] = { /* map: compose */
   { "print-entry",	OP_PRINT,			"l" },
   { "edit-mime",	OP_COMPOSE_EDIT_MIME,		"m" },
   { "new-mime",		OP_COMPOSE_NEW_MIME,		"n" },
+#ifdef USE_AUTOCRYPT
+  { "autocrypt-menu",   OP_COMPOSE_AUTOCRYPT_MENU,      "o" },
+#endif
   { "postpone-message",	OP_COMPOSE_POSTPONE_MESSAGE,	"P" },
   { "edit-reply-to",	OP_COMPOSE_EDIT_REPLY_TO,	"r" },
   { "rename-attachment",OP_COMPOSE_RENAME_ATTACHMENT,	"\017" },
@@ -374,6 +384,9 @@ const struct binding_t OpCompose[] = { /* map: compose */
   { "toggle-recode",    OP_COMPOSE_TOGGLE_RECODE,	NULL },
   { "update-encoding",	OP_COMPOSE_UPDATE_ENCODING,	"U" },
   { "view-attach",	OP_VIEW_ATTACH,			MUTT_ENTER_S },
+  { "view-alt",		OP_COMPOSE_VIEW_ALT,		"v" },
+  { "view-alt-text",    OP_COMPOSE_VIEW_ALT_TEXT,       "\033v" },
+  { "view-alt-mailcap", OP_COMPOSE_VIEW_ALT_MAILCAP,    "V" },
   { "send-message",	OP_COMPOSE_SEND_MESSAGE,	"y" },
   { "pipe-entry",	OP_PIPE,			"|" },
 
@@ -497,3 +510,13 @@ const struct binding_t OpMix[] = { /* map: mixmaster */
   { NULL, 		0, 		NULL }
 };
 #endif /* MIXMASTER */
+
+#ifdef USE_AUTOCRYPT
+const struct binding_t OpAutocryptAcct[] = { /* map: autocrypt account */
+  { "create-account",        OP_AUTOCRYPT_CREATE_ACCT,    "c" },
+  { "delete-account",        OP_AUTOCRYPT_DELETE_ACCT,    "D" },
+  { "toggle-active",         OP_AUTOCRYPT_TOGGLE_ACTIVE,  "a" },
+  { "toggle-prefer-encrypt", OP_AUTOCRYPT_TOGGLE_PREFER,  "p" },
+  { NULL,                    0,                            NULL }
+};
+#endif

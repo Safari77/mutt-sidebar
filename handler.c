@@ -854,7 +854,8 @@ static int text_enriched_handler (BODY *a, STATE *s)
 	  tag_len = 0;
 	  state = TAG;
 	}
-	/* Yes, fall through (it wasn't a <<, so this char is first in TAG) */
+        /* fall through */
+	/* it wasn't a <<, so this char is first in TAG */
       case TAG :
 	if (wc == (wchar_t) '>')
 	{
@@ -955,7 +956,7 @@ static int is_mmnoask (const char *buf)
  */
 static int mutt_is_autoview (BODY *b)
 {
-  char type[SHORT_STRING];
+  char type[STRING];
   int is_autoview = 0;
 
   snprintf (type, sizeof (type), "%s/%s", TYPE (b), b->subtype);
@@ -988,7 +989,7 @@ static int mutt_is_autoview (BODY *b)
    *
    * WARNING: type is altered by this call as a result of `mime_lookup' support */
   if (is_autoview)
-    return rfc1524_mailcap_lookup(b, type, NULL, MUTT_AUTOVIEW);
+    return rfc1524_mailcap_lookup(b, type, sizeof(type), NULL, MUTT_AUTOVIEW);
 
   return 0;
 }
@@ -1320,7 +1321,7 @@ static int autoview_handler (BODY *a, STATE *s)
   tempfile = mutt_buffer_pool_get ();
 
   snprintf (type, sizeof (type), "%s/%s", TYPE (a), a->subtype);
-  rfc1524_mailcap_lookup (a, type, entry, MUTT_AUTOVIEW);
+  rfc1524_mailcap_lookup (a, type, sizeof(type), entry, MUTT_AUTOVIEW);
 
   fname = safe_strdup (a->filename);
   mutt_sanitize_filename (fname, 1);
@@ -1546,7 +1547,7 @@ void mutt_decode_attachment (BODY *b, STATE *s)
   if (istext && s->flags & MUTT_CHARCONV)
   {
     char *charset = mutt_get_parameter ("charset", b->parameter);
-    if (!charset && AssumedCharset && *AssumedCharset)
+    if (!charset && AssumedCharset)
       charset = mutt_get_default_charset ();
     if (charset && Charset)
       cd = mutt_iconv_open (Charset, charset, MUTT_ICONV_HOOK_FROM);
@@ -1607,7 +1608,7 @@ static int run_decode_and_handler (BODY *b, STATE *s, handler_t handler, int pla
   int origType;
   char *savePrefix = NULL;
   FILE *fp = NULL;
-  char tempfile[_POSIX_PATH_MAX];
+  BUFFER *tempfile = NULL;
   size_t tmplength = 0;
   LOFF_T tmpoffset = 0;
   int decode = 0;
@@ -1630,11 +1631,13 @@ static int run_decode_and_handler (BODY *b, STATE *s, handler_t handler, int pla
     {
       /* decode to a tempfile, saving the original destination */
       fp = s->fpout;
-      mutt_mktemp (tempfile, sizeof (tempfile));
-      if ((s->fpout = safe_fopen (tempfile, "w")) == NULL)
+      tempfile = mutt_buffer_pool_get ();
+      mutt_buffer_mktemp (tempfile);
+      if ((s->fpout = safe_fopen (mutt_b2s (tempfile), "w")) == NULL)
       {
         mutt_error _("Unable to open temporary file!");
-        dprint (1, (debugfile, "Can't open %s.\n", tempfile));
+        dprint (1, (debugfile, "Can't open %s.\n", mutt_b2s (tempfile)));
+        mutt_buffer_pool_release (&tempfile);
         return -1;
       }
       /* decoding the attachment changes the size and offset, so save a copy
@@ -1665,8 +1668,9 @@ static int run_decode_and_handler (BODY *b, STATE *s, handler_t handler, int pla
       /* restore final destination and substitute the tempfile for input */
       s->fpout = fp;
       fp = s->fpin;
-      s->fpin = fopen (tempfile, "r");
-      unlink (tempfile);
+      s->fpin = fopen (mutt_b2s (tempfile), "r");
+      unlink (mutt_b2s (tempfile));
+      mutt_buffer_pool_release (&tempfile);
 
       /* restore the prefix */
       s->prefix = savePrefix;
@@ -1718,6 +1722,9 @@ static int valid_pgp_encrypted_handler (BODY *b, STATE *s)
   else
     rc = crypt_pgp_encrypted_handler (octetstream, s);
   b->goodsig |= octetstream->goodsig;
+#ifdef USE_AUTOCRYPT
+  b->is_autocrypt |= octetstream->is_autocrypt;
+#endif
 
   /* Relocate protected headers onto the multipart/encrypted part */
   if (!rc && octetstream->mime_headers)
@@ -1744,6 +1751,9 @@ static int malformed_pgp_encrypted_handler (BODY *b, STATE *s)
   /* exchange encodes the octet-stream, so re-run it through the decoder */
   rc = run_decode_and_handler (octetstream, s, crypt_pgp_encrypted_handler, 0);
   b->goodsig |= octetstream->goodsig;
+#ifdef USE_AUTOCRYPT
+  b->is_autocrypt |= octetstream->is_autocrypt;
+#endif
 
   /* Relocate protected headers onto the multipart/encrypted part */
   if (!rc && octetstream->mime_headers)

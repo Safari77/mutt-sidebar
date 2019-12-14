@@ -2143,7 +2143,8 @@ mutt_pager (const char *banner, const char *fname, int flags, pager_t *extra)
 
       case OP_HALF_UP:
 	if (rd.topline)
-	  rd.topline = upNLines (rd.pager_window->rows/2, rd.lineInfo, rd.topline, rd.hideQuoted);
+	  rd.topline = upNLines (rd.pager_window->rows/2 + rd.pager_window->rows%2,
+                                 rd.lineInfo, rd.topline, rd.hideQuoted);
 	else
 	  mutt_error _("Top of message is shown.");
 	break;
@@ -2233,6 +2234,7 @@ search_next:
 
 	  break;
 	}
+        /* fall through */
 	/* no previous search pattern, so fall through to search */
 
       case OP_SEARCH:

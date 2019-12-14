@@ -542,10 +542,20 @@ int km_dokey (int menu)
       if (map->op != OP_MACRO)
 	return map->op;
 
+      /* OPTIGNOREMACROEVENTS turns off processing the MacroEvents buffer
+       * in mutt_getch().  Generating new macro events during that time would
+       * result in undesired behavior once the option is turned off.
+       *
+       * Originally this returned -1, however that results in an unbuffered
+       * username or password prompt being aborted.  Returning OP_NULL allows
+       * _mutt_enter_string() to display the keybinding pressed instead.
+       *
+       * It may be unexpected for a macro's keybinding to be returned,
+       * but less so than aborting the prompt.
+       */
       if (option (OPTIGNOREMACROEVENTS))
       {
-	mutt_error _("Macros are currently disabled.");
-	return -1;
+	return OP_NULL;
       }
 
       if (n++ == 10)
@@ -760,6 +770,10 @@ void km_init (void)
   km_bindkey ("l", MENU_MIX, OP_MIX_CHAIN_NEXT);
 #endif
 
+#ifdef USE_AUTOCRYPT
+  create_bindings (OpAutocryptAcct, MENU_AUTOCRYPT_ACCT);
+#endif
+
   /* bindings for the line editor */
   create_bindings (OpEditor, MENU_EDITOR);
 
@@ -897,7 +911,7 @@ void km_error_key (int menu)
   return;
 }
 
-int mutt_parse_push (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *err)
+int mutt_parse_push (BUFFER *buf, BUFFER *s, union pointer_long_t udata, BUFFER *err)
 {
   int r = 0;
 
@@ -1017,12 +1031,17 @@ const struct binding_t *km_get_table (int menu)
       return OpMix;
 #endif
 
+#ifdef USE_AUTOCRYPT
+    case MENU_AUTOCRYPT_ACCT:
+      return OpAutocryptAcct;
+#endif
+
   }
   return NULL;
 }
 
 /* bind menu-name '<key_sequence>' function-name */
-int mutt_parse_bind (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *err)
+int mutt_parse_bind (BUFFER *buf, BUFFER *s, union pointer_long_t udata, BUFFER *err)
 {
   const struct binding_t *bindings = NULL;
   char *key;
@@ -1070,7 +1089,7 @@ int mutt_parse_bind (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *err)
 }
 
 /* macro <menu> <key> <macro> <description> */
-int mutt_parse_macro (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *err)
+int mutt_parse_macro (BUFFER *buf, BUFFER *s, union pointer_long_t udata, BUFFER *err)
 {
   int menu[sizeof(Menus)/sizeof(struct mapping_t)-1], r = -1, nummenus, i;
   char *seq = NULL;
@@ -1121,7 +1140,7 @@ int mutt_parse_macro (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *err)
 }
 
 /* exec function-name */
-int mutt_parse_exec (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *err)
+int mutt_parse_exec (BUFFER *buf, BUFFER *s, union pointer_long_t udata, BUFFER *err)
 {
   int ops[128];
   int nops = 0;

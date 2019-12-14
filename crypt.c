@@ -31,6 +31,10 @@
 #include "copy.h"
 #include "mutt_crypt.h"
 
+#ifdef USE_AUTOCRYPT
+#include "autocrypt.h"
+#endif
+
 #include <sys/wait.h>
 #include <string.h>
 #include <stdlib.h>
@@ -123,26 +127,38 @@ int crypt_valid_passphrase(int flags)
 }
 
 
-
-int mutt_protect (HEADER *msg, char *keylist)
+/* In postpone mode, signing is automatically disabled. */
+int mutt_protect (HEADER *msg, char *keylist, int postpone)
 {
   BODY *pbody = NULL, *tmp_pbody = NULL;
   BODY *tmp_smime_pbody = NULL;
   BODY *tmp_pgp_pbody = NULL;
   ENVELOPE *protected_headers = NULL;
-  int flags = (WithCrypto & APPLICATION_PGP)? msg->security: 0;
+  int security, sign, has_retainable_sig = 0;
   int i;
 
   if (!WithCrypto)
     return -1;
 
-  if (!(msg->security & (ENCRYPT | SIGN)))
+  security = msg->security;
+  sign = security & (AUTOCRYPT | SIGN);
+  if (postpone)
+  {
+    sign = 0;
+    security &= ~SIGN;
+  }
+
+  if (!(security & (ENCRYPT | AUTOCRYPT)) && !sign)
     return 0;
 
-  if ((msg->security & SIGN) && !crypt_valid_passphrase (msg->security))
+  if (sign &&
+      !(security & AUTOCRYPT) &&
+      !crypt_valid_passphrase (security))
     return (-1);
 
-  if ((WithCrypto & APPLICATION_PGP) && ((msg->security & PGPINLINE) == PGPINLINE))
+  if ((WithCrypto & APPLICATION_PGP) &&
+      !(security & AUTOCRYPT) &&
+      ((security & PGPINLINE) == PGPINLINE))
   {
     if ((msg->content->type != TYPETEXT) ||
         ascii_strcasecmp (msg->content->subtype, "plain"))
@@ -168,7 +184,7 @@ int mutt_protect (HEADER *msg, char *keylist)
     {
       /* they really want to send it inline... go for it */
       if (!isendwin ()) mutt_endwin _("Invoking PGP...");
-      pbody = crypt_pgp_traditional_encryptsign (msg->content, flags, keylist);
+      pbody = crypt_pgp_traditional_encryptsign (msg->content, security, keylist);
       if (pbody)
       {
         msg->content = pbody;
@@ -193,15 +209,15 @@ int mutt_protect (HEADER *msg, char *keylist)
   if ((WithCrypto & APPLICATION_PGP))
     tmp_pgp_pbody   = msg->content;
 
-  if (option (OPTCRYPTUSEPKA) && (msg->security & SIGN))
+  if (option (OPTCRYPTUSEPKA) && sign)
   {
     /* Set sender (necessary for e.g. PKA).  */
 
     if ((WithCrypto & APPLICATION_SMIME)
-        && (msg->security & APPLICATION_SMIME))
+        && (security & APPLICATION_SMIME))
       crypt_smime_set_sender (msg->env->from->mailbox);
     else if ((WithCrypto & APPLICATION_PGP)
-             && (msg->security & APPLICATION_PGP))
+             && (security & APPLICATION_PGP))
       crypt_pgp_set_sender (msg->env->from->mailbox);
   }
 
@@ -217,10 +233,30 @@ int mutt_protect (HEADER *msg, char *keylist)
     msg->content->mime_headers = protected_headers;
   }
 
-  if (msg->security & SIGN)
+  /* A note about msg->content->mime_headers.  If postpone or send
+   * fails, the mime_headers is cleared out before returning to the
+   * compose menu.  So despite the "robustness" code above and in the
+   * gen_gossip_list function below, mime_headers will not be set when
+   * entering mutt_protect().
+   *
+   * This is important to note because the user could toggle
+   * $crypt_protected_headers_write or $autocrypt off back in the
+   * compose menu.  We don't want mutt_write_rfc822_header() to write
+   * stale data from one option if the other is set.
+   */
+#ifdef USE_AUTOCRYPT
+  if (option (OPTAUTOCRYPT) &&
+      !postpone &&
+      (security & AUTOCRYPT))
+  {
+    mutt_autocrypt_generate_gossip_list (msg);
+  }
+#endif
+
+  if (sign)
   {
     if ((WithCrypto & APPLICATION_SMIME)
-        && (msg->security & APPLICATION_SMIME))
+        && (security & APPLICATION_SMIME))
     {
       if (!(tmp_pbody = crypt_smime_sign_message (msg->content)))
 	goto bail;
@@ -228,29 +264,30 @@ int mutt_protect (HEADER *msg, char *keylist)
     }
 
     if ((WithCrypto & APPLICATION_PGP)
-        && (msg->security & APPLICATION_PGP)
-        && (!(flags & ENCRYPT) || option (OPTPGPRETAINABLESIG)))
+        && (security & APPLICATION_PGP)
+        && (!(security & (ENCRYPT | AUTOCRYPT)) || option (OPTPGPRETAINABLESIG)))
     {
       if (!(tmp_pbody = crypt_pgp_sign_message (msg->content)))
         goto bail;
 
-      flags &= ~SIGN;
+      has_retainable_sig = 1;
+      sign = 0;
       pbody = tmp_pgp_pbody = tmp_pbody;
     }
 
     if (WithCrypto
-        && (msg->security & APPLICATION_SMIME)
-	&& (msg->security & APPLICATION_PGP))
+        && (security & APPLICATION_SMIME)
+	&& (security & APPLICATION_PGP))
     {
       /* here comes the draft ;-) */
     }
   }
 
 
-  if (msg->security & ENCRYPT)
+  if (security & (ENCRYPT | AUTOCRYPT))
   {
     if ((WithCrypto & APPLICATION_SMIME)
-        && (msg->security & APPLICATION_SMIME))
+        && (security & APPLICATION_SMIME))
     {
       if (!(tmp_pbody = crypt_smime_build_smime_entity (tmp_smime_pbody,
                                                         keylist)))
@@ -271,14 +308,14 @@ int mutt_protect (HEADER *msg, char *keylist)
     }
 
     if ((WithCrypto & APPLICATION_PGP)
-        && (msg->security & APPLICATION_PGP))
+        && (security & APPLICATION_PGP))
     {
-      if (!(pbody = crypt_pgp_encrypt_message (tmp_pgp_pbody, keylist,
-                                               flags & SIGN)))
+      if (!(pbody = crypt_pgp_encrypt_message (msg, tmp_pgp_pbody, keylist,
+                                               sign)))
       {
 
 	/* did we perform a retainable signature? */
-	if (flags != msg->security)
+	if (has_retainable_sig)
 	{
 	  /* remove the outer multipart layer */
 	  tmp_pgp_pbody = mutt_remove_multipart (tmp_pgp_pbody);
@@ -293,7 +330,7 @@ int mutt_protect (HEADER *msg, char *keylist)
        * signatures.
 
        */
-      if (flags != msg->security)
+      if (has_retainable_sig)
       {
 	tmp_pgp_pbody = mutt_remove_multipart (tmp_pgp_pbody);
 	mutt_free_body (&tmp_pgp_pbody->next);
@@ -572,6 +609,10 @@ int crypt_query (BODY *m)
 
     if (t && m->goodsig)
       t |= GOODSIGN;
+#ifdef USE_AUTOCRYPT
+    if (t && m->is_autocrypt)
+      t |= AUTOCRYPT;
+#endif
   }
 
   if (m->type == TYPEMULTIPART || m->type == TYPEMESSAGE)
@@ -686,18 +727,20 @@ void convert_to_7bit (BODY *a)
 void crypt_extract_keys_from_messages (HEADER * h)
 {
   int i;
-  char tempfname[_POSIX_PATH_MAX], *mbox;
+  BUFFER *tempfname = NULL;
+  char *mbox;
   ADDRESS *tmp = NULL;
   FILE *fpout;
 
   if (!WithCrypto)
     return;
 
-  mutt_mktemp (tempfname, sizeof (tempfname));
-  if (!(fpout = safe_fopen (tempfname, "w")))
+  tempfname = mutt_buffer_pool_get ();
+  mutt_buffer_mktemp (tempfname);
+  if (!(fpout = safe_fopen (mutt_b2s (tempfname), "w")))
   {
-    mutt_perror (tempfname);
-    return;
+    mutt_perror (mutt_b2s (tempfname));
+    goto cleanup;
   }
 
   if ((WithCrypto & APPLICATION_PGP))
@@ -725,7 +768,7 @@ void crypt_extract_keys_from_messages (HEADER * h)
 	  fflush(fpout);
 
 	  mutt_endwin (_("Trying to extract PGP keys...\n"));
-	  crypt_pgp_invoke_import (tempfname);
+	  crypt_pgp_invoke_import (mutt_b2s (tempfname));
 	}
 
 	if ((WithCrypto & APPLICATION_SMIME)
@@ -748,7 +791,7 @@ void crypt_extract_keys_from_messages (HEADER * h)
 	  if (mbox)
 	  {
 	    mutt_endwin (_("Trying to extract S/MIME certificates...\n"));
-	    crypt_smime_invoke_import (tempfname, mbox);
+	    crypt_smime_invoke_import (mutt_b2s (tempfname), mbox);
 	    tmp = NULL;
 	  }
 	}
@@ -768,7 +811,7 @@ void crypt_extract_keys_from_messages (HEADER * h)
 	mutt_copy_message (fpout, Context, h, MUTT_CM_DECODE|MUTT_CM_CHARCONV, 0);
 	fflush(fpout);
 	mutt_endwin (_("Trying to extract PGP keys...\n"));
-	crypt_pgp_invoke_import (tempfname);
+	crypt_pgp_invoke_import (mutt_b2s (tempfname));
       }
 
       if ((WithCrypto & APPLICATION_SMIME)
@@ -788,7 +831,7 @@ void crypt_extract_keys_from_messages (HEADER * h)
 	if (mbox) /* else ? */
 	{
 	  mutt_message (_("Trying to extract S/MIME certificates...\n"));
-	  crypt_smime_invoke_import (tempfname, mbox);
+	  crypt_smime_invoke_import (mutt_b2s (tempfname), mbox);
 	}
       }
     }
@@ -798,10 +841,13 @@ void crypt_extract_keys_from_messages (HEADER * h)
   if (isendwin())
     mutt_any_key_to_continue (NULL);
 
-  mutt_unlink (tempfname);
+  mutt_unlink (mutt_b2s (tempfname));
 
   if ((WithCrypto & APPLICATION_PGP))
     unset_option (OPTDONTHANDLEPGPKEYS);
+
+cleanup:
+  mutt_buffer_pool_release (&tempfname);
 }
 
 
@@ -820,6 +866,17 @@ int crypt_get_keys (HEADER *msg, char **keylist, int oppenc_mode)
   if (!WithCrypto)
     return 0;
 
+  *keylist = NULL;
+
+#ifdef USE_AUTOCRYPT
+  if (!oppenc_mode && (msg->security & AUTOCRYPT))
+  {
+    if (mutt_autocrypt_ui_recommendation (msg, keylist) <= AUTOCRYPT_REC_NO)
+      return (-1);
+    return (0);
+  }
+#endif
+
   if ((WithCrypto & APPLICATION_PGP))
     set_option (OPTPGPCHECKTRUST);
 
@@ -830,8 +887,6 @@ int crypt_get_keys (HEADER *msg, char **keylist, int oppenc_mode)
   if (fqdn)
     rfc822_qualify (adrlist, fqdn);
   adrlist = mutt_remove_duplicates (adrlist);
-
-  *keylist = NULL;
 
   if (oppenc_mode || (msg->security & ENCRYPT))
   {
@@ -860,7 +915,7 @@ int crypt_get_keys (HEADER *msg, char **keylist, int oppenc_mode)
     }
   }
 
-  if (!oppenc_mode && self_encrypt && *self_encrypt)
+  if (!oppenc_mode && self_encrypt)
   {
     keylist_size = mutt_strlen (*keylist);
     safe_realloc (keylist, keylist_size + mutt_strlen (self_encrypt) + 2);
@@ -924,9 +979,9 @@ static void crypt_fetch_signatures (BODY ***signatures, BODY *a, int *n)
 int mutt_should_hide_protected_subject (HEADER *h)
 {
   if (option (OPTCRYPTPROTHDRSWRITE) &&
-      (h->security & ENCRYPT) &&
+      (h->security & (ENCRYPT | AUTOCRYPT)) &&
       !(h->security & INLINE) &&
-      ProtHdrSubject && *ProtHdrSubject)
+      ProtHdrSubject)
     return 1;
 
   return 0;
@@ -961,7 +1016,7 @@ int mutt_protected_headers_handler (BODY *a, STATE *s)
 
 int mutt_signed_handler (BODY *a, STATE *s)
 {
-  char tempfile[_POSIX_PATH_MAX];
+  BUFFER *tempfile = NULL;
   int signed_type;
   int inconsistent = 0;
 
@@ -1028,8 +1083,9 @@ int mutt_signed_handler (BODY *a, STATE *s)
 
     if (sigcnt)
     {
-      mutt_mktemp (tempfile, sizeof (tempfile));
-      if (crypt_write_signed (a, s, tempfile) == 0)
+      tempfile = mutt_buffer_pool_get ();
+      mutt_buffer_mktemp (tempfile);
+      if (crypt_write_signed (a, s, mutt_b2s (tempfile)) == 0)
       {
 	for (i = 0; i < sigcnt; i++)
 	{
@@ -1037,7 +1093,7 @@ int mutt_signed_handler (BODY *a, STATE *s)
               && signatures[i]->type == TYPEAPPLICATION
 	      && !ascii_strcasecmp (signatures[i]->subtype, "pgp-signature"))
 	  {
-	    if (crypt_pgp_verify_one (signatures[i], s, tempfile) != 0)
+	    if (crypt_pgp_verify_one (signatures[i], s, mutt_b2s (tempfile)) != 0)
 	      goodsig = 0;
 
 	    continue;
@@ -1048,7 +1104,7 @@ int mutt_signed_handler (BODY *a, STATE *s)
 	      && (!ascii_strcasecmp(signatures[i]->subtype, "x-pkcs7-signature")
 		  || !ascii_strcasecmp(signatures[i]->subtype, "pkcs7-signature")))
 	  {
-	    if (crypt_smime_verify_one (signatures[i], s, tempfile) != 0)
+	    if (crypt_smime_verify_one (signatures[i], s, mutt_b2s (tempfile)) != 0)
 	      goodsig = 0;
 
 	    continue;
@@ -1060,7 +1116,8 @@ int mutt_signed_handler (BODY *a, STATE *s)
 	}
       }
 
-      mutt_unlink (tempfile);
+      mutt_unlink (mutt_b2s (tempfile));
+      mutt_buffer_pool_release (&tempfile);
 
       b->goodsig = goodsig;
       b->badsig  = !goodsig;

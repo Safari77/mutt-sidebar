@@ -93,7 +93,7 @@ struct header_cache
   char *folder;
   unsigned int crc;
   int fd;
-  char lockfile[_POSIX_PATH_MAX];
+  BUFFER *lockfile;
 };
 
 static void mutt_hcache_dbt_init(DBT * dbt, void *data, size_t len);
@@ -599,18 +599,17 @@ crc_matches(const char *d, unsigned int crc)
 }
 
 /* Append md5sumed folder to path if path is a directory. */
-static const char *
-mutt_hcache_per_folder(const char *path, const char *folder,
+void
+mutt_hcache_per_folder(BUFFER *hcpath, const char *path, const char *folder,
                        hcache_namer_t namer)
 {
-  static char hcpath[_POSIX_PATH_MAX];
+  BUFFER *hcfile = NULL;
   struct stat sb;
   unsigned char md5sum[16];
   char* s;
   int ret, plen;
 #ifndef HAVE_ICONV
-  const char *chs = Charset && *Charset ? Charset :
-    mutt_get_default_charset ();
+  const char *chs = Charset ? Charset : mutt_get_default_charset ();
 #endif
 
   plen = mutt_strlen (path);
@@ -619,83 +618,65 @@ mutt_hcache_per_folder(const char *path, const char *folder,
   if (ret < 0 && path[plen-1] != '/')
   {
 #ifdef HAVE_ICONV
-    return path;
+    mutt_buffer_strcpy (hcpath, path);
 #else
-    snprintf (hcpath, _POSIX_PATH_MAX, "%s-%s", path, chs);
-    return hcpath;
+    mutt_buffer_printf (hcpath, "%s-%s", path, chs);
 #endif
+    return;
   }
 
   if (ret >= 0 && !S_ISDIR(sb.st_mode))
   {
 #ifdef HAVE_ICONV
-    return path;
+    mutt_buffer_strcpy (hcpath, path);
 #else
-    snprintf (hcpath, _POSIX_PATH_MAX, "%s-%s", path, chs);
-    return hcpath;
+    mutt_buffer_printf (hcpath, "%s-%s", path, chs);
 #endif
+    return;
   }
+
+  hcfile = mutt_buffer_pool_get ();
 
   if (namer)
   {
-    snprintf (hcpath, sizeof (hcpath), "%s%s", path,
-              path[plen-1] == '/' ? "" : "/");
-    if (path[plen-1] != '/')
-      plen++;
-
-    ret = namer (folder, hcpath + plen, sizeof (hcpath) - plen);
+    namer (folder, hcfile);
   }
   else
   {
     md5_buffer (folder, strlen (folder), &md5sum);
-
-    /* On some systems (e.g. OS X), snprintf is defined as a macro.
-     * Embedding directives inside macros is undefined, so we have to duplicate
-     * the whole call:
-     */
+    mutt_buffer_printf(hcfile,
+                       "%02x%02x%02x%02x%02x%02x%02x%02x"
+                       "%02x%02x%02x%02x%02x%02x%02x%02x",
+                       md5sum[0], md5sum[1], md5sum[2], md5sum[3],
+                       md5sum[4], md5sum[5], md5sum[6], md5sum[7],
+                       md5sum[8], md5sum[9], md5sum[10], md5sum[11],
+                       md5sum[12], md5sum[13], md5sum[14], md5sum[15]);
 #ifndef HAVE_ICONV
-    ret = snprintf(hcpath, _POSIX_PATH_MAX,
-                   "%s/%02x%02x%02x%02x%02x%02x%02x%02x"
-                   "%02x%02x%02x%02x%02x%02x%02x%02x"
-		   "-%s"
-		   ,
-		   path, md5sum[0], md5sum[1], md5sum[2], md5sum[3],
-                   md5sum[4], md5sum[5], md5sum[6], md5sum[7], md5sum[8],
-                   md5sum[9], md5sum[10], md5sum[11], md5sum[12],
-                   md5sum[13], md5sum[14], md5sum[15]
-		   ,chs
-      );
-#else
-    ret = snprintf(hcpath, _POSIX_PATH_MAX,
-                   "%s/%02x%02x%02x%02x%02x%02x%02x%02x"
-                   "%02x%02x%02x%02x%02x%02x%02x%02x"
-		   ,
-		   path, md5sum[0], md5sum[1], md5sum[2], md5sum[3],
-                   md5sum[4], md5sum[5], md5sum[6], md5sum[7], md5sum[8],
-                   md5sum[9], md5sum[10], md5sum[11], md5sum[12],
-                   md5sum[13], md5sum[14], md5sum[15]
-      );
+    mutt_buffer_addch (hcfile, '-');
+    mutt_buffer_addstr (hcfile, chs);
 #endif
   }
 
-  if (ret <= 0)
-    return path;
+  mutt_buffer_concat_path (hcpath, path, mutt_b2s (hcfile));
+  mutt_buffer_pool_release (&hcfile);
 
-  if (stat (hcpath, &sb) >= 0)
-    return hcpath;
+  if (stat (mutt_b2s (hcpath), &sb) >= 0)
+    return;
 
-  s = strchr (hcpath + 1, '/');
+  s = strchr (hcpath->data + 1, '/');
   while (s)
   {
     /* create missing path components */
     *s = '\0';
-    if (stat (hcpath, &sb) < 0 && (errno != ENOENT || mkdir (hcpath, 0777) < 0))
-      return path;
+    if (stat (mutt_b2s (hcpath), &sb) < 0 &&
+        (errno != ENOENT || mkdir (mutt_b2s (hcpath), 0777) < 0))
+    {
+      mutt_buffer_strcpy (hcpath, path);
+      break;
+    }
     *s = '/';
     s = strchr (s + 1, '/');
   }
-
-  return hcpath;
 }
 
 /* This function transforms a header into a char so that it is usable by
@@ -817,16 +798,13 @@ mutt_hcache_fetch_raw (header_cache_t *h, const char *filename,
                        size_t(*keylen) (const char *fn))
 {
 #ifndef HAVE_DB4
-  char path[_POSIX_PATH_MAX];
+  BUFFER *path = NULL;
   int ksize;
+  void *rv = NULL;
 #endif
-#ifdef HAVE_QDBM
-  char *data = NULL;
-#elif HAVE_TC
-  void *data;
+#if HAVE_TC
   int sp;
 #elif HAVE_KC
-  void *data;
   size_t sp;
 #elif HAVE_GDBM
   datum key;
@@ -853,42 +831,39 @@ mutt_hcache_fetch_raw (header_cache_t *h, const char *filename,
   h->db->get(h->db, NULL, &key, &data, 0);
 
   return data.data;
-#else
-  strncpy(path, h->folder, sizeof (path));
-  safe_strcat(path, sizeof (path), filename);
 
-  ksize = strlen (h->folder) + keylen (path + strlen (h->folder));
-#endif
+#else
+  path = mutt_buffer_pool_get ();
+  mutt_buffer_strcpy (path, h->folder);
+  mutt_buffer_addstr (path, filename);
+
+  ksize = strlen (h->folder) + keylen (filename);
 
 #ifdef HAVE_QDBM
-  data = vlget(h->db, path, ksize, NULL);
-
-  return data;
+  rv = vlget(h->db, mutt_b2s (path), ksize, NULL);
 #elif HAVE_TC
-  data = tcbdbget(h->db, path, ksize, &sp);
-
-  return data;
+  rv = tcbdbget(h->db, mutt_b2s (path), ksize, &sp);
 #elif HAVE_KC
-  data = kcdbget(h->db, path, ksize, &sp);
-
-  return data;
+  rv = kcdbget(h->db, mutt_b2s (path), ksize, &sp);
 #elif HAVE_GDBM
-  key.dptr = path;
+  key.dptr = path->data;
   key.dsize = ksize;
 
   data = gdbm_fetch(h->db, key);
 
-  return data.dptr;
+  rv = data.dptr;
 #elif HAVE_LMDB
-  key.mv_data = path;
+  key.mv_data = path->data;
   key.mv_size = ksize;
-  if ((mdb_get_r_txn (h) != MDB_SUCCESS) ||
-      (mdb_get (h->txn, h->db, &key, &data) != MDB_SUCCESS))
-    return NULL;
-
   /* LMDB claims ownership of the returned data, so this will not be
    * freed in mutt_hcache_free(). */
-  return data.mv_data;
+  if ((mdb_get_r_txn (h) == MDB_SUCCESS) &&
+      (mdb_get (h->txn, h->db, &key, &data) == MDB_SUCCESS))
+    rv = data.mv_data;
+#endif
+
+  mutt_buffer_pool_release (&path);
+  return rv;
 #endif
 }
 
@@ -924,8 +899,9 @@ mutt_hcache_store_raw (header_cache_t* h, const char* filename, void* data,
                        size_t dlen, size_t(*keylen) (const char* fn))
 {
 #ifndef HAVE_DB4
-  char path[_POSIX_PATH_MAX];
+  BUFFER *path = NULL;
   int ksize;
+  int rv = 0;
 #endif
 #if HAVE_GDBM
   datum key;
@@ -936,7 +912,6 @@ mutt_hcache_store_raw (header_cache_t* h, const char* filename, void* data,
 #elif HAVE_LMDB
   MDB_val key;
   MDB_val databuf;
-  int rc;
 #endif
 
   if (!h)
@@ -955,66 +930,72 @@ mutt_hcache_store_raw (header_cache_t* h, const char* filename, void* data,
   databuf.ulen = dlen;
 
   return h->db->put(h->db, NULL, &key, &databuf, 0);
-#else
-  strncpy(path, h->folder, sizeof (path));
-  safe_strcat(path, sizeof (path), filename);
 
-  ksize = strlen(h->folder) + keylen(path + strlen(h->folder));
-#endif
+#else
+  path = mutt_buffer_pool_get ();
+  mutt_buffer_strcpy (path, h->folder);
+  mutt_buffer_addstr (path, filename);
+
+  ksize = strlen(h->folder) + keylen(filename);
 
 #if HAVE_QDBM
-  return vlput(h->db, path, ksize, data, dlen, VL_DOVER);
+  rv = vlput(h->db, mutt_b2s (path), ksize, data, dlen, VL_DOVER);
 #elif HAVE_TC
-  return tcbdbput(h->db, path, ksize, data, dlen);
+  rv = tcbdbput(h->db, mutt_b2s (path), ksize, data, dlen);
 #elif HAVE_KC
-  return kcdbset(h->db, path, ksize, data, dlen);
+  rv = kcdbset(h->db, mutt_b2s (path), ksize, data, dlen);
 #elif HAVE_GDBM
-  key.dptr = path;
+  key.dptr = path->data;
   key.dsize = ksize;
 
   databuf.dsize = dlen;
   databuf.dptr = data;
 
-  return gdbm_store(h->db, key, databuf, GDBM_REPLACE);
+  rv = gdbm_store(h->db, key, databuf, GDBM_REPLACE);
 #elif HAVE_LMDB
-  key.mv_data = path;
+  key.mv_data = path->data;
   key.mv_size = ksize;
   databuf.mv_data = data;
   databuf.mv_size = dlen;
-  if ((rc = mdb_get_w_txn (h)) != MDB_SUCCESS)
-    return rc;
-
-  if ((rc = mdb_put (h->txn, h->db, &key, &databuf, 0)) != MDB_SUCCESS)
+  if ((rv = mdb_get_w_txn (h)) == MDB_SUCCESS)
   {
-    dprint (2, (debugfile, "mutt_hcache_store_raw: mdb_put: %s\n",
-                mdb_strerror(rc)));
-    mdb_txn_abort (h->txn);
-    h->txn_mode = txn_uninitialized;
-    h->txn = NULL;
+    if ((rv = mdb_put (h->txn, h->db, &key, &databuf, 0)) != MDB_SUCCESS)
+    {
+      dprint (2, (debugfile, "mutt_hcache_store_raw: mdb_put: %s\n",
+                  mdb_strerror(rv)));
+      mdb_txn_abort (h->txn);
+      h->txn_mode = txn_uninitialized;
+      h->txn = NULL;
+    }
   }
-  return rc;
+#endif
+
+  mutt_buffer_pool_release (&path);
+  return rv;
 #endif
 }
 
-static char* get_foldername(const char *folder)
+static char* get_foldername (const char *folder)
 {
   char *p = NULL;
-  char path[_POSIX_PATH_MAX];
+  BUFFER *path;
   struct stat st;
 
-  mutt_encode_path (path, sizeof (path), folder);
+  path = mutt_buffer_pool_get ();
+  mutt_encode_path (path, folder);
 
   /* if the folder is local, canonify the path to avoid
    * to ensure equivalent paths share the hcache */
-  if (stat (path, &st) == 0)
+  if (stat (mutt_b2s (path), &st) == 0)
   {
     p = safe_malloc (PATH_MAX+1);
-    if (!realpath (path, p))
-      mutt_str_replace (&p, path);
+    if (!realpath (mutt_b2s (path), p))
+      mutt_str_replace (&p, mutt_b2s (path));
   }
   else
-    p = safe_strdup (path);
+    p = safe_strdup (mutt_b2s (path));
 
+  mutt_buffer_pool_release (&path);
   return p;
 }
 
@@ -1049,18 +1030,22 @@ int
 mutt_hcache_delete(header_cache_t *h, const char *filename,
 		   size_t(*keylen) (const char *fn))
 {
-  char path[_POSIX_PATH_MAX];
-  int ksize;
+  BUFFER *path = NULL;
+  int ksize, rc;
 
   if (!h)
     return -1;
 
-  strncpy(path, h->folder, sizeof (path));
-  safe_strcat(path, sizeof (path), filename);
+  path = mutt_buffer_pool_get ();
+  mutt_buffer_strcpy (path, h->folder);
+  mutt_buffer_addstr (path, filename);
 
-  ksize = strlen(h->folder) + keylen(path + strlen(h->folder));
+  ksize = strlen(h->folder) + keylen(filename);
 
-  return vlout(h->db, path, ksize);
+  rc = vlout(h->db, mutt_b2s (path), ksize);
+
+  mutt_buffer_pool_release (&path);
+  return rc;
 }
 
 #elif HAVE_TC
@@ -1107,25 +1092,32 @@ int
 mutt_hcache_delete(header_cache_t *h, const char *filename,
 		   size_t(*keylen) (const char *fn))
 {
-  char path[_POSIX_PATH_MAX];
-  int ksize;
+  BUFFER *path = NULL;
+  int ksize, rc;
 
   if (!h)
     return -1;
 
-  strncpy(path, h->folder, sizeof (path));
-  safe_strcat(path, sizeof (path), filename);
+  path = mutt_buffer_pool_get ();
+  mutt_buffer_strcpy (path, h->folder);
+  mutt_buffer_addstr (path, filename);
 
-  ksize = strlen(h->folder) + keylen(path + strlen(h->folder));
+  ksize = strlen(h->folder) + keylen(filename);
 
-  return tcbdbout(h->db, path, ksize);
+  rc = tcbdbout(h->db, mutt_b2s (path), ksize);
+
+  mutt_buffer_pool_release (&path);
+  return rc;
 }
 
 #elif HAVE_KC
 static int
 hcache_open_kc (struct header_cache* h, const char* path)
 {
-  char fullpath[_POSIX_PATH_MAX];
+  BUFFER *fullpath = NULL;
+  int rc = -1;
+
+  fullpath = mutt_buffer_pool_get ();
 
   /* Kyoto cabinet options are discussed at
    * http://fallabs.com/kyotocabinet/spex.html
@@ -1134,20 +1126,25 @@ hcache_open_kc (struct header_cache* h, const char* path)
    *   this isn't suggested unless you are tuning the number of buckets.
    * - opts=c enables compression
    */
-  snprintf (fullpath, sizeof(fullpath), "%s#type=kct%s", path,
-            option(OPTHCACHECOMPRESS) ? "#opts=c" : "");
+  mutt_buffer_printf (fullpath, "%s#type=kct%s", path,
+                      option(OPTHCACHECOMPRESS) ? "#opts=c" : "");
   h->db = kcdbnew();
   if (!h->db)
-    return -1;
-  if (kcdbopen(h->db, fullpath, KCOWRITER | KCOCREATE))
-    return 0;
-  else
+    goto cleanup;
+  if (!kcdbopen(h->db, mutt_b2s (fullpath), KCOWRITER | KCOCREATE))
   {
-    dprint (2, (debugfile, "kcdbopen failed for %s: %s (ecode %d)\n", fullpath,
+    dprint (2, (debugfile, "kcdbopen failed for %s: %s (ecode %d)\n",
+                mutt_b2s (fullpath),
                 kcdbemsg (h->db), kcdbecode (h->db)));
     kcdbdel(h->db);
-    return -1;
+    goto cleanup;
   }
+
+  rc = 0;
+
+cleanup:
+  mutt_buffer_pool_release (&fullpath);
+  return rc;
 }
 
 void
@@ -1168,18 +1165,22 @@ int
 mutt_hcache_delete(header_cache_t *h, const char *filename,
 		   size_t(*keylen) (const char *fn))
 {
-  char path[_POSIX_PATH_MAX];
-  int ksize;
+  BUFFER *path = NULL;
+  int ksize, rc;
 
   if (!h)
     return -1;
 
-  strncpy(path, h->folder, sizeof (path));
-  safe_strcat(path, sizeof (path), filename);
+  path = mutt_buffer_pool_get ();
+  mutt_buffer_strcpy (path, h->folder);
+  mutt_buffer_addstr (path, filename);
 
-  ksize = strlen(h->folder) + keylen(path + strlen(h->folder));
+  ksize = strlen(h->folder) + keylen(filename);
 
-  return kcdbremove(h->db, path, ksize);
+  rc = kcdbremove(h->db, mutt_b2s (path), ksize);
+
+  mutt_buffer_pool_release (&path);
+  return rc;
 }
 
 #elif HAVE_GDBM
@@ -1188,7 +1189,8 @@ hcache_open_gdbm (struct header_cache* h, const char* path)
 {
   int pagesize;
 
-  if (mutt_atoi (HeaderCachePageSize, &pagesize) < 0 || pagesize <= 0)
+  pagesize = HeaderCachePageSize;
+  if (pagesize <= 0)
     pagesize = 16384;
 
   h->db = gdbm_open((char *) path, pagesize, GDBM_WRCREAT, 00600, NULL);
@@ -1219,18 +1221,23 @@ mutt_hcache_delete(header_cache_t *h, const char *filename,
 		   size_t(*keylen) (const char *fn))
 {
   datum key;
-  char path[_POSIX_PATH_MAX];
+  BUFFER *path = NULL;
+  int rc;
 
   if (!h)
     return -1;
 
-  strncpy(path, h->folder, sizeof (path));
-  safe_strcat(path, sizeof (path), filename);
+  path = mutt_buffer_pool_get ();
+  mutt_buffer_strcpy (path, h->folder);
+  mutt_buffer_addstr (path, filename);
 
-  key.dptr = path;
-  key.dsize = strlen(h->folder) + keylen(path + strlen(h->folder));
+  key.dptr = path->data;
+  key.dsize = strlen(h->folder) + keylen(filename);
 
-  return gdbm_delete(h->db, key);
+  rc = gdbm_delete(h->db, key);
+
+  mutt_buffer_pool_release (&path);
+  return rc;
 }
 #elif HAVE_DB4
 
@@ -1259,16 +1266,18 @@ hcache_open_db4 (struct header_cache* h, const char* path)
   u_int32_t createflags = DB_CREATE;
   int pagesize;
 
-  if (mutt_atoi (HeaderCachePageSize, &pagesize) < 0 || pagesize <= 0)
+  pagesize = HeaderCachePageSize;
+  if (pagesize <= 0)
     pagesize = 16384;
 
-  snprintf (h->lockfile, _POSIX_PATH_MAX, "%s-lock-hack", path);
+  h->lockfile = mutt_buffer_new ();
+  mutt_buffer_printf (h->lockfile, "%s-lock-hack", path);
 
-  h->fd = open (h->lockfile, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
+  h->fd = open (mutt_b2s (h->lockfile), O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
   if (h->fd < 0)
     return -1;
 
-  if (mx_lock_file (h->lockfile, h->fd, 1, 0, 5))
+  if (mx_lock_file (mutt_b2s (h->lockfile), h->fd, 1, 0, 5))
     goto fail_close;
 
   ret = db_env_create (&h->env, 0);
@@ -1302,10 +1311,11 @@ fail_db:
 fail_env:
   h->env->close (h->env, 0);
 fail_unlock:
-  mx_unlock_file (h->lockfile, h->fd, 0);
+  mx_unlock_file (mutt_b2s (h->lockfile), h->fd, 0);
 fail_close:
   close (h->fd);
-  unlink (h->lockfile);
+  unlink (mutt_b2s (h->lockfile));
+  mutt_buffer_free (&h->lockfile);
 
   return -1;
 }
@@ -1318,9 +1328,10 @@ mutt_hcache_close(header_cache_t *h)
 
   h->db->close (h->db, 0);
   h->env->close (h->env, 0);
-  mx_unlock_file (h->lockfile, h->fd, 0);
+  mx_unlock_file (mutt_b2s (h->lockfile), h->fd, 0);
   close (h->fd);
-  unlink (h->lockfile);
+  unlink (mutt_b2s (h->lockfile));
+  mutt_buffer_free (&h->lockfile);
   FREE (&h->folder);
   FREE (&h);
 }
@@ -1422,22 +1433,23 @@ int
 mutt_hcache_delete(header_cache_t *h, const char *filename,
 		   size_t(*keylen) (const char *fn))
 {
-  char path[_POSIX_PATH_MAX];
+  BUFFER *path = NULL;
   int ksize;
   MDB_val key;
-  int rc;
+  int rc = -1;
 
   if (!h)
     return -1;
 
-  strncpy(path, h->folder, sizeof (path));
-  safe_strcat(path, sizeof (path), filename);
-  ksize = strlen (h->folder) + keylen (path + strlen (h->folder));
+  path = mutt_buffer_pool_get ();
+  mutt_buffer_strcpy (path, h->folder);
+  mutt_buffer_addstr (path, filename);
+  ksize = strlen (h->folder) + keylen (filename);
 
-  key.mv_data = path;
+  key.mv_data = path->data;
   key.mv_size = ksize;
   if (mdb_get_w_txn(h) != MDB_SUCCESS)
-    return -1;
+    goto cleanup;
   rc = mdb_del(h->txn, h->db, &key, NULL);
   if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND)
   {
@@ -1446,10 +1458,14 @@ mutt_hcache_delete(header_cache_t *h, const char *filename,
     mdb_txn_abort(h->txn);
     h->txn_mode = txn_uninitialized;
     h->txn = NULL;
-    return -1;
+    goto cleanup;
   }
 
-  return 0;
+  rc = 0;
+
+cleanup:
+  mutt_buffer_pool_release (&path);
+  return rc;
 }
 #endif
 
@@ -1459,6 +1475,7 @@ mutt_hcache_open(const char *path, const char *folder, hcache_namer_t namer)
   struct header_cache *h = safe_calloc(1, sizeof (struct header_cache));
   int (*hcache_open) (struct header_cache* h, const char* path);
   struct stat sb;
+  BUFFER *hcpath = NULL;
 
 #if HAVE_QDBM
   hcache_open = hcache_open_qdbm;
@@ -1525,23 +1542,23 @@ mutt_hcache_open(const char *path, const char *folder, hcache_namer_t namer)
     return NULL;
   }
 
-  path = mutt_hcache_per_folder(path, h->folder, namer);
+  hcpath = mutt_buffer_pool_get ();
+  mutt_hcache_per_folder(hcpath, path, h->folder, namer);
 
-  if (!hcache_open (h, path))
-    return h;
-  else
+  if (hcache_open (h, mutt_b2s (hcpath)))
   {
     /* remove a possibly incompatible version */
-    if (!stat (path, &sb) && !unlink (path))
+    if (stat (mutt_b2s (hcpath), &sb) ||
+        unlink (mutt_b2s (hcpath)) ||
+        hcache_open (h, mutt_b2s (hcpath)))
     {
-      if (!hcache_open (h, path))
-        return h;
+      FREE(&h->folder);
+      FREE(&h);
     }
-    FREE(&h->folder);
-    FREE(&h);
-
-    return NULL;
   }
+
+  mutt_buffer_pool_release (&hcpath);
+  return h;
 }
 
 void mutt_hcache_free (void **data)

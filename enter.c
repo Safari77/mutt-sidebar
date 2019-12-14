@@ -98,7 +98,8 @@ static void my_wcstombs (char *dest, size_t dlen, const wchar_t *src, size_t sle
   /* If this works, we can stop now */
   if (dlen >= MB_LEN_MAX)
   {
-    wcrtomb (dest, 0, &st);
+    /* We don't need to update dest - this just appeases -Wunused-result */
+    dest += wcrtomb (dest, 0, &st);
     return;
   }
 
@@ -554,7 +555,7 @@ int _mutt_enter_string (char *buf, size_t buflen, int col,
 	  }
 	  else if (!(flags & MUTT_FILE))
 	    goto self_insert;
-	  /* fall through to completion routine (MUTT_FILE) */
+          /* else fall through */
 
 	case OP_EDITOR_COMPLETE:
 	case OP_EDITOR_COMPLETE_QUERY:

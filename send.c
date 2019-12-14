@@ -33,6 +33,10 @@
 #include "rfc3676.h"
 #include "attach.h"
 
+#ifdef USE_AUTOCRYPT
+#include "autocrypt.h"
+#endif
+
 #include <ctype.h>
 #include <stdlib.h>
 #include <locale.h>
@@ -190,7 +194,7 @@ static ADDRESS *find_mailing_lists (ADDRESS *t, ADDRESS *c)
   return top;
 }
 
-static int edit_address (ADDRESS **a, /* const */ char *field)
+int mutt_edit_address (ADDRESS **a, const char *field, int expand_aliases)
 {
   char buf[HUGE_STRING];
   char *err = NULL;
@@ -204,7 +208,9 @@ static int edit_address (ADDRESS **a, /* const */ char *field)
     if (mutt_get_field (field, buf, sizeof (buf), MUTT_ALIAS) != 0)
       return (-1);
     rfc822_free_address (a);
-    *a = mutt_expand_aliases (mutt_parse_adrlist (NULL, buf));
+    *a = mutt_parse_adrlist (NULL, buf);
+    if (expand_aliases)
+      *a = mutt_expand_aliases (*a);
     if ((idna_ok = mutt_addrlist_to_intl (*a, &err)) != 0)
     {
       mutt_error (_("Error: '%s' is a bad IDN."), err);
@@ -222,11 +228,11 @@ static int edit_envelope (ENVELOPE *en)
   char buf[HUGE_STRING];
   LIST *uh = UserHeader;
 
-  if (edit_address (&en->to, _("To: ")) == -1 || en->to == NULL)
+  if (mutt_edit_address (&en->to, _("To: "), 1) == -1 || en->to == NULL)
     return (-1);
-  if (option (OPTASKCC) && edit_address (&en->cc, _("Cc: ")) == -1)
+  if (option (OPTASKCC) && mutt_edit_address (&en->cc, _("Cc: "), 1) == -1)
     return (-1);
-  if (option (OPTASKBCC) && edit_address (&en->bcc, _("Bcc: ")) == -1)
+  if (option (OPTASKBCC) && mutt_edit_address (&en->bcc, _("Bcc: "), 1) == -1)
     return (-1);
 
   if (en->subject)
@@ -960,7 +966,7 @@ generate_body (FILE *tempfp,	/* stream for outgoing message */
     BODY *tmp;
 
     if ((WithCrypto & APPLICATION_PGP)
-        && (tmp = crypt_pgp_make_key_attachment (NULL)) == NULL)
+        && (tmp = crypt_pgp_make_key_attachment ()) == NULL)
       return -1;
 
     tmp->next = msg->content;
@@ -1092,19 +1098,55 @@ ADDRESS *mutt_default_from (void)
   return (adr);
 }
 
+static int generate_multipart_alternative (HEADER *msg, int flags)
+{
+  BODY *alternative;
+
+  if (!SendMultipartAltFilter)
+    return 0;
+
+  /* In batch mode, only run if the quadoption is yes or ask-yes */
+  if (flags & SENDBATCH)
+  {
+    if (!(quadoption (OPT_SENDMULTIPARTALT) & 0x1))
+      return 0;
+  }
+  else
+  {
+    if (query_quadoption (OPT_SENDMULTIPARTALT,
+                          /* L10N:
+                             This is the query for the $send_multipart_alternative quadoption.
+                             Answering yes generates an alternative content using
+                             $send_multipart_alternative_filter
+                          */
+                          _("Generate multipart/alternative content?")) != MUTT_YES)
+      return 0;
+  }
+
+
+  alternative = mutt_run_send_alternative_filter (msg->content);
+  if (!alternative)
+    return -1;
+
+  msg->content = mutt_make_multipart_alternative (msg->content, alternative);
+
+  return 0;
+}
+
 static int send_message (HEADER *msg)
 {
-  char tempfile[_POSIX_PATH_MAX];
-  FILE *tempfp;
-  int i;
+  BUFFER *tempfile = NULL;
+  FILE *tempfp = NULL;
+  int i = -1;
 #ifdef USE_SMTP
   short old_write_bcc;
 #endif
 
   /* Write out the message in MIME form. */
-  mutt_mktemp (tempfile, sizeof (tempfile));
-  if ((tempfp = safe_fopen (tempfile, "w")) == NULL)
-    return (-1);
+  tempfile = mutt_buffer_pool_get ();
+  mutt_buffer_mktemp (tempfile);
+  if ((tempfp = safe_fopen (mutt_b2s (tempfile), "w")) == NULL)
+    goto cleanup;
 
 #ifdef USE_SMTP
   old_write_bcc = option (OPTWRITEBCC);
@@ -1129,38 +1171,44 @@ static int send_message (HEADER *msg)
   fputc ('\n', tempfp); /* tie off the header. */
 
   if ((mutt_write_mime_body (msg->content, tempfp) == -1))
-  {
-    safe_fclose (&tempfp);
-    unlink (tempfile);
-    return (-1);
-  }
+    goto cleanup;
 
-  if (fclose (tempfp) != 0)
+  if (safe_fclose (&tempfp) != 0)
   {
-    mutt_perror (tempfile);
-    unlink (tempfile);
-    return (-1);
+    mutt_perror (mutt_b2s (tempfile));
+    unlink (mutt_b2s (tempfile));
+    goto cleanup;
   }
 
 #ifdef MIXMASTER
   if (msg->chain)
-    return mix_send_message (msg->chain, tempfile);
+    i = mix_send_message (msg->chain, mutt_b2s (tempfile));
+  else
 #endif
 
 #if USE_SMTP
   if (SmtpUrl)
-    return mutt_smtp_send (msg->env->from, msg->env->to, msg->env->cc,
-                           msg->env->bcc, tempfile,
-                           (msg->content->encoding == ENC8BIT));
+    i = mutt_smtp_send (msg->env->from, msg->env->to, msg->env->cc,
+                        msg->env->bcc, mutt_b2s (tempfile),
+                        (msg->content->encoding == ENC8BIT));
+  else
 #endif /* USE_SMTP */
 
   i = mutt_invoke_sendmail (msg->env->from, msg->env->to, msg->env->cc,
-			    msg->env->bcc, tempfile,
+			    msg->env->bcc, mutt_b2s (tempfile),
                             (msg->content->encoding == ENC8BIT));
+
+cleanup:
+  if (tempfp)
+  {
+    safe_fclose (&tempfp);
+    unlink (mutt_b2s (tempfile));
+  }
+  mutt_buffer_pool_release (&tempfile);
   return (i);
 }
 
-static int save_fcc (HEADER *msg, char *fcc, size_t fcc_len,
+static int save_fcc (HEADER *msg, BUFFER *fcc,
                      BODY *clear_content, char *pgpkeylist,
                      int flags)
 {
@@ -1169,9 +1217,9 @@ static int save_fcc (HEADER *msg, char *fcc, size_t fcc_len,
   BODY *save_content = NULL;
   BODY *save_sig = NULL;
   BODY *save_parts = NULL;
-  int choice;
+  int choice, save_atts;
 
-  mutt_expand_path (fcc, fcc_len);
+  mutt_buffer_expand_path (fcc);
 
   /* Don't save a copy when we are in batch-mode, and the FCC
    * folder is on an IMAP server: This would involve possibly lots
@@ -1183,14 +1231,17 @@ static int save_fcc (HEADER *msg, char *fcc, size_t fcc_len,
    */
 
 #ifdef USE_IMAP
-  if ((flags & SENDBATCH) && fcc[0] && mx_is_imap (fcc))
+  if ((flags & SENDBATCH) &&
+      mutt_buffer_len (fcc) &&
+      mx_is_imap (mutt_b2s (fcc)))
   {
     mutt_error _ ("Fcc to an IMAP mailbox is not supported in batch mode");
     return rc;
   }
 #endif
 
-  if (!(*fcc && mutt_strcmp ("/dev/null", fcc)))
+  if (!(mutt_buffer_len (fcc) &&
+        mutt_strcmp ("/dev/null", mutt_b2s (fcc))))
     return rc;
 
   /* Before sending, we don't allow message manipulation because it
@@ -1198,23 +1249,37 @@ static int save_fcc (HEADER *msg, char *fcc, size_t fcc_len,
    * Protected Headers. */
   if (!option (OPTFCCBEFORESEND))
   {
-    if (WithCrypto && (msg->security & (ENCRYPT | SIGN)) && option (OPTFCCCLEAR))
+    if (WithCrypto &&
+        (msg->security & (ENCRYPT | SIGN | AUTOCRYPT))
+        && option (OPTFCCCLEAR))
     {
       msg->content = clear_content;
-      msg->security &= ~(ENCRYPT | SIGN);
+      msg->security &= ~(ENCRYPT | SIGN | AUTOCRYPT);
       mutt_free_envelope (&msg->content->mime_headers);
     }
 
     /* check to see if the user wants copies of all attachments */
-    if (query_quadoption (OPT_FCCATTACH, _("Save attachments in Fcc?")) != MUTT_YES &&
-        msg->content->type == TYPEMULTIPART)
+    save_atts = 1;
+    if (msg->content->type == TYPEMULTIPART)
+    {
+      /* In batch mode, save attachments if the quadoption is yes or ask-yes */
+      if (flags & SENDBATCH)
+      {
+        if (!(quadoption (OPT_FCCATTACH) & 0x1))
+          save_atts = 0;
+      }
+      else if (query_quadoption (OPT_FCCATTACH, _("Save attachments in Fcc?")) != MUTT_YES)
+        save_atts = 0;
+    }
+    if (!save_atts)
     {
       if (WithCrypto
-          && (msg->security & (ENCRYPT | SIGN))
+          && (msg->security & (ENCRYPT | SIGN | AUTOCRYPT))
           && (mutt_strcmp (msg->content->subtype, "encrypted") == 0 ||
               mutt_strcmp (msg->content->subtype, "signed") == 0))
       {
-        if (clear_content->type == TYPEMULTIPART)
+        if ((clear_content->type == TYPEMULTIPART) &&
+            !ascii_strcasecmp (clear_content->subtype, "mixed"))
         {
           if (!(msg->security & ENCRYPT) && (msg->security & SIGN))
           {
@@ -1226,7 +1291,7 @@ static int save_fcc (HEADER *msg, char *fcc, size_t fcc_len,
           /* this means writing only the main part */
           msg->content = clear_content->parts;
 
-          if (mutt_protect (msg, pgpkeylist) == -1)
+          if (mutt_protect (msg, pgpkeylist, 0) == -1)
           {
             /* we can't do much about it at this point, so
              * fallback to saving the whole thing to fcc
@@ -1239,7 +1304,7 @@ static int save_fcc (HEADER *msg, char *fcc, size_t fcc_len,
           save_content = msg->content;
         }
       }
-      else
+      else if (!ascii_strcasecmp (msg->content->subtype, "mixed"))
         msg->content = msg->content->parts;
     }
   }
@@ -1252,7 +1317,7 @@ full_fcc:
      * message was first postponed.
      */
     msg->received = time (NULL);
-    rc = mutt_write_fcc (fcc, msg, NULL, 0, NULL);
+    rc = mutt_write_fcc (mutt_b2s (fcc), msg, NULL, 0, NULL);
     while (rc && !(flags & SENDBATCH))
     {
       mutt_clear_error ();
@@ -1277,8 +1342,8 @@ full_fcc:
              This is the prompt to enter an "alternate (m)ailbox" when the
              initial Fcc fails.
           */
-          rc = mutt_enter_fname (_("Fcc mailbox"), fcc, fcc_len, 1);
-          if ((rc == -1) || !fcc[0])
+          rc = mutt_buffer_enter_fname (_("Fcc mailbox"), fcc, 1);
+          if ((rc == -1) || !mutt_buffer_len (fcc))
           {
             rc = 0;
             break;
@@ -1286,7 +1351,7 @@ full_fcc:
           /* fall through */
 
         case 1:   /* (r)etry */
-          rc = mutt_write_fcc (fcc, msg, NULL, 0, NULL);
+          rc = mutt_write_fcc (mutt_b2s (fcc), msg, NULL, 0, NULL);
           break;
 
         case -1:  /* abort */
@@ -1448,55 +1513,59 @@ static int has_attach_keyword (char *filename)
   return match;
 }
 
-static int postpone_message (HEADER *msg, HEADER *cur, char *fcc, int flags)
+static int postpone_message (HEADER *msg, HEADER *cur, const char *fcc, int flags)
 {
   char *pgpkeylist = NULL;
   char *encrypt_as = NULL;
-  int is_signed;
   BODY *clear_content = NULL;
 
-  if (!(Postponed && *Postponed))
+  if (!Postponed)
   {
     mutt_error _("Cannot postpone.  $postponed is unset");
     return -1;
   }
 
   if (msg->content->next)
-    msg->content = mutt_make_multipart (msg->content);
+    msg->content = mutt_make_multipart_mixed (msg->content);
 
   mutt_encode_descriptions (msg->content, 1);
 
-  if (WithCrypto && option (OPTPOSTPONEENCRYPT) && (msg->security & ENCRYPT))
+  if (WithCrypto && option (OPTPOSTPONEENCRYPT) &&
+      (msg->security & (ENCRYPT | AUTOCRYPT)))
   {
     if ((WithCrypto & APPLICATION_PGP) && (msg->security & APPLICATION_PGP))
       encrypt_as = PgpDefaultKey;
     else if ((WithCrypto & APPLICATION_SMIME) && (msg->security & APPLICATION_SMIME))
       encrypt_as = SmimeDefaultKey;
-    if (!(encrypt_as && *encrypt_as))
+    if (!encrypt_as)
       encrypt_as = PostponeEncryptAs;
 
-    if (encrypt_as && *encrypt_as)
+#ifdef USE_AUTOCRYPT
+    if (msg->security & AUTOCRYPT)
     {
-      is_signed = msg->security & SIGN;
-      if (is_signed)
-        msg->security &= ~SIGN;
+      if (mutt_autocrypt_set_sign_as_default_key (msg))
+      {
+        msg->content = mutt_remove_multipart_mixed (msg->content);
+        decode_descriptions (msg->content);
+        return -1;
+      }
+      encrypt_as = AutocryptDefaultKey;
+    }
+#endif
 
+    if (encrypt_as)
+    {
       pgpkeylist = safe_strdup (encrypt_as);
       clear_content = msg->content;
-      if (mutt_protect (msg, pgpkeylist) == -1)
+      if (mutt_protect (msg, pgpkeylist, 1) == -1)
       {
-        if (is_signed)
-          msg->security |= SIGN;
         FREE (&pgpkeylist);
-        msg->content = mutt_remove_multipart (msg->content);
+        msg->content = mutt_remove_multipart_mixed (msg->content);
         decode_descriptions (msg->content);
         return -1;
       }
 
-      if (is_signed)
-        msg->security |= SIGN;
       FREE (&pgpkeylist);
-
       mutt_encode_descriptions (msg->content, 0);
     }
   }
@@ -1520,7 +1589,7 @@ static int postpone_message (HEADER *msg, HEADER *cur, char *fcc, int flags)
       msg->content = clear_content;
     }
     mutt_free_envelope (&msg->content->mime_headers);  /* protected headers */
-    msg->content = mutt_remove_multipart (msg->content);
+    msg->content = mutt_remove_multipart_mixed (msg->content);
     decode_descriptions (msg->content);
     mutt_unprepare_envelope (msg->env);
     return -1;
@@ -1542,12 +1611,12 @@ static int postpone_message (HEADER *msg, HEADER *cur, char *fcc, int flags)
 int
 ci_send_message (int flags,		/* send mode */
 		 HEADER *msg,		/* template to use for new message */
-		 char *tempfile,	/* file specified by -i or -H */
+		 const char *tempfile,	/* file specified by -i or -H */
 		 CONTEXT *ctx,		/* current mailbox */
 		 HEADER *cur)		/* current message */
 {
   char buffer[LONG_STRING];
-  char fcc[_POSIX_PATH_MAX] = ""; /* where to copy this message */
+  BUFFER *fcc; /* where to copy this message */
   FILE *tempfp = NULL;
   BODY *pbody;
   int i, killfrom = 0;
@@ -1576,6 +1645,10 @@ ci_send_message (int flags,		/* send mode */
       flags |= SENDPOSTPONED;
   }
 
+  /* Allocate the buffer due to the long lifetime, but
+   * pre-resize it to ensure there are no NULL data field issues */
+  fcc = mutt_buffer_new ();
+  mutt_buffer_increase_size (fcc, LONG_STRING);
 
   if (flags & SENDPOSTPONED)
   {
@@ -1596,7 +1669,7 @@ ci_send_message (int flags,		/* send mode */
 
     if (flags == SENDPOSTPONED)
     {
-      if ((flags = mutt_get_postponed (ctx, msg, &cur, fcc, sizeof (fcc))) < 0)
+      if ((flags = mutt_get_postponed (ctx, msg, &cur, fcc)) < 0)
       {
         flags = SENDPOSTPONED;
 	goto cleanup;
@@ -1746,12 +1819,6 @@ ci_send_message (int flags,		/* send mode */
      */
     msg->replied = 0;
 
-    if (! (flags & SENDKEY))
-    {
-      if (option (OPTTEXTFLOWED) && msg->content->type == TYPETEXT && !ascii_strcasecmp (msg->content->subtype, "plain"))
-        mutt_set_parameter ("format", "flowed", &msg->content->parameter);
-    }
-
     /* $use_from and/or $from might have changed in a send-hook */
     if (killfrom)
     {
@@ -1779,6 +1846,19 @@ ci_send_message (int flags,		/* send mode */
     if (!option (OPTSIGONTOP) && ! (flags & (SENDMAILX|SENDKEY|SENDBATCH))
 	&& Editor && mutt_strcmp (Editor, "builtin") != 0)
       append_signature (tempfp);
+  }
+
+  /* Only set format=flowed for new messages.  Postponed/resent/draftfiles
+   * should respect the original email.
+   *
+   * This is set here so that send-hook can be used to turn the option on.
+   */
+  if (!(flags & (SENDKEY | SENDPOSTPONED | SENDRESEND | SENDDRAFTFILE)))
+  {
+    if (option (OPTTEXTFLOWED) &&
+        msg->content->type == TYPETEXT &&
+        !ascii_strcasecmp (msg->content->subtype, "plain"))
+      mutt_set_parameter ("format", "flowed", &msg->content->parameter);
   }
 
   /*
@@ -1835,7 +1915,7 @@ ci_send_message (int flags,		/* send mode */
       else if (option (OPTEDITHDRS))
       {
 	mutt_env_to_local (msg->env);
-	mutt_edit_headers (Editor, msg->content->filename, msg, fcc, sizeof (fcc));
+	mutt_edit_headers (Editor, msg->content->filename, msg, fcc);
 	mutt_env_to_intl (msg->env, NULL, NULL);
       }
       else
@@ -1848,18 +1928,6 @@ ci_send_message (int flags,		/* send mode */
 	}
 	else
 	  mutt_perror (msg->content->filename);
-      }
-
-      /* If using format=flowed, perform space stuffing.  Avoid stuffing when
-       * recalling a postponed message where the stuffing was already
-       * performed.  If it has already been performed, the format=flowed
-       * parameter will be present.
-       */
-      if (option (OPTTEXTFLOWED) && msg->content->type == TYPETEXT && !ascii_strcasecmp("plain", msg->content->subtype))
-      {
-	char *p = mutt_get_parameter("format", msg->content->parameter);
-	if (ascii_strcasecmp("flowed", NONULL(p)))
-	  rfc3676_space_stuff (msg);
       }
 
       mutt_message_hook (NULL, msg, MUTT_SEND2HOOK);
@@ -1896,23 +1964,36 @@ ci_send_message (int flags,		/* send mode */
    */
   if (WithCrypto && (msg->security == 0) && !(flags & (SENDBATCH | SENDMAILX | SENDPOSTPONED | SENDRESEND)))
   {
-    if (option (OPTCRYPTAUTOSIGN))
-      msg->security |= SIGN;
-    if (option (OPTCRYPTAUTOENCRYPT))
-      msg->security |= ENCRYPT;
-    if (option (OPTCRYPTREPLYENCRYPT) && cur && (cur->security & ENCRYPT))
-      msg->security |= ENCRYPT;
-    if (option (OPTCRYPTREPLYSIGN) && cur && (cur->security & SIGN))
-      msg->security |= SIGN;
-    if (option (OPTCRYPTREPLYSIGNENCRYPTED) && cur && (cur->security & ENCRYPT))
-      msg->security |= SIGN;
-    if ((WithCrypto & APPLICATION_PGP) &&
-        ((msg->security & (ENCRYPT | SIGN)) || option (OPTCRYPTOPPORTUNISTICENCRYPT)))
+    if (
+#ifdef USE_AUTOCRYPT
+      option (OPTAUTOCRYPT) && option (OPTAUTOCRYPTREPLY)
+#else
+      0
+#endif
+      && cur && (cur->security & AUTOCRYPT))
     {
-      if (option (OPTPGPAUTOINLINE))
-	msg->security |= INLINE;
-      if (option (OPTPGPREPLYINLINE) && cur && (cur->security & INLINE))
-	msg->security |= INLINE;
+      msg->security |= (AUTOCRYPT | AUTOCRYPT_OVERRIDE | APPLICATION_PGP);
+    }
+    else
+    {
+      if (option (OPTCRYPTAUTOSIGN))
+        msg->security |= SIGN;
+      if (option (OPTCRYPTAUTOENCRYPT))
+        msg->security |= ENCRYPT;
+      if (option (OPTCRYPTREPLYENCRYPT) && cur && (cur->security & ENCRYPT))
+        msg->security |= ENCRYPT;
+      if (option (OPTCRYPTREPLYSIGN) && cur && (cur->security & SIGN))
+        msg->security |= SIGN;
+      if (option (OPTCRYPTREPLYSIGNENCRYPTED) && cur && (cur->security & ENCRYPT))
+        msg->security |= SIGN;
+      if ((WithCrypto & APPLICATION_PGP) &&
+          ((msg->security & (ENCRYPT | SIGN)) || option (OPTCRYPTOPPORTUNISTICENCRYPT)))
+      {
+        if (option (OPTPGPAUTOINLINE))
+          msg->security |= INLINE;
+        if (option (OPTPGPREPLYINLINE) && cur && (cur->security & INLINE))
+          msg->security |= INLINE;
+      }
     }
 
     if (msg->security || option (OPTCRYPTOPPORTUNISTICENCRYPT))
@@ -1959,7 +2040,7 @@ ci_send_message (int flags,		/* send mode */
        * or OPTCRYPTREPLYENCRYPT, then don't enable opportunistic encrypt for
        * the message.
        */
-      if (! (msg->security & ENCRYPT))
+      if (! (msg->security & (ENCRYPT|AUTOCRYPT)))
       {
         msg->security |= OPPENCRYPT;
         crypt_opportunistic_encrypt(msg);
@@ -1986,7 +2067,9 @@ ci_send_message (int flags,		/* send mode */
   /* specify a default fcc.  if we are in batchmode, only save a copy of
    * the message if the value of $copy is yes or ask-yes */
 
-  if (!fcc[0] && !(flags & (SENDPOSTPONEDFCC)) && (!(flags & SENDBATCH) || (quadoption (OPT_COPY) & 0x1)))
+  if (!mutt_buffer_len (fcc) &&
+      !(flags & (SENDPOSTPONEDFCC)) &&
+      (!(flags & SENDBATCH) || (quadoption (OPT_COPY) & 0x1)))
   {
     /* set the default FCC */
     if (!msg->env->from)
@@ -1995,7 +2078,7 @@ ci_send_message (int flags,		/* send mode */
       killfrom = 1; /* no need to check $use_from because if the user specified
 		       a from address it would have already been set by now */
     }
-    mutt_select_fcc (fcc, sizeof (fcc), msg);
+    mutt_select_fcc (fcc, msg);
     if (killfrom)
     {
       rfc822_free_address (&msg->env->from);
@@ -2004,14 +2087,16 @@ ci_send_message (int flags,		/* send mode */
   }
 
 
+  mutt_rfc3676_space_stuff (msg);
+
   mutt_update_encoding (msg->content);
 
   if (! (flags & (SENDMAILX | SENDBATCH)))
   {
 main_loop:
 
-    mutt_pretty_mailbox (fcc, sizeof (fcc));
-    i = mutt_compose_menu (msg, fcc, sizeof (fcc), cur,
+    mutt_buffer_pretty_mailbox (fcc);
+    i = mutt_compose_menu (msg, fcc, cur,
                            (flags & SENDNOFREEHEADER ? MUTT_COMPOSE_NOFREEHEADER : 0));
     if (i == -1)
     {
@@ -2021,7 +2106,7 @@ main_loop:
     }
     else if (i == 1)
     {
-      if (postpone_message (msg, cur, fcc, flags) != 0)
+      if (postpone_message (msg, cur, mutt_b2s (fcc), flags) != 0)
         goto main_loop;
       mutt_message _("Message postponed.");
       rv = 1;
@@ -2081,8 +2166,16 @@ main_loop:
     }
   }
 
+  if (generate_multipart_alternative (msg, flags))
+  {
+    if (!(flags & SENDBATCH))
+      goto main_loop;
+    else
+      goto cleanup;
+  }
+
   if (msg->content->next)
-    msg->content = mutt_make_multipart (msg->content);
+    msg->content = mutt_make_multipart_mixed (msg->content);
 
   /*
    * Ok, we need to do it this way instead of handling all fcc stuff in
@@ -2104,15 +2197,16 @@ main_loop:
 
   if (WithCrypto)
   {
-    if (msg->security & (ENCRYPT | SIGN))
+    if (msg->security & (ENCRYPT | SIGN | AUTOCRYPT))
     {
       /* save the decrypted attachments */
       clear_content = msg->content;
 
       if ((crypt_get_keys (msg, &pgpkeylist, 0) == -1) ||
-          mutt_protect (msg, pgpkeylist) == -1)
+          mutt_protect (msg, pgpkeylist, 0) == -1)
       {
-        msg->content = mutt_remove_multipart (msg->content);
+        msg->content = mutt_remove_multipart_mixed (msg->content);
+        msg->content = mutt_remove_multipart_alternative (msg->content);
 
 	FREE (&pgpkeylist);
 
@@ -2144,7 +2238,7 @@ main_loop:
   mutt_prepare_envelope (msg->env, 1);
 
   if (option (OPTFCCBEFORESEND))
-    save_fcc (msg, fcc, sizeof(fcc), clear_content, pgpkeylist, flags);
+    save_fcc (msg, fcc, clear_content, pgpkeylist, flags);
 
   if ((i = send_message (msg)) < 0)
   {
@@ -2152,14 +2246,16 @@ main_loop:
     {
       if (!WithCrypto)
         ;
-      else if ((msg->security & ENCRYPT) ||
+      else if ((msg->security & (ENCRYPT | AUTOCRYPT)) ||
                ((msg->security & SIGN)
                 && msg->content->type == TYPEAPPLICATION))
       {
 	mutt_free_body (&msg->content); /* destroy PGP data */
 	msg->content = clear_content;	/* restore clear text. */
       }
-      else if ((msg->security & SIGN) && msg->content->type == TYPEMULTIPART)
+      else if ((msg->security & SIGN) &&
+               msg->content->type == TYPEMULTIPART &&
+               !ascii_strcasecmp (msg->content->subtype, "signed"))
       {
 	mutt_free_body (&msg->content->parts->next);	     /* destroy sig */
 	msg->content = mutt_remove_multipart (msg->content);
@@ -2167,7 +2263,8 @@ main_loop:
 
       FREE (&pgpkeylist);
       mutt_free_envelope (&msg->content->mime_headers);  /* protected headers */
-      msg->content = mutt_remove_multipart (msg->content);
+      msg->content = mutt_remove_multipart_mixed (msg->content);
+      msg->content = mutt_remove_multipart_alternative (msg->content);
       decode_descriptions (msg->content);
       mutt_unprepare_envelope (msg->env);
       goto main_loop;
@@ -2180,7 +2277,7 @@ main_loop:
   }
 
   if (!option (OPTFCCBEFORESEND))
-    save_fcc (msg, fcc, sizeof(fcc), clear_content, pgpkeylist, flags);
+    save_fcc (msg, fcc, clear_content, pgpkeylist, flags);
 
   if (!option (OPTNOCURSES) && ! (flags & SENDMAILX))
   {
@@ -2214,6 +2311,7 @@ main_loop:
   rv = 0;
 
 cleanup:
+  mutt_buffer_free (&fcc);
 
   if (flags & SENDPOSTPONED)
   {

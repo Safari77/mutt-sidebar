@@ -5,16 +5,17 @@ include $(top_srcdir)/flymake.am
 AUTOMAKE_OPTIONS = 1.6 foreign
 EXTRA_PROGRAMS = mutt_dotlock mutt_pgpring pgpewrap mutt_md5
 
-if BUILD_DOC
-DOC_SUBDIR = doc
-endif
-
 if BUILD_IMAP
 IMAP_SUBDIR = imap
 IMAP_INCLUDES = -I$(top_srcdir)/imap
 endif
 
-SUBDIRS = m4 po intl $(DOC_SUBDIR) contrib $(IMAP_SUBDIR)
+if BUILD_AUTOCRYPT
+AUTOCRYPT_SUBDIR = autocrypt
+AUTOCRYPT_INCLUDES = -I$(top_srcdir)/autocrypt
+endif
+
+SUBDIRS = m4 po intl doc contrib $(IMAP_SUBDIR) $(AUTOCRYPT_SUBDIR)
 
 bin_SCRIPTS = muttbug flea $(SMIMEAUX_TARGET)
 
@@ -42,17 +43,19 @@ mutt_SOURCES = \
 
 nodist_mutt_SOURCES = $(BUILT_SOURCES)
 
-mutt_LDADD = $(MUTT_LIB_OBJECTS) $(LIBOBJS) $(LIBIMAP) $(MUTTLIBS) \
+mutt_LDADD = $(MUTT_LIB_OBJECTS) $(LIBOBJS) \
+	$(LIBIMAP) $(LIBAUTOCRYPT) \
+	$(MUTTLIBS) \
 	$(INTLLIBS) $(LIBICONV)  $(GPGME_LIBS) $(GPG_ERROR_LIBS)
 
 mutt_DEPENDENCIES = $(MUTT_LIB_OBJECTS) $(LIBOBJS) $(LIBIMAPDEPS) \
-	$(INTLDEPS)
+	$(INTLDEPS) $(LIBAUTOCRYPTDEPS)
 
 DEFS=-DPKGDATADIR=\"$(pkgdatadir)\" -DSYSCONFDIR=\"$(sysconfdir)\" \
 	-DBINDIR=\"$(bindir)\" -DMUTTLOCALEDIR=\"$(datadir)/locale\" \
 	-DHAVE_CONFIG_H=1
 
-AM_CPPFLAGS=-I. -I$(top_srcdir) $(IMAP_INCLUDES) $(GPGME_CFLAGS) -Iintl
+AM_CPPFLAGS=-I. -I$(top_srcdir) $(IMAP_INCLUDES) $(AUTOCRYPT_INCLUDES) $(GPGME_CFLAGS) -Iintl
 
 EXTRA_mutt_SOURCES = account.c bcache.c compress.c crypt-gpgme.c crypt-mod-pgp-classic.c \
 	crypt-mod-pgp-gpgme.c crypt-mod-smime-classic.c \
@@ -140,8 +143,20 @@ keymap_alldefs.h: $(srcdir)/OPS $(srcdir)/OPS.PGP $(srcdir)/OPS.MIX $(srcdir)/OP
 		$(srcdir)/OPS.MIX $(srcdir)/OPS.CRYPT $(srcdir)/OPS.SMIME \
 			> keymap_alldefs.h
 
+# If we have GNU make, we can use the FORCE target to enable
+# automatic rebuilding of version.h after a commit.
+if GNU_MAKE
+version.h: FORCE
+	echo '#define MUTT_VERSION "'`sh "$(srcdir)/version.sh"`'"' > $@.tmp
+	cmp -s $@ $@.tmp && rm -f $@.tmp || mv $@.tmp $@
+FORCE:
+# On some other versions of make, such as OpenBSD, invoking the
+# version.h target always retriggers targets with that prerequisite, which
+# causes installation issues.
+else
 version.h: $(srcdir)/version.sh
 	echo '#define MUTT_VERSION "'`sh "$(srcdir)/version.sh"`'"' > version.h
+endif
 
 reldate.h: $(srcdir)/mkreldate.sh $(srcdir)/ChangeLog
 	echo 'const char *ReleaseDate = "'`(cd $(srcdir) && ./mkreldate.sh)`'";' > reldate.h

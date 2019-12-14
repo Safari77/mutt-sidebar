@@ -209,6 +209,21 @@ event_t mutt_getch (void)
 
 int _mutt_get_field (const char *field, char *buf, size_t buflen, int complete, int multiple, char ***files, int *numfiles)
 {
+  BUFFER *buffer;
+  int rc;
+
+  buffer = mutt_buffer_pool_get ();
+
+  mutt_buffer_addstr (buffer, buf);
+  rc = _mutt_buffer_get_field (field, buffer, complete, multiple, files, numfiles);
+  strfcpy (buf, mutt_b2s (buffer), buflen);
+
+  mutt_buffer_pool_release (&buffer);
+  return rc;
+}
+
+int _mutt_buffer_get_field (const char *field, BUFFER *buffer, int complete, int multiple, char ***files, int *numfiles)
+{
   int ret;
   int x;
 
@@ -231,9 +246,15 @@ int _mutt_get_field (const char *field, char *buf, size_t buflen, int complete, 
     NORMAL_COLOR;
     mutt_refresh ();
     mutt_window_getyx (MuttMessageWindow, NULL, &x);
-    ret = _mutt_enter_string (buf, buflen, x, complete, multiple, files, numfiles, es);
+    ret = _mutt_enter_string (buffer->data, buffer->dsize, x, complete, multiple, files, numfiles, es);
   }
   while (ret == 1);
+
+  if (ret != 0)
+    mutt_buffer_clear (buffer);
+  else
+    mutt_buffer_fix_dptr (buffer);
+
   mutt_window_clearline (MuttMessageWindow, 0);
   mutt_free_enter_state (&es);
 
@@ -242,11 +263,16 @@ int _mutt_get_field (const char *field, char *buf, size_t buflen, int complete, 
 
 int mutt_get_field_unbuffered (char *msg, char *buf, size_t buflen, int flags)
 {
-  int rc;
+  int rc, reset_ignoremacro = 0;
 
-  set_option (OPTIGNOREMACROEVENTS);
+  if (!option (OPTIGNOREMACROEVENTS))
+  {
+    set_option (OPTIGNOREMACROEVENTS);
+    reset_ignoremacro = 1;
+  }
   rc = mutt_get_field (msg, buf, buflen, flags);
-  unset_option (OPTIGNOREMACROEVENTS);
+  if (reset_ignoremacro)
+    unset_option (OPTIGNOREMACROEVENTS);
 
   return (rc);
 }
@@ -500,7 +526,7 @@ static void error_history_dump (FILE *f)
 void mutt_error_history_display ()
 {
   static int in_process = 0;
-  char t[_POSIX_PATH_MAX];
+  BUFFER *t = NULL;
   FILE *f;
 
   if (!ErrorHistSize)
@@ -515,18 +541,22 @@ void mutt_error_history_display ()
     return;
   }
 
-  mutt_mktemp (t, sizeof (t));
-  if ((f = safe_fopen (t, "w")) == NULL)
+  t = mutt_buffer_pool_get ();
+  mutt_buffer_mktemp (t);
+  if ((f = safe_fopen (mutt_b2s (t), "w")) == NULL)
   {
-    mutt_perror (t);
-    return;
+    mutt_perror (mutt_b2s (t));
+    goto cleanup;
   }
   error_history_dump (f);
   safe_fclose (&f);
 
   in_process = 1;
-  mutt_do_pager (_("Error History"), t, 0, NULL);
+  mutt_do_pager (_("Error History"), mutt_b2s (t), 0, NULL);
   in_process = 0;
+
+cleanup:
+  mutt_buffer_pool_release (&t);
 }
 
 static void curses_message (int error, const char *fmt, va_list ap)
@@ -967,7 +997,7 @@ int _mutt_enter_fname (const char *prompt, char *buf, size_t blen, int buffy,
 
   fname = mutt_buffer_pool_get ();
 
-  mutt_buffer_addstr (fname, NONULL (buf));
+  mutt_buffer_addstr (fname, buf);
   rc = _mutt_buffer_enter_fname (prompt, fname, buffy, multiple, files, numfiles);
   strfcpy (buf, mutt_b2s (fname), blen);
 
@@ -1014,12 +1044,10 @@ int _mutt_buffer_enter_fname (const char *prompt, BUFFER *fname, int buffy,
     mutt_unget_event (ch.op ? 0 : ch.ch, ch.op ? ch.op : 0);
 
     mutt_buffer_increase_size (fname, LONG_STRING);
-    if (_mutt_get_field (pc, fname->data, fname->dsize,
-                         (buffy ? MUTT_EFILE : MUTT_FILE) | MUTT_CLEAR,
-                         multiple, files, numfiles) != 0)
+    if (_mutt_buffer_get_field (pc, fname,
+                                (buffy ? MUTT_EFILE : MUTT_FILE) | MUTT_CLEAR,
+                                multiple, files, numfiles) != 0)
       mutt_buffer_clear (fname);
-    else
-      mutt_buffer_fix_dptr (fname);
     FREE (&pc);
   }
 

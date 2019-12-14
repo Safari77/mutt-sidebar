@@ -42,7 +42,7 @@ typedef int (*crypt_func_pgp_check_traditional_t) (FILE *fp, BODY *b,
                                                    int just_one);
 typedef BODY *(*crypt_func_pgp_traditional_encryptsign_t) (BODY *a, int flags,
                                                            char *keylist);
-typedef BODY *(*crypt_func_pgp_make_key_attachment_t) (char *tempf);
+typedef BODY *(*crypt_func_pgp_make_key_attachment_t) (void);
 typedef char *(*crypt_func_findkeys_t) (ADDRESS *adrlist, int oppenc_mode);
 typedef BODY *(*crypt_func_sign_message_t) (BODY *a);
 typedef BODY *(*crypt_func_pgp_encrypt_message_t) (BODY *a, char *keylist,
@@ -62,7 +62,7 @@ typedef int (*crypt_func_smime_verify_sender_t) (HEADER *h);
 typedef BODY *(*crypt_func_smime_build_smime_entity_t) (BODY *a,
                                                         char *certlist);
 
-typedef void (*crypt_func_smime_invoke_import_t) (char *infile, char *mailbox);
+typedef void (*crypt_func_smime_invoke_import_t) (const char *infile, const char *mailbox);
 
 typedef void (*crypt_func_init_t) (void);
 

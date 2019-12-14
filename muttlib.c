@@ -330,6 +330,27 @@ void mutt_free_list (LIST **list)
   }
 }
 
+void mutt_free_list_generic(LIST **list, void (*data_free)(char **))
+{
+  LIST *p;
+
+  /* wrap mutt_free_list if no data_free function was provided */
+  if (data_free == NULL)
+  {
+    mutt_free_list(list);
+    return;
+  }
+
+  if (!list) return;
+  while (*list)
+  {
+    p = *list;
+    *list = (*list)->next;
+    data_free(&p->data);
+    FREE (&p);
+  }
+}
+
 LIST *mutt_copy_list (LIST *p)
 {
   LIST *t, *r=NULL, *l=NULL;
@@ -385,31 +406,6 @@ int mutt_matches_ignore (const char *s, LIST *t)
       return 1;
   }
   return 0;
-}
-
-/* prepend the path part of *path to *link */
-void mutt_expand_link (char *newpath, const char *path, const char *link)
-{
-  const char *lb = NULL;
-  size_t len;
-
-  /* link is full path */
-  if (*link == '/')
-  {
-    strfcpy (newpath, link, _POSIX_PATH_MAX);
-    return;
-  }
-
-  if ((lb = strrchr (path, '/')) == NULL)
-  {
-    /* no path in link */
-    strfcpy (newpath, link, _POSIX_PATH_MAX);
-    return;
-  }
-
-  len = lb - path + 1;
-  memcpy (newpath, path, len);
-  strfcpy (newpath + len, link, _POSIX_PATH_MAX - len);
 }
 
 char *mutt_expand_path (char *s, size_t slen)
@@ -502,7 +498,7 @@ void _mutt_buffer_expand_path (BUFFER *src, int rx)
 	  mutt_buffer_strcpy (p, NONULL (Maildir));
 	else
 #endif
-          if (Maildir && *Maildir && Maildir[strlen (Maildir) - 1] == '/')
+          if (Maildir && Maildir[strlen (Maildir) - 1] == '/')
             mutt_buffer_strcpy (p, NONULL (Maildir));
           else
             mutt_buffer_printf (p, "%s/", NONULL (Maildir));
@@ -764,6 +760,25 @@ int mutt_is_text_part (BODY *b)
   return 0;
 }
 
+#ifdef USE_AUTOCRYPT
+void mutt_free_autocrypthdr (AUTOCRYPTHDR **p)
+{
+  AUTOCRYPTHDR *cur;
+
+  if (!p)
+    return;
+
+  while (*p)
+  {
+    cur = *p;
+    *p = (*p)->next;
+    FREE (&cur->addr);
+    FREE (&cur->keydata);
+    FREE (&cur);
+  }
+}
+#endif
+
 void mutt_free_envelope (ENVELOPE **p)
 {
   if (!*p) return;
@@ -790,6 +805,12 @@ void mutt_free_envelope (ENVELOPE **p)
   mutt_free_list (&(*p)->references);
   mutt_free_list (&(*p)->in_reply_to);
   mutt_free_list (&(*p)->userhdrs);
+
+#ifdef USE_AUTOCRYPT
+  mutt_free_autocrypthdr (&(*p)->autocrypt);
+  mutt_free_autocrypthdr (&(*p)->autocrypt_gossip);
+#endif
+
   FREE (p);		/* __FREE_CHECKED__ */
 }
 
@@ -1055,25 +1076,37 @@ void mutt_pretty_mailbox (char *s, size_t buflen)
 
 void mutt_pretty_size (char *s, size_t len, LOFF_T n)
 {
-  if (n == 0)
-    strfcpy (s, "0K", len);
-  /* Change in format released in 1.10.0, but reverted after feedback:
-   * if (n < 1000)
-   *  snprintf (s, len, "%d", (int)n);
-   */
-  else if (n < 10189) /* 0.1K - 9.9K */
-    snprintf (s, len, "%3.1fK", (n < 103) ? 0.1 : n / 1024.0);
-  else if (n < 1023949) /* 10K - 999K */
+  if (option (OPTSIZESHOWBYTES) && (n < 1024))
+    snprintf (s, len, "%d", (int)n);
+  else if (n == 0)
+    strfcpy (s,
+             option (OPTSIZEUNITSONLEFT) ? "K0" : "0K",
+             len);
+  else if (option (OPTSIZESHOWFRACTIONS) && (n < 10189)) /* 0.1K - 9.9K */
+  {
+    snprintf (s, len,
+              option (OPTSIZEUNITSONLEFT) ? "K%3.1f" : "%3.1fK",
+              (n < 103) ? 0.1 : n / 1024.0);
+  }
+  else if (!option (OPTSIZESHOWMB) || (n < 1023949)) /* 10K - 999K */
   {
     /* 51 is magic which causes 10189/10240 to be rounded up to 10 */
-    snprintf (s, len, OFF_T_FMT "K", (n + 51) / 1024);
+    snprintf (s, len,
+              option (OPTSIZEUNITSONLEFT) ? ("K" OFF_T_FMT) : (OFF_T_FMT "K"),
+              (n + 51) / 1024);
   }
-  else if (n < 10433332) /* 1.0M - 9.9M */
-    snprintf (s, len, "%3.1fM", n / 1048576.0);
+  else if (option (OPTSIZESHOWFRACTIONS) && (n < 10433332)) /* 1.0M - 9.9M */
+  {
+    snprintf (s, len,
+              option (OPTSIZEUNITSONLEFT) ? "M%3.1f" : "%3.1fM",
+              n / 1048576.0);
+  }
   else /* 10M+ */
   {
     /* (10433332 + 52428) / 1048576 = 10 */
-    snprintf (s, len, OFF_T_FMT "M", (n + 52428) / 1048576);
+    snprintf (s, len,
+              option (OPTSIZEUNITSONLEFT) ?  ("M" OFF_T_FMT) : (OFF_T_FMT "M"),
+              (n + 52428) / 1048576);
   }
 }
 
@@ -1173,16 +1206,16 @@ void mutt_expand_fmt (BUFFER *dest, const char *fmt, const char *src)
 
 /* return 0 on success, -1 on abort, 1 on error */
 int mutt_check_overwrite (const char *attname, const char *path,
-                          char *fname, size_t flen, int *append, char **directory)
+                          BUFFER *fname, int *append, char **directory)
 {
   int rc = 0;
-  char tmp[PATH_MAX];
+  BUFFER *tmp = NULL;
   struct stat st;
 
-  strfcpy (fname, path, flen);
-  if (access (fname, F_OK) != 0)
+  mutt_buffer_strcpy (fname, path);
+  if (access (mutt_b2s (fname), F_OK) != 0)
     return 0;
-  if (stat (fname, &st) != 0)
+  if (stat (mutt_b2s (fname), &st) != 0)
     return -1;
   if (S_ISDIR (st.st_mode))
   {
@@ -1195,7 +1228,7 @@ int mutt_check_overwrite (const char *attname, const char *path,
 	      (_("File is a directory, save under it? [(y)es, (n)o, (a)ll]"), _("yna")))
       {
 	case 3:		/* all */
-	  mutt_str_replace (directory, fname);
+	  mutt_str_replace (directory, mutt_b2s (fname));
 	  break;
 	case 1:		/* yes */
 	  FREE (directory);		/* __FREE_CHECKED__ */
@@ -1214,14 +1247,20 @@ int mutt_check_overwrite (const char *attname, const char *path,
     else if ((rc = mutt_yesorno (_("File is a directory, save under it?"), MUTT_YES)) != MUTT_YES)
       return (rc == MUTT_NO) ? 1 : -1;
 
-    strfcpy (tmp, mutt_basename (NONULL (attname)), sizeof (tmp));
-    if (mutt_get_field (_("File under directory: "), tmp, sizeof (tmp),
-                        MUTT_FILE | MUTT_CLEAR) != 0 || !tmp[0])
+    tmp = mutt_buffer_pool_get ();
+    mutt_buffer_strcpy (tmp, mutt_basename (NONULL (attname)));
+    if ((mutt_buffer_get_field (_("File under directory: "), tmp,
+                                MUTT_FILE | MUTT_CLEAR) != 0) ||
+        !mutt_buffer_len (tmp))
+    {
+      mutt_buffer_pool_release (&tmp);
       return (-1);
-    mutt_concat_path (fname, path, tmp, flen);
+    }
+    mutt_buffer_concat_path (fname, path, mutt_b2s (tmp));
+    mutt_buffer_pool_release (&tmp);
   }
 
-  if (*append == 0 && access (fname, F_OK) == 0)
+  if (*append == 0 && access (mutt_b2s (fname), F_OK) == 0)
   {
     switch (mutt_multi_choice
 	    (_("File exists, (o)verwrite, (a)ppend, or (c)ancel?"), _("oac")))
@@ -1260,12 +1299,33 @@ void mutt_save_path (char *d, size_t dsize, ADDRESS *a)
     *d = 0;
 }
 
-void mutt_safe_path (char *s, size_t l, ADDRESS *a)
+void mutt_buffer_save_path (BUFFER *dest, ADDRESS *a)
+{
+  if (a && a->mailbox)
+  {
+    mutt_buffer_strcpy (dest, a->mailbox);
+    if (!option (OPTSAVEADDRESS))
+    {
+      char *p;
+
+      if ((p = strpbrk (dest->data, "%@")))
+      {
+	*p = 0;
+        mutt_buffer_fix_dptr (dest);
+      }
+    }
+    mutt_strlower (dest->data);
+  }
+  else
+    mutt_buffer_clear (dest);
+}
+
+void mutt_safe_path (BUFFER *dest, ADDRESS *a)
 {
   char *p;
 
-  mutt_save_path (s, l, a);
-  for (p = s; *p; p++)
+  mutt_buffer_save_path (dest, a);
+  for (p = dest->data; *p; p++)
     if (*p == '/' || ISSPACE (*p) || !IsPrint ((unsigned char) *p))
       *p = '_';
 }
@@ -1278,6 +1338,22 @@ void mutt_buffer_concat_path (BUFFER *d, const char *dir, const char *fname)
     fmt = "%s%s";
 
   mutt_buffer_printf (d, fmt, dir, fname);
+}
+
+/*
+ * Write the concatened pathname (dir + "/" + fname) into dst.
+ * The slash is omitted when dir or fname is of 0 length.
+ */
+void mutt_buffer_concatn_path (BUFFER *dst, const char *dir, size_t dirlen,
+                               const char *fname, size_t fnamelen)
+{
+  mutt_buffer_clear (dst);
+  if (dirlen)
+    mutt_buffer_addstr_n (dst, dir, dirlen);
+  if (dirlen && fnamelen)
+    mutt_buffer_addch (dst, '/');
+  if (fnamelen)
+    mutt_buffer_addstr_n (dst, fname, fnamelen);
 }
 
 const char *mutt_getcwd (BUFFER *cwd)
@@ -1850,7 +1926,7 @@ FILE *mutt_open_read (const char *path, pid_t *thepid)
 /* returns 0 if OK to proceed, -1 to abort, 1 to retry */
 int mutt_save_confirm (const char *s, struct stat *st)
 {
-  char tmp[PATH_MAX];
+  BUFFER *tmp = NULL;
   int ret = 0;
   int rc;
   int magic = 0;
@@ -1869,11 +1945,13 @@ int mutt_save_confirm (const char *s, struct stat *st)
   {
     if (option (OPTCONFIRMAPPEND))
     {
-      snprintf (tmp, sizeof (tmp), _("Append messages to %s?"), s);
-      if ((rc = mutt_yesorno (tmp, MUTT_YES)) == MUTT_NO)
+      tmp = mutt_buffer_pool_get ();
+      mutt_buffer_printf (tmp, _("Append messages to %s?"), s);
+      if ((rc = mutt_yesorno (mutt_b2s (tmp), MUTT_YES)) == MUTT_NO)
 	ret = 1;
       else if (rc == -1)
 	ret = -1;
+      mutt_buffer_pool_release (&tmp);
     }
   }
 
@@ -1894,11 +1972,13 @@ int mutt_save_confirm (const char *s, struct stat *st)
     {
       if (option (OPTCONFIRMCREATE))
       {
-	snprintf (tmp, sizeof (tmp), _("Create %s?"), s);
-	if ((rc = mutt_yesorno (tmp, MUTT_YES)) == MUTT_NO)
+        tmp = mutt_buffer_pool_get ();
+	mutt_buffer_printf (tmp, _("Create %s?"), s);
+	if ((rc = mutt_yesorno (mutt_b2s (tmp), MUTT_YES)) == MUTT_NO)
 	  ret = 1;
 	else if (rc == -1)
 	  ret = -1;
+        mutt_buffer_pool_release (&tmp);
       }
     }
     else
@@ -1941,13 +2021,15 @@ int state_printf (STATE *s, const char *fmt, ...)
 
 void state_mark_attach (STATE *s)
 {
-  if ((s->flags & MUTT_DISPLAY) && !mutt_strcmp (Pager, "builtin"))
+  if ((s->flags & MUTT_DISPLAY) &&
+      (!Pager || !mutt_strcmp (Pager, "builtin")))
     state_puts (AttachmentMarker, s);
 }
 
 void state_mark_protected_header (STATE *s)
 {
-  if ((s->flags & MUTT_DISPLAY) && !mutt_strcmp (Pager, "builtin"))
+  if ((s->flags & MUTT_DISPLAY) &&
+      (!Pager || !mutt_strcmp (Pager, "builtin")))
     state_puts (ProtectedHeaderMarker, s);
 }
 
@@ -2263,12 +2345,15 @@ int mutt_match_spam_list (const char *s, REPLACE_LIST *l, char *text, int textsi
   return 0;
 }
 
-void mutt_encode_path (char *dest, size_t dlen, const char *src)
+void mutt_encode_path (BUFFER *dest, const char *src)
 {
-  char *p = safe_strdup (src);
-  int rc = mutt_convert_string (&p, Charset, "utf-8", 0);
+  char *p;
+  int rc;
+
+  p = safe_strdup (src);
+  rc = mutt_convert_string (&p, Charset, "utf-8", 0);
   /* `src' may be NULL, such as when called from the pop3 driver. */
-  strfcpy (dest, (rc == 0) ? NONULL(p) : NONULL(src), dlen);
+  mutt_buffer_strcpy (dest, (rc == 0) ? NONULL(p) : NONULL(src));
   FREE (&p);
 }
 

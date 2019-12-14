@@ -48,17 +48,17 @@ static HASH *IdxFmtHooks = NULL;
 
 static int current_hook_type = 0;
 
-int mutt_parse_hook (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *err)
+int mutt_parse_hook (BUFFER *buf, BUFFER *s, union pointer_long_t udata, BUFFER *err)
 {
   HOOK *ptr;
-  BUFFER command, pattern;
-  int rc, not = 0;
+  BUFFER *command, *pattern;
+  int rc = -1, not = 0;
   regex_t *rx = NULL;
   pattern_t *pat = NULL;
-  char path[_POSIX_PATH_MAX];
+  long data = udata.l;
 
-  mutt_buffer_init (&pattern);
-  mutt_buffer_init (&command);
+  command = mutt_buffer_pool_get ();
+  pattern = mutt_buffer_pool_get ();
 
   if (*s->dptr == '!')
   {
@@ -67,60 +67,63 @@ int mutt_parse_hook (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *err)
     not = 1;
   }
 
-  mutt_extract_token (&pattern, s, 0);
+  mutt_extract_token (pattern, s, 0);
 
   if (!MoreArgs (s))
   {
     strfcpy (err->data, _("too few arguments"), err->dsize);
-    goto error;
+    goto cleanup;
   }
 
-  mutt_extract_token (&command, s, (data & (MUTT_FOLDERHOOK | MUTT_SENDHOOK | MUTT_SEND2HOOK | MUTT_ACCOUNTHOOK | MUTT_REPLYHOOK)) ?  MUTT_TOKEN_SPACE : 0);
+  mutt_extract_token (command, s, (data & (MUTT_FOLDERHOOK | MUTT_SENDHOOK | MUTT_SEND2HOOK | MUTT_ACCOUNTHOOK | MUTT_REPLYHOOK)) ?  MUTT_TOKEN_SPACE : 0);
 
-  if (!command.data)
+  if (!mutt_buffer_len (command))
   {
     strfcpy (err->data, _("too few arguments"), err->dsize);
-    goto error;
+    goto cleanup;
   }
 
   if (MoreArgs (s))
   {
     strfcpy (err->data, _("too many arguments"), err->dsize);
-    goto error;
+    goto cleanup;
   }
 
   if (data & (MUTT_FOLDERHOOK | MUTT_MBOXHOOK))
   {
+    BUFFER *tmp = NULL;
+
     /* Accidentally using the ^ mailbox shortcut in the .muttrc is a
      * common mistake */
-    if ((*pattern.data == '^') && (! CurrentFolder))
+    if ((*(pattern->data) == '^') && (!CurrentFolder))
     {
       strfcpy (err->data, _("current mailbox shortcut '^' is unset"), err->dsize);
-      goto error;
+      goto cleanup;
     }
 
-    strfcpy (path, pattern.data, sizeof (path));
-    _mutt_expand_path (path, sizeof (path), 1);
+    tmp = mutt_buffer_pool_get ();
+    mutt_buffer_strcpy (tmp, mutt_b2s (pattern));
+    _mutt_buffer_expand_path (tmp, 1);
 
     /* Check for other mailbox shortcuts that expand to the empty string.
      * This is likely a mistake too */
-    if (!*path && *pattern.data)
+    if (!mutt_buffer_len (tmp) && mutt_buffer_len (pattern))
     {
       strfcpy (err->data, _("mailbox shortcut expanded to empty regexp"), err->dsize);
-      goto error;
+      mutt_buffer_pool_release (&tmp);
+      goto cleanup;
     }
 
-    FREE (&pattern.data);
-    memset (&pattern, 0, sizeof (pattern));
-    pattern.data = safe_strdup (path);
+    mutt_buffer_strcpy (pattern, mutt_b2s (tmp));
+    mutt_buffer_pool_release (&tmp);
   }
 #ifdef USE_COMPRESSED
   else if (data & (MUTT_APPENDHOOK | MUTT_OPENHOOK | MUTT_CLOSEHOOK))
   {
-    if (mutt_comp_valid_command (command.data) == 0)
+    if (mutt_comp_valid_command (mutt_b2s (command)) == 0)
     {
       strfcpy (err->data, _("badly formatted command string"), err->dsize);
-      return -1;
+      goto cleanup;
     }
   }
 #endif
@@ -128,28 +131,16 @@ int mutt_parse_hook (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *err)
            && (!WithCrypto || !(data & MUTT_CRYPTHOOK))
     )
   {
-    BUFFER *tmp = NULL;
-
     /* At this stage remain only message-hooks, reply-hooks, send-hooks,
      * send2-hooks, save-hooks, and fcc-hooks: All those allowing full
      * patterns. If given a simple regexp, we expand $default_hook.
      */
-    tmp = mutt_buffer_pool_get ();
-    mutt_buffer_strcpy (tmp, pattern.data);
-    mutt_check_simple (tmp, DefaultHook);
-    FREE (&pattern.data);
-    memset (&pattern, 0, sizeof (pattern));
-    pattern.data = safe_strdup (mutt_b2s (tmp));
-    mutt_buffer_pool_release (&tmp);
+    mutt_check_simple (pattern, DefaultHook);
   }
 
   if (data & (MUTT_MBOXHOOK | MUTT_SAVEHOOK | MUTT_FCCHOOK))
   {
-    strfcpy (path, command.data, sizeof (path));
-    mutt_expand_path (path, sizeof (path));
-    FREE (&command.data);
-    memset (&command, 0, sizeof (command));
-    command.data = safe_strdup (path);
+    mutt_buffer_expand_path (command);
   }
 
   /* check to make sure that a matching hook doesn't already exist */
@@ -157,18 +148,17 @@ int mutt_parse_hook (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *err)
   {
     if (ptr->type == data &&
 	ptr->rx.not == not &&
-	!mutt_strcmp (pattern.data, ptr->rx.pattern))
+	!mutt_strcmp (mutt_b2s (pattern), ptr->rx.pattern))
     {
       if (data & (MUTT_FOLDERHOOK | MUTT_SENDHOOK | MUTT_SEND2HOOK | MUTT_MESSAGEHOOK | MUTT_ACCOUNTHOOK | MUTT_REPLYHOOK | MUTT_CRYPTHOOK))
       {
 	/* these hooks allow multiple commands with the same
 	 * pattern, so if we've already seen this pattern/command pair, just
 	 * ignore it instead of creating a duplicate */
-	if (!mutt_strcmp (ptr->command, command.data))
+	if (!mutt_strcmp (ptr->command, mutt_b2s (command)))
 	{
-	  FREE (&command.data);
-	  FREE (&pattern.data);
-	  return 0;
+          rc = 0;
+          goto cleanup;
 	}
       }
       else
@@ -179,9 +169,9 @@ int mutt_parse_hook (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *err)
 	 * a common action to perform is to change the default (.) entry
 	 * based upon some other information. */
 	FREE (&ptr->command);
-	ptr->command = command.data;
-	FREE (&pattern.data);
-	return 0;
+	ptr->command = safe_strdup (mutt_b2s (command));
+        rc = 0;
+        goto cleanup;
       }
     }
     if (!ptr->next)
@@ -190,24 +180,25 @@ int mutt_parse_hook (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *err)
 
   if (data & (MUTT_SENDHOOK | MUTT_SEND2HOOK | MUTT_SAVEHOOK | MUTT_FCCHOOK | MUTT_MESSAGEHOOK | MUTT_REPLYHOOK))
   {
-    if ((pat = mutt_pattern_comp (pattern.data,
+    if ((pat = mutt_pattern_comp (pattern->data,
                                   (data & (MUTT_SENDHOOK | MUTT_SEND2HOOK | MUTT_FCCHOOK)) ? 0 : MUTT_FULL_MSG,
 				  err)) == NULL)
-      goto error;
+      goto cleanup;
   }
   else
   {
+    int rv;
     /* Hooks not allowing full patterns: Check syntax of regexp */
     rx = safe_malloc (sizeof (regex_t));
 #ifdef MUTT_CRYPTHOOK
-    if ((rc = REGCOMP (rx, NONULL(pattern.data), ((data & (MUTT_CRYPTHOOK|MUTT_CHARSETHOOK|MUTT_ICONVHOOK)) ? REG_ICASE : 0))) != 0)
+    if ((rv = REGCOMP (rx, mutt_b2s (pattern), ((data & (MUTT_CRYPTHOOK|MUTT_CHARSETHOOK|MUTT_ICONVHOOK)) ? REG_ICASE : 0))) != 0)
 #else
-      if ((rc = REGCOMP (rx, NONULL(pattern.data), (data & (MUTT_CHARSETHOOK|MUTT_ICONVHOOK)) ? REG_ICASE : 0)) != 0)
+      if ((rv = REGCOMP (rx, mutt_b2s (pattern), (data & (MUTT_CHARSETHOOK|MUTT_ICONVHOOK)) ? REG_ICASE : 0)) != 0)
 #endif /* MUTT_CRYPTHOOK */
       {
-        regerror (rc, rx, err->data, err->dsize);
+        regerror (rv, rx, err->data, err->dsize);
         FREE (&rx);
-        goto error;
+        goto cleanup;
       }
   }
 
@@ -219,17 +210,18 @@ int mutt_parse_hook (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *err)
   else
     Hooks = ptr = safe_calloc (1, sizeof (HOOK));
   ptr->type = data;
-  ptr->command = command.data;
+  ptr->command = safe_strdup (mutt_b2s (command));
   ptr->pattern = pat;
-  ptr->rx.pattern = pattern.data;
+  ptr->rx.pattern = safe_strdup (mutt_b2s (pattern));
   ptr->rx.rx = rx;
   ptr->rx.not = not;
-  return 0;
 
-error:
-  FREE (&pattern.data);
-  FREE (&command.data);
-  return (-1);
+  rc = 0;
+
+cleanup:
+  mutt_buffer_pool_release (&command);
+  mutt_buffer_pool_release (&pattern);
+  return rc;
 }
 
 static void delete_hook (HOOK *h)
@@ -289,12 +281,13 @@ static void delete_idxfmt_hooks (void)
   hash_destroy (&IdxFmtHooks, delete_idxfmt_hooklist);
 }
 
-int mutt_parse_idxfmt_hook (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *err)
+int mutt_parse_idxfmt_hook (BUFFER *buf, BUFFER *s, union pointer_long_t udata, BUFFER *err)
 {
   HOOK *hooks, *ptr;
   BUFFER *name, *pattern, *fmtstring;
   int rc = -1, not = 0;
   pattern_t *pat = NULL;
+  long data = udata.l;
 
   name = mutt_buffer_pool_get ();
   pattern = mutt_buffer_pool_get ();
@@ -332,7 +325,7 @@ int mutt_parse_idxfmt_hook (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *
     goto out;
   }
 
-  if (DefaultHook && *DefaultHook)
+  if (DefaultHook)
     mutt_check_simple (pattern, DefaultHook);
 
   /* check to make sure that a matching hook doesn't already exist */
@@ -387,7 +380,7 @@ out:
   return rc;
 }
 
-int mutt_parse_unhook (BUFFER *buf, BUFFER *s, unsigned long data, BUFFER *err)
+int mutt_parse_unhook (BUFFER *buf, BUFFER *s, union pointer_long_t udata, BUFFER *err)
 {
   while (MoreArgs (s))
   {
@@ -552,7 +545,7 @@ void mutt_default_save (char *path, size_t pathlen, HEADER *hdr)
   *path = 0;
   if (mutt_addr_hook (path, pathlen, MUTT_SAVEHOOK, Context, hdr) != 0)
   {
-    char tmp[_POSIX_PATH_MAX];
+    BUFFER *tmp = NULL;
     ADDRESS *adr;
     ENVELOPE *env = hdr->env;
     int fromMe = mutt_addr_is_user (env->from);
@@ -569,33 +562,42 @@ void mutt_default_save (char *path, size_t pathlen, HEADER *hdr)
       adr = NULL;
     if (adr)
     {
-      mutt_safe_path (tmp, sizeof (tmp), adr);
-      snprintf (path, pathlen, "=%s", tmp);
+      tmp = mutt_buffer_pool_get ();
+      mutt_safe_path (tmp, adr);
+      snprintf (path, pathlen, "=%s", mutt_b2s (tmp));
+      mutt_buffer_pool_release (&tmp);
     }
   }
 }
 
-void mutt_select_fcc (char *path, size_t pathlen, HEADER *hdr)
+void mutt_select_fcc (BUFFER *path, HEADER *hdr)
 {
   ADDRESS *adr;
-  char buf[_POSIX_PATH_MAX];
+  BUFFER *buf = NULL;
   ENVELOPE *env = hdr->env;
 
-  if (mutt_addr_hook (path, pathlen, MUTT_FCCHOOK, NULL, hdr) != 0)
+  mutt_buffer_increase_size (path, _POSIX_PATH_MAX);
+
+  if (mutt_addr_hook (path->data, path->dsize, MUTT_FCCHOOK, NULL, hdr) != 0)
   {
     if ((option (OPTSAVENAME) || option (OPTFORCENAME)) &&
 	(env->to || env->cc || env->bcc))
     {
       adr = env->to ? env->to : (env->cc ? env->cc : env->bcc);
-      mutt_safe_path (buf, sizeof (buf), adr);
-      mutt_concat_path (path, NONULL(Maildir), buf, pathlen);
-      if (!option (OPTFORCENAME) && mx_access (path, W_OK) != 0)
-	strfcpy (path, NONULL (Outbox), pathlen);
+      buf = mutt_buffer_pool_get ();
+      mutt_safe_path (buf, adr);
+      mutt_buffer_concat_path (path, NONULL(Maildir), mutt_b2s (buf));
+      mutt_buffer_pool_release (&buf);
+      if (!option (OPTFORCENAME) && mx_access (mutt_b2s (path), W_OK) != 0)
+	mutt_buffer_strcpy (path, NONULL (Outbox));
     }
     else
-      strfcpy (path, NONULL (Outbox), pathlen);
+      mutt_buffer_strcpy (path, NONULL (Outbox));
   }
-  mutt_pretty_mailbox (path, pathlen);
+  else
+    mutt_buffer_fix_dptr (path);
+
+  mutt_buffer_pretty_mailbox (path);
 }
 
 static char *_mutt_string_hook (const char *match, int hook)

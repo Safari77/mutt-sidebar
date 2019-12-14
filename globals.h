@@ -40,6 +40,12 @@ WHERE char *Attribution;
 WHERE char *AttributionLocale;
 WHERE char *AttachCharset;
 WHERE char *AttachFormat;
+#ifdef USE_AUTOCRYPT
+WHERE char *AutocryptAcctFormat;
+WHERE char *AutocryptDir;
+WHERE char *AutocryptSignAs;  /* This is used in crypt-gpgme.c */
+WHERE char *AutocryptDefaultKey;  /* Used for postponing messages */
+#endif
 WHERE char *Charset;
 WHERE char *ComposeFormat;
 WHERE char *ConfigCharset;
@@ -62,13 +68,13 @@ WHERE char *HistFile;
 WHERE char *Homedir;
 WHERE char *Hostname;
 #ifdef USE_IMAP
-WHERE char *ImapAuthenticators INITVAL (NULL);
-WHERE char *ImapDelimChars INITVAL (NULL);
+WHERE char *ImapAuthenticators;
+WHERE char *ImapDelimChars;
 WHERE char *ImapHeaders;
-WHERE char *ImapLogin INITVAL (NULL);
-WHERE char *ImapOauthRefreshCmd INITVAL (NULL);
-WHERE char *ImapPass INITVAL (NULL);
-WHERE char *ImapUser INITVAL (NULL);
+WHERE char *ImapLogin;
+WHERE char *ImapOauthRefreshCmd;
+WHERE char *ImapPass;
+WHERE char *ImapUser;
 #endif
 WHERE char *Inbox;
 WHERE char *Ispell;
@@ -80,7 +86,7 @@ WHERE char *MessageCachedir;
 #if USE_HCACHE
 WHERE char *HeaderCache;
 #if HAVE_GDBM || HAVE_DB4
-WHERE char *HeaderCachePageSize;
+WHERE long  HeaderCachePageSize;
 #endif /* HAVE_GDBM || HAVE_DB4 */
 #endif /* USE_HCACHE */
 WHERE char *MarkMacroPrefix;
@@ -91,8 +97,8 @@ WHERE char *MimeTypeQueryCmd;
 WHERE char *MsgFmt;
 
 #ifdef USE_SOCKET
-WHERE char *Preconnect INITVAL (NULL);
-WHERE char *Tunnel INITVAL (NULL);
+WHERE char *Preconnect;
+WHERE char *Tunnel;
 WHERE short NetInc;
 #endif /* USE_SOCKET */
 
@@ -101,18 +107,18 @@ WHERE char *Mixmaster;
 WHERE char *MixEntryFormat;
 #endif
 
-WHERE char *Muttrc INITVAL (NULL);
+WHERE char *Muttrc;
 WHERE char *Outbox;
 WHERE char *Pager;
 WHERE char *PagerFmt;
 WHERE char *PipeSep;
 #ifdef USE_POP
-WHERE char *PopAuthenticators INITVAL (NULL);
+WHERE char *PopAuthenticators;
 WHERE short PopCheckTimeout;
 WHERE char *PopHost;
-WHERE char *PopOauthRefreshCmd INITVAL (NULL);
-WHERE char *PopPass INITVAL (NULL);
-WHERE char *PopUser INITVAL (NULL);
+WHERE char *PopOauthRefreshCmd;
+WHERE char *PopPass;
+WHERE char *PopUser;
 #endif
 WHERE char *PostIndentString;
 WHERE char *Postponed;
@@ -126,6 +132,7 @@ WHERE char *QueryFormat;
 WHERE char *Realname;
 WHERE short SearchContext;
 WHERE char *SendCharset;
+WHERE char *SendMultipartAltFilter;
 WHERE char *Sendmail;
 WHERE char *Shell;
 #ifdef USE_SIDEBAR
@@ -137,21 +144,21 @@ WHERE char *SidebarIndentString;
 WHERE char *Signature;
 WHERE char *SimpleSearch;
 #if USE_SMTP
-WHERE char *SmtpAuthenticators INITVAL (NULL);
-WHERE char *SmtpPass INITVAL (NULL);
-WHERE char *SmtpOauthRefreshCmd INITVAL (NULL);
-WHERE char *SmtpUrl INITVAL (NULL);
+WHERE char *SmtpAuthenticators;
+WHERE char *SmtpPass;
+WHERE char *SmtpOauthRefreshCmd;
+WHERE char *SmtpUrl;
 #endif /* USE_SMTP */
 WHERE char *Spoolfile;
 WHERE char *SpamSep;
 #if defined(USE_SSL)
-WHERE char *SslCertFile INITVAL (NULL);
-WHERE char *SslClientCert INITVAL (NULL);
-WHERE char *SslEntropyFile INITVAL (NULL);
-WHERE char *SslCiphers INITVAL (NULL);
+WHERE char *SslCertFile;
+WHERE char *SslClientCert;
+WHERE char *SslEntropyFile;
+WHERE char *SslCiphers;
 #ifdef USE_SSL_GNUTLS
 WHERE short SslDHPrimeBits;
-WHERE char *SslCACertFile INITVAL (NULL);
+WHERE char *SslCACertFile;
 #endif
 #endif
 WHERE mbchar_table *StChars;
@@ -175,27 +182,27 @@ WHERE HASH *Groups;
 WHERE HASH *ReverseAlias;
 WHERE HASH *AutoSubscribeCache;
 
-WHERE LIST *AutoViewList INITVAL(0);
-WHERE LIST *AlternativeOrderList INITVAL(0);
-WHERE LIST *AttachAllow INITVAL(0);
-WHERE LIST *AttachExclude INITVAL(0);
-WHERE LIST *InlineAllow INITVAL(0);
-WHERE LIST *InlineExclude INITVAL(0);
-WHERE LIST *HeaderOrderList INITVAL(0);
-WHERE LIST *Ignore INITVAL(0);
-WHERE LIST *MailtoAllow INITVAL(0);
-WHERE LIST *MimeLookupList INITVAL(0);
-WHERE LIST *UnIgnore INITVAL(0);
+WHERE LIST *AutoViewList;
+WHERE LIST *AlternativeOrderList;
+WHERE LIST *AttachAllow;
+WHERE LIST *AttachExclude;
+WHERE LIST *InlineAllow;
+WHERE LIST *InlineExclude;
+WHERE LIST *HeaderOrderList;
+WHERE LIST *Ignore;
+WHERE LIST *MailtoAllow;
+WHERE LIST *MimeLookupList;
+WHERE LIST *UnIgnore;
 
-WHERE RX_LIST *Alternates INITVAL(0);
-WHERE RX_LIST *UnAlternates INITVAL(0);
-WHERE RX_LIST *MailLists INITVAL(0);
-WHERE RX_LIST *UnMailLists INITVAL(0);
-WHERE RX_LIST *SubscribedLists INITVAL(0);
-WHERE RX_LIST *UnSubscribedLists INITVAL(0);
-WHERE REPLACE_LIST *SpamList INITVAL(0);
-WHERE RX_LIST *NoSpamList INITVAL(0);
-WHERE REPLACE_LIST *SubjectRxList INITVAL(0);
+WHERE RX_LIST *Alternates;
+WHERE RX_LIST *UnAlternates;
+WHERE RX_LIST *MailLists;
+WHERE RX_LIST *UnMailLists;
+WHERE RX_LIST *SubscribedLists;
+WHERE RX_LIST *UnSubscribedLists;
+WHERE REPLACE_LIST *SpamList;
+WHERE RX_LIST *NoSpamList;
+WHERE REPLACE_LIST *SubjectRxList;
 
 
 /* bit vector for boolean variables */
@@ -235,7 +242,7 @@ WHERE short ScoreThresholdFlag;
 
 #ifdef USE_SIDEBAR
 WHERE short SidebarWidth;
-WHERE LIST *SidebarWhitelist INITVAL(0);
+WHERE LIST *SidebarWhitelist;
 #endif
 
 #ifdef USE_IMAP
@@ -246,14 +253,14 @@ WHERE short ImapPollTimeout;
 #endif
 
 /* flags for received signals */
-WHERE SIG_ATOMIC_VOLATILE_T SigAlrm INITVAL (0);
-WHERE SIG_ATOMIC_VOLATILE_T SigInt INITVAL (0);
-WHERE SIG_ATOMIC_VOLATILE_T SigWinch INITVAL (0);
+WHERE SIG_ATOMIC_VOLATILE_T SigAlrm;
+WHERE SIG_ATOMIC_VOLATILE_T SigInt;
+WHERE SIG_ATOMIC_VOLATILE_T SigWinch;
 
 WHERE int CurrentMenu;
 
-WHERE ALIAS *Aliases INITVAL (0);
-WHERE LIST *UserHeader INITVAL (0);
+WHERE ALIAS *Aliases;
+WHERE LIST *UserHeader;
 
 /*-- formerly in pgp.h --*/
 WHERE REGEXP PgpGoodSign;
