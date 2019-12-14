@@ -2837,8 +2837,9 @@ static int _mutt_bounce_message (FILE *fp, HEADER *h, ADDRESS *to, const char *r
     mutt_copy_bytes (fp, f, h->content->length);
     FREE (&msgid_str);
     if (safe_fclose (&f) != 0) {
-      mutt_perror(tempfile);
-      unlink(tempfile);
+      mutt_perror(mutt_b2s (tempfile));
+      unlink(mutt_b2s (tempfile));
+      mutt_buffer_pool_release (&tempfile);
       return -1;
     }
 #if USE_SMTP

@@ -1376,7 +1376,7 @@ struct option_t MuttVars[] = {
   ** UTF-8 encoded domains. (IDN only)
   */
 #endif /* defined(HAVE_LIBIDN) || defined(HAVE_LIBIDN2) */
-  { "hostname_mid",      DT_STR,  R_NONE, UL &Fqdn_mid, 0 },
+  { "hostname_mid",      DT_STR,  R_NONE, {.p=&Fqdn_mid}, {.p=0} },
   /*
   ** .pp
   ** Specifies the fully-qualified hostname used in domain part
