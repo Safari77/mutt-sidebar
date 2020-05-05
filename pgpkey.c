@@ -128,7 +128,7 @@ static const char *pgp_entry_fmt (char *dest,
 				  const char *prefix,
 				  const char *ifstring,
 				  const char *elsestring,
-				  unsigned long data,
+				  void *data,
 				  format_flag flags)
 {
   char fmt[16];
@@ -293,7 +293,7 @@ static void pgp_entry (char *s, size_t l, MUTTMENU * menu, int num)
   entry.num = num + 1;
 
   mutt_FormatString (s, l, 0, MuttIndexWindow->cols, NONULL (PgpEntryFormat), pgp_entry_fmt,
-		     (unsigned long) &entry, MUTT_FORMAT_ARROWCURSOR);
+		     &entry, MUTT_FORMAT_ARROWCURSOR);
 }
 
 static int _pgp_compare_address (const void *a, const void *b)
@@ -915,7 +915,8 @@ pgp_key_t pgp_getkeybyaddr (ADDRESS * a, short abilities, pgp_ring_t keyring,
         pgp_remove_key (&matches, the_strong_valid_key);
         k = the_strong_valid_key;
       }
-      else if (a_valid_addrmatch_key)
+      else if (a_valid_addrmatch_key &&
+               !option (OPTCRYPTOPPENCSTRONGKEYS))
       {
         pgp_remove_key (&matches, a_valid_addrmatch_key);
         k = a_valid_addrmatch_key;

@@ -1518,8 +1518,9 @@ If you want to use PGP, you can specify
 <para>
 <quote>E</quote> selects encryption, <quote>S</quote> selects signing
 and <quote>S&lt;id&gt;</quote> selects signing with the given key,
-setting <link linkend="pgp-sign-as">$pgp_sign_as</link> permanently. The
-selection can later be changed in the compose menu.
+setting <link linkend="pgp-sign-as">$pgp_sign_as</link> for the
+duration of the message composition session. The selection can later
+be changed in the compose menu.
 </para>
 
 </sect3>
@@ -1760,6 +1761,88 @@ fo-table</literal> for details.
 </sect3>
 
 </sect2>
+
+<sect2 id="bgedit">
+<title>Background Editing</title>
+
+<para>
+  If <link linkend="editor">$editor</link> is set to a graphical
+  editor, or a script such as <ulink
+  url="https://gitlab.com/muttmua/mutt/tree/master/contrib/bgedit-screen-tmux.sh"
+  >contrib/bgedit-screen-tmux.sh</ulink> if running inside GNU Screen or
+  tmux, you can run the editor in the background by setting <link
+  linkend="background-edit">$background_edit</link>.
+</para>
+<para>
+  If set, Mutt will display a landing page while the editor runs.
+  When the editor exits, message composition will resume
+  automatically.  Alternatively, you can
+  <literal>&lt;exit&gt;</literal> from the landing page, which will
+  return you to the message index.  This allows viewing other
+  messages, changing mailboxes, even starting a new message
+  composition session - all while the first editor session is still
+  running.
+</para>
+<para>
+  Backgrounded message composition sessions can be viewed via
+  <literal>&lt;background-compose-menu&gt;</literal> in the index and
+  pager, by default bound to <quote><literal>B</literal></quote>.  If
+  there is only a single backgrounded session, which has already
+  exited, that session will automatically resume.  Otherwise the list
+  will be displayed, and a particular session can be selected.  <link
+  linkend="background-format">$background_format</link> controls the
+  format string used for the menu.
+</para>
+<para>
+  In case the open mailbox is changed while a reply is backgrounded,
+  Mutt keeps track of the original mailbox.  After sending, Mutt will
+  attempt to reopen the original mailbox, if needed, and set reply
+  flags appropriately.  This won't affect your currently open mailbox,
+  but may make setting flags a bit slower due to the need to reopen
+  the original mailbox behind the scenes.
+</para>
+<para>
+  One complication with backgrounded compose sessions is the config
+  changes caused by <link linkend="hooks">send, reply, and folder
+  hooks</link>.  These can get triggered by a new message composition
+  session, or by changing folders during a backgrounded session.  To
+  help lessen these problems, Mutt takes a snapshot of certain
+  configuration variables and stores them with each editing session
+  when it is backgrounded.  When the session is resumed, those stored
+  settings will temporarily be restored, and removed again when the
+  session finishes (or is backgrounded again).
+</para>
+<para>
+  Mutt will save all <literal>boolean</literal> and
+  <literal>quadoption</literal> configuration variables, along with
+  <link linkend="folder">$folder</link>,
+  <link linkend="record">$record</link>,
+  <link linkend="postponed">$postponed</link>,
+  <link linkend="envelope-from-address">$envelope_from_address</link>,
+  <link linkend="from">$from</link>,
+  <link linkend="sendmail">$sendmail</link>,
+  <link linkend="smtp-url">$smtp_url</link>,
+  <link linkend="pgp-sign-as">$pgp_sign_as</link>,
+  <link linkend="smime-sign-as">$smime_sign_as</link>, and
+  <link linkend="smime-encrypt-with">$smime_encrypt_with</link>.
+  It's not feasible to backup all variables, but if you believe
+  we've missed an important setting, please let the developers know.
+</para>
+<para>
+  To help prevent forgetting about backgrounded sessions, <link
+  linkend="background-confirm-quit">$background_confirm_quit</link>
+  will prompt before exiting, in addition to <link
+  linkend="quit">$quit</link>.  Additionally, the <literal>%B</literal>
+  expando in <link linkend="status-format">$status_format</link>
+  displays the number of backgrounded compose sessions.
+</para>
+<para>
+  Background editing is available for most, but not all, message
+  composition in Mutt.  Sending from the command line disables
+  background editing, because there is no index to return to.
+</para>
+</sect2>
+
 
 </sect1>
 
@@ -3607,12 +3690,29 @@ to save read mail in more than a single mailbox).
 
 <cmdsynopsis>
 <command>mailboxes</command>
-<arg choice="plain">
-<replaceable class="parameter">mailbox</replaceable>
+<arg choice="opt">
+  <group choice="opt">
+    <arg choice="plain">
+      <option>-poll</option>
+    </arg>
+    <arg choice="plain">
+      <option>-nopoll</option>
+    </arg>
+  </group>
+  <group choice="opt">
+    <arg choice="plain">
+      <option>-label</option>
+      <replaceable>label</replaceable>
+    </arg>
+    <arg choice="plain">
+      <option>-nolabel</option>
+    </arg>
+  </group>
+  <arg choice="plain">
+    <replaceable class="parameter">mailbox</replaceable>
+  </arg>
 </arg>
-<arg choice="opt" rep="repeat">
-<replaceable class="parameter">mailbox</replaceable>
-</arg>
+<arg choice="opt" rep="repeat"></arg>
 
 <command>unmailboxes</command>
 <group choice="req">
@@ -3631,9 +3731,25 @@ checked for new messages periodically.
 </para>
 
 <para>
-<emphasis>folder</emphasis> can either be a local file or directory
+To disable polling, specify <literal>-nopoll</literal> before the
+mailbox name.  The <literal>-poll</literal> argument can be used to
+reenable polling for an existing mailbox.  If unspecified: a new
+mailbox will poll by default, while an existing mailbox will be
+unchanged.
+</para>
+
+<para>
+The <literal>-label</literal> argument can be used to specify an
+alternative label to print in the sidebar or mailbox browser instead
+of the mailbox path.  A label may be removed via the
+<literal>-nolabel</literal> argument.  If unspecified, an existing
+mailbox label will be unchanged.
+</para>
+
+<para>
+<emphasis>mailbox</emphasis> can either be a local file or directory
 (Mbox/Mmdf or Maildir/Mh). If Mutt was built with POP and/or IMAP
-support, <emphasis>folder</emphasis> can also be a POP/IMAP folder
+support, <emphasis>mailbox</emphasis> can also be a POP/IMAP folder
 URL. The URL syntax is described in <xref linkend="url-syntax"/>, POP
 and IMAP are described in <xref linkend="pop"/> and <xref
 linkend="imap"/> respectively.
@@ -3837,6 +3953,16 @@ of <emphasis>pattern</emphasis>.
 linkend="fcc-save-hook"><command>fcc-save-hook</command></link> command.
 </para>
 
+<para>
+Multiple mailboxes may be specified by separating them with <link
+linkend="fcc-delimiter">$fcc_delimiter</link>, if set:
+</para>
+
+<screen>
+  set fcc_delimiter = ','
+  fcc-hook 'foo@example\.com$' '+one,+two'
+</screen>
+
 </sect1>
 
 <sect1 id="fcc-save-hook">
@@ -3855,11 +3981,17 @@ linkend="fcc-save-hook"><command>fcc-save-hook</command></link> command.
 </cmdsynopsis>
 
 <para>
-This command is a shortcut, equivalent to doing both a <link
+This command is a shortcut, almost equivalent to doing both a <link
 linkend="fcc-hook"><command>fcc-hook</command></link> and a <link
 linkend="save-hook"><command>save-hook</command></link> with its
 arguments, including %-expansion on <emphasis>mailbox</emphasis>
 according to <link linkend="index-format">$index_format</link>.
+</para>
+
+<para>
+Note, however that the fcc-save-hook is not designed to take advantage
+of multiple mailboxes, as fcc-hook is.  For correct behavior, you should
+use separate fcc and save hooks in that case.
 </para>
 
 </sect1>
@@ -5177,7 +5309,7 @@ how the numbers are displayed.
 
 <para>
   These variables also affect size display in a few other places, such
-  as progress indicators and attachment delimeters in the pager.
+  as progress indicators and attachment delimiters in the pager.
 </para>
 </sect2>
 
@@ -5881,19 +6013,20 @@ Mutt supports two types of dates, <emphasis>absolute</emphasis> and
 
 <para>
 Dates <emphasis>must</emphasis> be in DD/MM/YY format (month and year
-are optional, defaulting to the current month and year).  An example of
-a valid range of dates is:
+are optional, defaulting to the current month and year) or YYYYMMDD.  An
+example of a valid range of dates is:
 </para>
 
 <screen>
 Limit to messages matching: ~d 20/1/95-31/10
+Limit to messages matching: ~d 19950120-19951031
 </screen>
 
 <para>
 If you omit the minimum (first) date, and just specify
-<quote>-DD/MM/YY</quote>, all messages <emphasis>before</emphasis> the
-given date will be selected.  If you omit the maximum (second) date, and
-specify <quote>DD/MM/YY-</quote>, all messages
+<quote>-DD/MM/YY</quote> or <quote>-YYYYMMDD</quote>, all messages
+<emphasis>before</emphasis> the given date will be selected.  If you omit the
+maximum (second) date, and specify <quote>DD/MM/YY-</quote>, all messages
 <emphasis>after</emphasis> the given date will be selected.  If you
 specify a single date with no dash (<quote>-</quote>), only messages
 sent on the given date will be selected.
@@ -6487,7 +6620,20 @@ to set <link linkend="record">$record</link>:
 </para>
 
 <screen>
-folder-hook . 'set record=^'</screen>
+  folder-hook . 'set record=^'
+</screen>
+
+<para>
+Note: the <link linkend="record">$record</link> shortcut
+<quote><literal>&lt;</literal></quote> is substituted without any
+regard to multiple mailboxes and <link
+linkend="fcc-delimiter">$fcc_delimiter</link>.  If you use multiple
+Fcc mailboxes, and also want to use the
+<quote><literal>&lt;</literal></quote> mailbox shortcut, it might be
+better to set <link linkend="record">$record</link> to the primary
+mailbox and use a <link linkend="fcc-hook">fcc-hook</link> to set all
+mailboxes during message composition.
+</para>
 
 </sect1>
 
@@ -6766,8 +6912,9 @@ When unset, Mutt will notify you of any new mail in the mailbox.
 When in the index menu and being idle (also see <link
 linkend="timeout">$timeout</link>), Mutt periodically checks for new
 mail in all folders which have been configured via the
-<command>mailboxes</command> command. The interval depends on the folder
-type: for local/IMAP folders it consults <link
+<command>mailboxes</command> command (excepting those specified with
+the <literal>-nopoll</literal> flag).  The interval depends on the
+folder type: for local/IMAP folders it consults <link
 linkend="mail-check">$mail_check</link> and <link
 linkend="pop-checkinterval">$pop_checkinterval</link> for POP folders.
 </para>
@@ -6811,11 +6958,12 @@ to immediately open the next folder with unread mail (if any).
 <para>
 When the <emphasis>Inotify</emphasis> mechanism for monitoring of
 files is supported (Linux only) and not disabled at compilation time,
-Mutt immediately notifies about new mail for all folders configured via
-the <link linkend="mailboxes"><command>mailboxes</command></link>
-command.  Dependent on
-<link linkend="mailbox-formats">mailbox format</link> also added
-<emphasis>old</emphasis> mails are tracked (not for Maildir).
+Mutt immediately notifies about new mail for all folders configured
+via the <link linkend="mailboxes"><command>mailboxes</command></link>
+command (excepting those specified with the <literal>-nopoll</literal>
+flag).  Dependent on <link linkend="mailbox-formats">mailbox
+format</link> also added <emphasis>old</emphasis> mails are tracked
+(not for Maildir).
 </para>
 
 <para>
@@ -8249,6 +8397,17 @@ type &mdash; either <literal>inline</literal> or
 </para>
 
 <para>
+The first part of a message or multipart group, if inline, is counted
+separately than other inline parts.  Specify <literal>root</literal>
+or <literal>R</literal> for <emphasis>disposition</emphasis> to count
+these as attachments.  If this first part is of type
+multipart/alternative, note that its top-level inline parts are also
+counted via <literal>root</literal> <emphasis>disposition</emphasis>
+(if <link linkend="count-alternatives">$count_alternatives</link> is
+set).
+</para>
+
+<para>
 Disposition is prefixed by either a <quote>+</quote> symbol or a
 <quote>-</quote> symbol.  If it's a <quote>+</quote>, you're saying that
 you want to allow this disposition and MIME type to qualify.  If it's a
@@ -9038,6 +9197,12 @@ configure to build it with write-support for the latter
 syntax. <literal>EXACT_ADDRESS</literal> in the output of <literal>mutt
 -v</literal> indicates whether it's supported.
 </para>
+<para>
+Note: If the full address contains non-ascii characters, or sequences
+that require RFC 2047 encoding, Mutt reverts to writing out the
+normalized <quote>Name &lt;user@host&gt;</quote> form, in order to
+generate legal output.
+</para>
 
 </sect1>
 
@@ -9349,7 +9514,7 @@ please have a look at the mixmaster documentation.
 	<tbody>
 	  <row>
 	    <entry><literal>alpha</literal></entry>
-	    <entry>Alphabetically by path</entry>
+	    <entry>Alphabetically by path or label</entry>
 	  </row>
 	  <row>
 	    <entry><literal>count</literal></entry>
@@ -9361,7 +9526,7 @@ please have a look at the mixmaster documentation.
 	  </row>
 	  <row>
 	    <entry><literal>name</literal></entry>
-	    <entry>Alphabetically by path</entry>
+	    <entry>Alphabetically by path or label</entry>
 	  </row>
 	  <row>
 	    <entry><literal>new</literal></entry>
@@ -9369,7 +9534,7 @@ please have a look at the mixmaster documentation.
 	  </row>
 	  <row>
 	    <entry><literal>path</literal></entry>
-	    <entry>Alphabetically by path</entry>
+	    <entry>Alphabetically by path (ignores label)</entry>
 	  </row>
 	  <row>
 	    <entry><literal>unread</literal></entry>
@@ -9680,7 +9845,7 @@ please have a look at the mixmaster documentation.
     normal encryption via your keyring, using key signing and the web
     of trust to verify identities.  With an understanding of these
     limitations, Autocrypt still provides an easy way to minimize
-    cleartext emails sent between common correspondants, without
+    cleartext emails sent between common correspondents, without
     having to explicitly exchange keys.  More information can be found
     at <ulink
     url="https://autocrypt.org/">https://autocrypt.org/</ulink>.
@@ -9725,7 +9890,7 @@ please have a look at the mixmaster documentation.
       your muttrc.  The first time Mutt is run after that, you will be
       prompted to create <link
       linkend="autocrypt-dir">$autocrypt_dir</link>.  Mutt will then
-      automatically create an sqlite3 database and gpg keyring in that
+      automatically create an sqlite3 database and GPG keyring in that
       directory.  Note since these files should be considered private,
       Mutt will create this directory with mode
       <literal>700</literal>.  If you create the directory manually,
@@ -9998,7 +10163,7 @@ please have a look at the mixmaster documentation.
       </listitem>
       <listitem>
         <para>
-          When Mutt creates an account from a gpg key, it exports the
+          When Mutt creates an account from a GPG key, it exports the
           public key, base64 encodes it, and stores that value in the
           sqlite3 database.  The value is then used in the Autocrypt
           header added to outgoing emails.  The ECC keys Mutt creates
@@ -10219,9 +10384,20 @@ will be gone for the next session.)
 </para>
 
 <para>
-To improve performance and permanently cache whole messages, please
-refer to Mutt's so-called <link linkend="body-caching">body
+To improve performance and permanently cache whole messages and
+headers, please refer to <link linkend="body-caching">body
+caching</link> and <link linkend="header-caching">header
 caching</link> for details.
+</para>
+
+<para>
+Additionally, it may be worth trying some of Mutt's experimental
+features.  <link linkend="imap-qresync">$imap_qresync</link> (which
+requires header caching) can provide a huge speed boost opening
+mailboxes if your IMAP server supports it.  <link
+linkend="imap-deflate">$imap_deflate</link> enables compression, which
+can also noticeably reduce download time for large mailboxes and
+messages.
 </para>
 
 </sect1>
@@ -10936,12 +11112,29 @@ The following are the commands understood by Mutt:
 <listitem>
 <cmdsynopsis>
 <command><link linkend="mailboxes">mailboxes</link></command>
-<arg choice="plain">
-<replaceable class="parameter">mailbox</replaceable>
+<arg choice="opt">
+  <group choice="opt">
+    <arg choice="plain">
+      <option>-poll</option>
+    </arg>
+    <arg choice="plain">
+      <option>-nopoll</option>
+    </arg>
+  </group>
+  <group choice="opt">
+    <arg choice="plain">
+      <option>-label</option>
+      <replaceable>label</replaceable>
+    </arg>
+    <arg choice="plain">
+      <option>-nolabel</option>
+    </arg>
+  </group>
+  <arg choice="plain">
+    <replaceable class="parameter">mailbox</replaceable>
+  </arg>
 </arg>
-<arg choice="opt" rep="repeat">
-<replaceable class="parameter">mailbox</replaceable>
-</arg>
+<arg choice="opt" rep="repeat"></arg>
 
 <command><link linkend="mailboxes">unmailboxes</link></command>
 <group choice="req">

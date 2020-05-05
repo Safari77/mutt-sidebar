@@ -28,6 +28,7 @@
 #include "smime.h"
 #include "mime.h"
 #include "copy.h"
+#include "send.h"
 
 #include <sys/wait.h>
 #include <string.h>
@@ -68,9 +69,23 @@ char SmimePass[STRING];
 time_t SmimeExptime = 0; /* when does the cached passphrase expire? */
 
 
-static char SmimeKeyToUse[_POSIX_PATH_MAX] = { 0 };
-static char SmimeCertToUse[_POSIX_PATH_MAX];
-static char SmimeIntermediateToUse[_POSIX_PATH_MAX];
+static BUFFER *SmimeKeyToUse = NULL;
+static BUFFER *SmimeCertToUse = NULL;
+static BUFFER *SmimeIntermediateToUse = NULL;
+
+void smime_init (void)
+{
+  SmimeKeyToUse = mutt_buffer_new ();
+  SmimeCertToUse = mutt_buffer_new ();
+  SmimeIntermediateToUse = mutt_buffer_new ();
+}
+
+void smime_cleanup (void)
+{
+  mutt_buffer_free (&SmimeKeyToUse);
+  mutt_buffer_free (&SmimeCertToUse);
+  mutt_buffer_free (&SmimeIntermediateToUse);
+}
 
 
 void smime_free_key (smime_key_t **keylist)
@@ -165,7 +180,7 @@ static const char *_mutt_fmt_smime_command (char *dest,
 					    const char *prefix,
 					    const char *ifstring,
 					    const char *elsestring,
-					    unsigned long data,
+					    void *data,
 					    format_flag flags)
 {
   char fmt[16];
@@ -312,7 +327,7 @@ static void mutt_smime_command (char *d, size_t dlen,
 				struct smime_command_context *cctx, const char *fmt)
 {
   mutt_FormatString (d, dlen, 0, MuttIndexWindow->cols, NONULL(fmt), _mutt_fmt_smime_command,
-                     (unsigned long) cctx, 0);
+                     cctx, 0);
   dprint (2,(debugfile, "mutt_smime_command: %s\n", d));
 }
 
@@ -658,7 +673,7 @@ static smime_key_t *smime_get_key_by_hash(char *hash, short public)
   return match;
 }
 
-static smime_key_t *smime_get_key_by_addr(char *mailbox, short abilities, short public, short may_ask)
+static smime_key_t *smime_get_key_by_addr(char *mailbox, short abilities, short public, short oppenc_mode)
 {
   smime_key_t *results, *result;
   smime_key_t *matches = NULL;
@@ -706,11 +721,12 @@ static smime_key_t *smime_get_key_by_addr(char *mailbox, short abilities, short 
 
   if (matches)
   {
-    if (! may_ask)
+    if (oppenc_mode)
     {
       if (trusted_match)
         return_key = smime_copy_key (trusted_match);
-      else if (valid_match)
+      else if (valid_match &&
+               !option (OPTCRYPTOPPENCSTRONGKEYS))
         return_key = smime_copy_key (valid_match);
       else
         return_key = NULL;
@@ -803,10 +819,12 @@ smime_key_t *smime_ask_for_key(char *prompt, short abilities, short public)
 void _smime_getkeys (char *mailbox)
 {
   smime_key_t *key = NULL;
-  char *k = NULL;
+  const char *k = NULL;
   char buf[STRING];
+  size_t smime_keys_len;
 
-  key = smime_get_key_by_addr (mailbox, KEYFLAG_CANENCRYPT, 0, 1);
+  smime_keys_len = mutt_strlen (SmimeKeys);
+  key = smime_get_key_by_addr (mailbox, KEYFLAG_CANENCRYPT, 0, 0);
 
   if (!key)
   {
@@ -815,46 +833,18 @@ void _smime_getkeys (char *mailbox)
     key = smime_ask_for_key (buf, KEYFLAG_CANENCRYPT, 0);
   }
 
-  if (key)
+  k = key ? key->hash : NONULL (SmimeDefaultKey);
+
+  /* if the key is different from last time */
+  if ((mutt_buffer_len (SmimeKeyToUse) <= smime_keys_len) ||
+      mutt_strcasecmp (k, SmimeKeyToUse->data + smime_keys_len + 1))
   {
-    k = key->hash;
-
-    /* the key used last time. */
-    if (*SmimeKeyToUse &&
-        !mutt_strcasecmp (k, SmimeKeyToUse + mutt_strlen (SmimeKeys)+1))
-    {
-      smime_free_key (&key);
-      return;
-    }
-    else smime_void_passphrase ();
-
-    snprintf (SmimeKeyToUse, sizeof (SmimeKeyToUse), "%s/%s",
-	      NONULL(SmimeKeys), k);
-
-    snprintf (SmimeCertToUse, sizeof (SmimeCertToUse), "%s/%s",
-	      NONULL(SmimeCertificates), k);
-
-    if (mutt_strcasecmp (k, SmimeDefaultKey))
-      smime_void_passphrase ();
-
-    smime_free_key (&key);
-    return;
-  }
-
-  if (*SmimeKeyToUse)
-  {
-    if (!mutt_strcasecmp (SmimeDefaultKey,
-                          SmimeKeyToUse + mutt_strlen (SmimeKeys)+1))
-      return;
-
     smime_void_passphrase ();
+    mutt_buffer_printf (SmimeKeyToUse, "%s/%s", NONULL(SmimeKeys), k);
+    mutt_buffer_printf (SmimeCertToUse, "%s/%s", NONULL(SmimeCertificates), k);
   }
 
-  snprintf (SmimeKeyToUse, sizeof (SmimeKeyToUse), "%s/%s",
-	    NONULL (SmimeKeys), NONULL (SmimeDefaultKey));
-
-  snprintf (SmimeCertToUse, sizeof (SmimeCertToUse), "%s/%s",
-	    NONULL (SmimeCertificates), NONULL (SmimeDefaultKey));
+  smime_free_key (&key);
 }
 
 void smime_getkeys (ENVELOPE *env)
@@ -864,10 +854,10 @@ void smime_getkeys (ENVELOPE *env)
 
   if (option (OPTSDEFAULTDECRYPTKEY) && SmimeDefaultKey)
   {
-    snprintf (SmimeKeyToUse, sizeof (SmimeKeyToUse), "%s/%s",
+    mutt_buffer_printf (SmimeKeyToUse, "%s/%s",
 	      NONULL (SmimeKeys), SmimeDefaultKey);
 
-    snprintf (SmimeCertToUse, sizeof (SmimeCertToUse), "%s/%s",
+    mutt_buffer_printf (SmimeCertToUse, "%s/%s",
 	      NONULL(SmimeCertificates), SmimeDefaultKey);
 
     return;
@@ -912,7 +902,7 @@ char *smime_findKeys (ADDRESS *adrlist, int oppenc_mode)
 
     q = p;
 
-    key = smime_get_key_by_addr (q->mailbox, KEYFLAG_CANENCRYPT, 1, !oppenc_mode);
+    key = smime_get_key_by_addr (q->mailbox, KEYFLAG_CANENCRYPT, 1, oppenc_mode);
     if ((key == NULL) && (! oppenc_mode))
     {
       snprintf(buf, sizeof(buf),
@@ -1398,8 +1388,9 @@ pid_t smime_invoke_sign (FILE **smimein, FILE **smimeout, FILE **smimeerr,
 			 const char *fname)
 {
   return smime_invoke (smimein, smimeout, smimeerr, smimeinfd, smimeoutfd,
-		       smimeerrfd, fname, NULL, NULL, SmimeDigestAlg, SmimeKeyToUse,
-		       SmimeCertToUse, SmimeIntermediateToUse,
+		       smimeerrfd, fname, NULL, NULL, SmimeDigestAlg,
+                       mutt_b2s (SmimeKeyToUse),
+		       mutt_b2s (SmimeCertToUse), mutt_b2s (SmimeIntermediateToUse),
 		       SmimeSignCommand);
 }
 
@@ -1613,10 +1604,10 @@ BODY *smime_sign_message (BODY *a )
 
 
 
-  snprintf (SmimeKeyToUse, sizeof (SmimeKeyToUse), "%s/%s",
+  mutt_buffer_printf (SmimeKeyToUse, "%s/%s",
             NONULL(SmimeKeys), signas);
 
-  snprintf (SmimeCertToUse, sizeof (SmimeCertToUse), "%s/%s",
+  mutt_buffer_printf (SmimeCertToUse, "%s/%s",
             NONULL(SmimeCertificates), signas);
 
   signas_key = smime_get_key_by_hash (signas, 1);
@@ -1626,7 +1617,7 @@ BODY *smime_sign_message (BODY *a )
   else
     intermediates = signas_key->issuer;
 
-  snprintf (SmimeIntermediateToUse, sizeof (SmimeIntermediateToUse), "%s/%s",
+  mutt_buffer_printf (SmimeIntermediateToUse, "%s/%s",
             NONULL(SmimeCertificates), intermediates);
 
   smime_free_key (&signas_key);
@@ -1754,8 +1745,8 @@ pid_t smime_invoke_decrypt (FILE **smimein, FILE **smimeout, FILE **smimeerr,
 			    const char *fname)
 {
   return smime_invoke (smimein, smimeout, smimeerr, smimeinfd, smimeoutfd,
-		       smimeerrfd, fname, NULL, NULL, NULL, SmimeKeyToUse,
-		       SmimeCertToUse, NULL, SmimeDecryptCommand);
+		       smimeerrfd, fname, NULL, NULL, NULL, mutt_b2s (SmimeKeyToUse),
+		       mutt_b2s (SmimeCertToUse), NULL, SmimeDecryptCommand);
 }
 
 
@@ -2204,7 +2195,7 @@ bail:
 
 int smime_application_smime_handler (BODY *m, STATE *s)
 {
-  int rv = -1;
+  int rv = 1;
   BODY *tattach;
 
   /* clear out any mime headers before the handler, so they can't be
@@ -2220,14 +2211,17 @@ int smime_application_smime_handler (BODY *m, STATE *s)
   return rv;
 }
 
-int smime_send_menu (HEADER *msg)
+void smime_send_menu (SEND_CONTEXT *sctx)
 {
+  HEADER *msg;
   smime_key_t *key;
   char *prompt, *letters, *choices;
   int choice;
 
+  msg = sctx->msg;
+
   if (!(WithCrypto & APPLICATION_SMIME))
-    return msg->security;
+    return;
 
   msg->security |= APPLICATION_SMIME;
 
@@ -2293,10 +2287,10 @@ int smime_send_menu (HEADER *msg)
                                                   _("dt")))
               {
                 case 1:
-                  mutt_str_replace (&SmimeCryptAlg, "des");
+                  mutt_str_replace (&sctx->smime_crypt_alg, "des");
                   break;
                 case 2:
-                  mutt_str_replace (&SmimeCryptAlg, "des3");
+                  mutt_str_replace (&sctx->smime_crypt_alg, "des3");
                   break;
               }
               break;
@@ -2306,13 +2300,13 @@ int smime_send_menu (HEADER *msg)
                                                   _("468")))
               {
                 case 1:
-                  mutt_str_replace (&SmimeCryptAlg, "rc2-40");
+                  mutt_str_replace (&sctx->smime_crypt_alg, "rc2-40");
                   break;
                 case 2:
-                  mutt_str_replace (&SmimeCryptAlg, "rc2-64");
+                  mutt_str_replace (&sctx->smime_crypt_alg, "rc2-64");
                   break;
                 case 3:
-                  mutt_str_replace (&SmimeCryptAlg, "rc2-128");
+                  mutt_str_replace (&sctx->smime_crypt_alg, "rc2-128");
                   break;
               }
               break;
@@ -2322,19 +2316,20 @@ int smime_send_menu (HEADER *msg)
                                                   _("895")))
               {
                 case 1:
-                  mutt_str_replace (&SmimeCryptAlg, "aes128");
+                  mutt_str_replace (&sctx->smime_crypt_alg, "aes128");
                   break;
                 case 2:
-                  mutt_str_replace (&SmimeCryptAlg, "aes192");
+                  mutt_str_replace (&sctx->smime_crypt_alg, "aes192");
                   break;
                 case 3:
-                  mutt_str_replace (&SmimeCryptAlg, "aes256");
+                  mutt_str_replace (&sctx->smime_crypt_alg, "aes256");
                   break;
               }
               break;
 
             case 4: /* (c)lear */
-              FREE (&SmimeCryptAlg);
+              FREE (&sctx->smime_crypt_alg);
+              sctx->smime_crypt_alg_cleared = 1;
               /* fall through */
             case -1: /* Ctrl-G or Enter */
               choice = 0;
@@ -2357,7 +2352,7 @@ int smime_send_menu (HEADER *msg)
 
         if ((key = smime_ask_for_key (_("Sign as: "), KEYFLAG_CANSIGN, 0)))
         {
-          mutt_str_replace (&SmimeSignAs, key->hash);
+          mutt_str_replace (&sctx->smime_sign_as, key->hash);
           smime_free_key (&key);
 
           msg->security |= SIGN;
@@ -2392,8 +2387,6 @@ int smime_send_menu (HEADER *msg)
         break;
     }
   }
-
-  return (msg->security);
 }
 
 

@@ -225,8 +225,7 @@ int mutt_extract_token (BUFFER *dest, BUFFER *tok, int flags)
     {
       FILE	*fp;
       pid_t	pid;
-      char	*cmd, *ptr;
-      size_t	expnlen;
+      char	*cmd;
       BUFFER	expn;
       int	line = 0;
 
@@ -262,30 +261,23 @@ int mutt_extract_token (BUFFER *dest, BUFFER *tok, int flags)
       safe_fclose (&fp);
       mutt_wait_filter (pid);
 
-      /* if we got output, make a new string consisting of the shell output
-	 plus whatever else was left on the original line */
-      /* BUT: If this is inside a quoted string, directly add output to
-       * the token */
+      /* If this is inside a quoted string, directly add output to
+       * the token (dest) */
       if (expn.data && qc)
       {
 	mutt_buffer_addstr (dest, expn.data);
-	FREE (&expn.data);
       }
+      /* Otherwise, reset tok to the shell output plus whatever else
+       * was left on the original line and continue processing it. */
       else if (expn.data)
       {
-	expnlen = mutt_strlen (expn.data);
-	tok->dsize = expnlen + mutt_strlen (tok->dptr) + 1;
-	ptr = safe_malloc (tok->dsize);
-	memcpy (ptr, expn.data, expnlen);
-	strcpy (ptr + expnlen, tok->dptr);	/* __STRCPY_CHECKED__ */
-	if (tok->destroy)
-	  FREE (&tok->data);
-	tok->data = ptr;
-	tok->dptr = ptr;
-	tok->destroy = 1; /* mark that the caller should destroy this data */
-	ptr = NULL;
-	FREE (&expn.data);
+        mutt_buffer_fix_dptr (&expn);
+        mutt_buffer_addstr (&expn, tok->dptr);
+        mutt_buffer_strcpy (tok, expn.data);
+	tok->dptr = tok->data;
       }
+
+      FREE (&expn.data);
     }
     else if (ch == '$' && (!qc || qc == '"') && (*tok->dptr == '{' || isalpha ((unsigned char) *tok->dptr)))
     {
@@ -1324,6 +1316,8 @@ static int parse_attachments (BUFFER *buf, BUFFER *s, union pointer_long_t udata
     print_attach_list(AttachExclude, '-', "A");
     print_attach_list(InlineAllow,   '+', "I");
     print_attach_list(InlineExclude, '-', "I");
+    print_attach_list(RootAllow,     '+', "R");
+    print_attach_list(RootExclude,   '-', "R");
     mutt_any_key_to_continue (NULL);
     return 0;
   }
@@ -1346,6 +1340,13 @@ static int parse_attachments (BUFFER *buf, BUFFER *s, union pointer_long_t udata
       listp = &InlineAllow;
     else
       listp = &InlineExclude;
+  }
+  else if (!ascii_strncasecmp(category, "root", strlen(category)))
+  {
+    if (op == '+')
+      listp = &RootAllow;
+    else
+      listp = &RootExclude;
   }
   else
   {
@@ -1389,6 +1390,8 @@ static int parse_unattachments (BUFFER *buf, BUFFER *s, union pointer_long_t uda
       mutt_free_list_generic(&AttachExclude, free_attachments_data);
       mutt_free_list_generic(&InlineAllow, free_attachments_data);
       mutt_free_list_generic(&InlineExclude, free_attachments_data);
+      mutt_free_list_generic(&RootAllow, free_attachments_data);
+      mutt_free_list_generic(&RootExclude, free_attachments_data);
       _attachments_clean();
       return 0;
   }
@@ -1411,6 +1414,13 @@ static int parse_unattachments (BUFFER *buf, BUFFER *s, union pointer_long_t uda
       listp = &InlineAllow;
     else
       listp = &InlineExclude;
+  }
+  else if (!ascii_strncasecmp(p, "root", strlen(p)))
+  {
+    if (op == '+')
+      listp = &RootAllow;
+    else
+      listp = &RootExclude;
   }
   else
   {
@@ -2266,6 +2276,7 @@ static int parse_set (BUFFER *tmp, BUFFER *s, union pointer_long_t udata, BUFFER
       {
 	char _tmp[LONG_STRING];
 	const char *val = NULL;
+        BUFFER *path_buf = NULL;
 
         if (myvar)
         {
@@ -2288,10 +2299,13 @@ static int parse_set (BUFFER *tmp, BUFFER *s, union pointer_long_t udata, BUFFER
 	}
 	else if (DTYPE (MuttVars[idx].type) == DT_PATH)
 	{
-	  _tmp[0] = '\0';
-	  strfcpy (_tmp, NONULL(*((char **) MuttVars[idx].data.p)), sizeof (_tmp));
-	  mutt_pretty_mailbox (_tmp, sizeof (_tmp));
-	  val = _tmp;
+          path_buf = mutt_buffer_pool_get ();
+          mutt_buffer_strcpy (path_buf, NONULL(*((char **) MuttVars[idx].data.p)));
+          if (mutt_strcmp (MuttVars[idx].option, "record") == 0)
+            mutt_buffer_pretty_multi_mailbox (path_buf, FccDelimiter);
+          else
+            mutt_buffer_pretty_mailbox (path_buf);
+	  val = mutt_b2s (path_buf);
 	}
 	else if (DTYPE (MuttVars[idx].type) == DT_MBCHARTBL)
         {
@@ -2303,6 +2317,8 @@ static int parse_set (BUFFER *tmp, BUFFER *s, union pointer_long_t udata, BUFFER
 
 	/* user requested the value of this variable */
 	pretty_var (err->data, err->dsize, MuttVars[idx].option, NONULL(val));
+
+        mutt_buffer_pool_release (&path_buf);
 	break;
       }
       else
@@ -2333,7 +2349,10 @@ static int parse_set (BUFFER *tmp, BUFFER *s, union pointer_long_t udata, BUFFER
 
           scratch = mutt_buffer_pool_get ();
 	  mutt_buffer_strcpy (scratch, tmp->data);
-	  mutt_buffer_expand_path (scratch);
+          if (mutt_strcmp (MuttVars[idx].option, "record") == 0)
+            mutt_buffer_expand_multi_path (scratch, FccDelimiter);
+          else
+            mutt_buffer_expand_path (scratch);
 	  *((char **) MuttVars[idx].data.p) = safe_strdup (mutt_b2s (scratch));
           mutt_buffer_pool_release (&scratch);
         }
@@ -2729,11 +2748,11 @@ static int parse_set (BUFFER *tmp, BUFFER *s, union pointer_long_t udata, BUFFER
 static int source_rc (const char *rcfile, BUFFER *err)
 {
   FILE *f;
-  int line = 0, rc = 0, conv = 0;
-  BUFFER token;
-  char *linebuf = NULL;
+  int lineno = 0, rc = 0, conv = 0;
+  BUFFER *token, *linebuf;
+  char *line = NULL;
   char *currentline = NULL;
-  size_t buflen;
+  size_t linelen;
   pid_t pid;
 
   dprint (2, (debugfile, "Reading configuration file '%s'.\n",
@@ -2745,22 +2764,27 @@ static int source_rc (const char *rcfile, BUFFER *err)
     return (-1);
   }
 
-  mutt_buffer_init (&token);
-  while ((linebuf = mutt_read_line (linebuf, &buflen, f, &line, MUTT_CONT)) != NULL)
+  token = mutt_buffer_pool_get ();
+  linebuf = mutt_buffer_pool_get ();
+
+  while ((line = mutt_read_line (line, &linelen, f, &lineno, MUTT_CONT)) != NULL)
   {
     conv=ConfigCharset && Charset;
     if (conv)
     {
-      currentline=safe_strdup(linebuf);
-      if (!currentline) continue;
-      mutt_convert_string(&currentline, ConfigCharset, Charset, 0);
+      currentline = safe_strdup(line);
+      if (!currentline)
+        continue;
+      mutt_convert_string (&currentline, ConfigCharset, Charset, 0);
     }
     else
-      currentline=linebuf;
+      currentline = line;
 
-    if (mutt_parse_rc_line (currentline, &token, err) == -1)
+    mutt_buffer_strcpy (linebuf, currentline);
+
+    if (mutt_parse_rc_buffer (linebuf, token, err) == -1)
     {
-      mutt_error (_("Error in %s, line %d: %s"), rcfile, line, err->data);
+      mutt_error (_("Error in %s, line %d: %s"), rcfile, lineno, err->data);
       if (--rc < -MAXERRS)
       {
         if (conv) FREE(&currentline);
@@ -2775,11 +2799,12 @@ static int source_rc (const char *rcfile, BUFFER *err)
     if (conv)
       FREE(&currentline);
   }
-  FREE (&token.data);
-  FREE (&linebuf);
+
+  FREE (&line);
   safe_fclose (&f);
   if (pid != -1)
     mutt_wait_filter (pid);
+
   if (rc)
   {
     /* the muttrc source keyword */
@@ -2787,6 +2812,9 @@ static int source_rc (const char *rcfile, BUFFER *err)
               : _("source: reading aborted due to too many errors in %s"), rcfile);
     rc = -1;
   }
+
+  mutt_buffer_pool_release (&token);
+  mutt_buffer_pool_release (&linebuf);
   return (rc);
 }
 
@@ -2817,46 +2845,64 @@ static int parse_source (BUFFER *tmp, BUFFER *s, union pointer_long_t udata, BUF
   return rc;
 }
 
+int mutt_parse_rc_line (const char *line, BUFFER *err)
+{
+  BUFFER *line_buffer = NULL, *token = NULL;
+  int rc;
+
+  if (!line || !*line)
+    return 0;
+
+  line_buffer = mutt_buffer_pool_get ();
+  token = mutt_buffer_pool_get ();
+
+  mutt_buffer_strcpy (line_buffer, line);
+
+  rc = mutt_parse_rc_buffer (line_buffer, token, err);
+
+  mutt_buffer_pool_release (&line_buffer);
+  mutt_buffer_pool_release (&token);
+  return rc;
+}
+
 /* line		command to execute
 
-   token	scratch buffer to be used by parser.  caller should free
-   		token->data when finished.  the reason for this variable is
+   token	scratch buffer to be used by parser.
+                the reason for this variable is
 		to avoid having to allocate and deallocate a lot of memory
 		if we are parsing many lines.  the caller can pass in the
 		memory to use, which avoids having to create new space for
 		every call to this function.
 
    err		where to write error messages */
-int mutt_parse_rc_line (/* const */ char *line, BUFFER *token, BUFFER *err)
+int mutt_parse_rc_buffer (BUFFER *line, BUFFER *token, BUFFER *err)
 {
   int i, r = -1;
-  BUFFER expn;
 
-  if (!line || !*line)
+  if (!mutt_buffer_len (line))
     return 0;
 
-  mutt_buffer_init (&expn);
-  expn.data = expn.dptr = line;
-  expn.dsize = mutt_strlen (line);
+  mutt_buffer_clear (err);
 
-  *err->data = 0;
+  /* Read from the beginning of line->data */
+  line->dptr = line->data;
 
-  SKIPWS (expn.dptr);
-  while (*expn.dptr)
+  SKIPWS (line->dptr);
+  while (*line->dptr)
   {
-    if (*expn.dptr == '#')
+    if (*line->dptr == '#')
       break; /* rest of line is a comment */
-    if (*expn.dptr == ';')
+    if (*line->dptr == ';')
     {
-      expn.dptr++;
+      line->dptr++;
       continue;
     }
-    mutt_extract_token (token, &expn, 0);
+    mutt_extract_token (token, line, 0);
     for (i = 0; Commands[i].name; i++)
     {
       if (!mutt_strcmp (token->data, Commands[i].name))
       {
-	if (Commands[i].func (token, &expn, Commands[i].data, err) != 0)
+	if (Commands[i].func (token, line, Commands[i].data, err) != 0)
 	  goto finish;
         break;
       }
@@ -2869,8 +2915,6 @@ int mutt_parse_rc_line (/* const */ char *line, BUFFER *token, BUFFER *err)
   }
   r = 0;
 finish:
-  if (expn.destroy)
-    FREE (&expn.data);
   return (r);
 }
 
@@ -3133,17 +3177,26 @@ int mutt_var_value_complete (char *buffer, size_t len, int pos)
 static int var_to_string (int idx, char* val, size_t len)
 {
   char tmp[LONG_STRING];
+  BUFFER *path_buf = NULL;
   static const char * const vals[] = { "no", "yes", "ask-no", "ask-yes" };
 
   tmp[0] = '\0';
 
   if ((DTYPE(MuttVars[idx].type) == DT_STR) ||
-      (DTYPE(MuttVars[idx].type) == DT_PATH) ||
       (DTYPE(MuttVars[idx].type) == DT_RX))
   {
     strfcpy (tmp, NONULL (*((char **) MuttVars[idx].data.p)), sizeof (tmp));
-    if (DTYPE (MuttVars[idx].type) == DT_PATH)
-      mutt_pretty_mailbox (tmp, sizeof (tmp));
+  }
+  else if (DTYPE (MuttVars[idx].type) == DT_PATH)
+  {
+    path_buf = mutt_buffer_pool_get ();
+    mutt_buffer_strcpy (path_buf, NONULL (*((char **) MuttVars[idx].data.p)));
+    if (mutt_strcmp (MuttVars[idx].option, "record") == 0)
+      mutt_buffer_pretty_multi_mailbox (path_buf, FccDelimiter);
+    else
+      mutt_buffer_pretty_mailbox (path_buf);
+    strfcpy (tmp, mutt_b2s (path_buf), sizeof (tmp));
+    mutt_buffer_pool_release (&path_buf);
   }
   else if (DTYPE (MuttVars[idx].type) == DT_MBCHARTBL)
   {
@@ -3241,10 +3294,9 @@ int mutt_query_variables (LIST *queries)
 
   char command[STRING];
 
-  BUFFER err, token;
+  BUFFER err;
 
   mutt_buffer_init (&err);
-  mutt_buffer_init (&token);
 
   err.dsize = STRING;
   err.data = safe_malloc (err.dsize);
@@ -3252,10 +3304,9 @@ int mutt_query_variables (LIST *queries)
   for (p = queries; p; p = p->next)
   {
     snprintf (command, sizeof (command), "set ?%s\n", p->data);
-    if (mutt_parse_rc_line (command, &token, &err) == -1)
+    if (mutt_parse_rc_line (command, &err) == -1)
     {
       fprintf (stderr, "%s\n", err.data);
-      FREE (&token.data);
       FREE (&err.data);
 
       return 1;
@@ -3263,7 +3314,6 @@ int mutt_query_variables (LIST *queries)
     printf ("%s\n", err.data);
   }
 
-  FREE (&token.data);
   FREE (&err.data);
 
   return 0;
@@ -3276,10 +3326,9 @@ int mutt_dump_variables (void)
 
   char command[STRING];
 
-  BUFFER err, token;
+  BUFFER err;
 
   mutt_buffer_init (&err);
-  mutt_buffer_init (&token);
 
   err.dsize = STRING;
   err.data = safe_malloc (err.dsize);
@@ -3290,10 +3339,9 @@ int mutt_dump_variables (void)
       continue;
 
     snprintf (command, sizeof (command), "set ?%s\n", MuttVars[i].option);
-    if (mutt_parse_rc_line (command, &token, &err) == -1)
+    if (mutt_parse_rc_line (command, &err) == -1)
     {
       fprintf (stderr, "%s\n", err.data);
-      FREE (&token.data);
       FREE (&err.data);
 
       return 1;
@@ -3301,7 +3349,6 @@ int mutt_dump_variables (void)
     printf("%s\n", err.data);
   }
 
-  FREE (&token.data);
   FREE (&err.data);
 
   return 0;
@@ -3357,24 +3404,21 @@ static void start_debug (void)
 
 static int mutt_execute_commands (LIST *p)
 {
-  BUFFER err, token;
+  BUFFER err;
 
   mutt_buffer_init (&err);
   err.dsize = STRING;
   err.data = safe_malloc (err.dsize);
-  mutt_buffer_init (&token);
   for (; p; p = p->next)
   {
-    if (mutt_parse_rc_line (p->data, &token, &err) != 0)
+    if (mutt_parse_rc_line (p->data, &err) != 0)
     {
       fprintf (stderr, _("Error in command line: %s\n"), err.data);
-      FREE (&token.data);
       FREE (&err.data);
 
       return -1;
     }
   }
-  FREE (&token.data);
   FREE (&err.data);
 
   return 0;
@@ -3424,10 +3468,10 @@ void mutt_init (int skip_sys_rc, LIST *commands)
 {
   struct passwd *pw;
   struct utsname utsname;
-  char *p, buffer[STRING];
+  char *p;
   char *domain = NULL;
   int i, need_pause = 0;
-  BUFFER err;
+  BUFFER err, *buffer = NULL;
 
   mutt_buffer_init (&err);
   mutt_buffer_increase_size (&err, STRING);
@@ -3495,6 +3539,8 @@ void mutt_init (int skip_sys_rc, LIST *commands)
   domain = safe_strdup (DOMAIN);
 #endif /* DOMAIN */
 
+  buffer = mutt_buffer_pool_get ();
+
   /*
    * The call to uname() shouldn't fail, but if it does, the system is horribly
    * broken, and the system's networking configuration is in an unreliable
@@ -3520,10 +3566,10 @@ void mutt_init (int skip_sys_rc, LIST *commands)
     Fqdn = safe_malloc (mutt_strlen (domain) + mutt_strlen (Hostname) + 2);
     sprintf (Fqdn, "%s.%s", NONULL(Hostname), domain);	/* __SPRINTF_CHECKED__ */
   }
-  else if (!(getdnsdomainname (buffer, sizeof buffer)))
+  else if (!(getdnsdomainname (buffer)))
   {
-    Fqdn = safe_malloc (mutt_strlen (buffer) + mutt_strlen (Hostname) + 2);
-    sprintf (Fqdn, "%s.%s", NONULL(Hostname), buffer);	/* __SPRINTF_CHECKED__ */
+    Fqdn = safe_malloc (mutt_buffer_len (buffer) + mutt_strlen (Hostname) + 2);
+    sprintf (Fqdn, "%s.%s", NONULL(Hostname), mutt_b2s (buffer));	/* __SPRINTF_CHECKED__ */
   }
   else
     /*
@@ -3545,11 +3591,11 @@ void mutt_init (int skip_sys_rc, LIST *commands)
   else
   {
 #ifdef HOMESPOOL
-    mutt_concat_path (buffer, NONULL (Homedir), MAILPATH, sizeof (buffer));
+    mutt_buffer_concat_path (buffer, NONULL (Homedir), MAILPATH);
 #else
-    mutt_concat_path (buffer, MAILPATH, NONULL(Username), sizeof (buffer));
+    mutt_buffer_concat_path (buffer, MAILPATH, NONULL(Username));
 #endif
-    Spoolfile = safe_strdup (buffer);
+    Spoolfile = safe_strdup (mutt_b2s (buffer));
   }
 
   if ((p = getenv ("MAILCAPS")))
@@ -3574,17 +3620,12 @@ void mutt_init (int skip_sys_rc, LIST *commands)
 
   if ((p = getenv ("REPLYTO")) != NULL)
   {
-    BUFFER buf, token;
+    BUFFER token;
     union pointer_long_t udata = {.l=0};
 
-    snprintf (buffer, sizeof (buffer), "Reply-To: %s", p);
-
-    mutt_buffer_init (&buf);
-    buf.data = buf.dptr = buffer;
-    buf.dsize = mutt_strlen (buffer);
-
+    mutt_buffer_printf (buffer, "Reply-To: %s", p);
     mutt_buffer_init (&token);
-    parse_my_hdr (&token, &buf, udata, &err);
+    parse_my_hdr (&token, buffer, udata, &err);
     FREE (&token.data);
   }
 
@@ -3635,26 +3676,26 @@ void mutt_init (int skip_sys_rc, LIST *commands)
 
   if (!Muttrc)
   {
-    char *xdg_cfg_home = getenv ("XDG_CONFIG_HOME");
+    const char *xdg_cfg_home = getenv ("XDG_CONFIG_HOME");
 
     if (!xdg_cfg_home && Homedir)
     {
-      snprintf (buffer, sizeof (buffer), "%s/.config", Homedir);
-      xdg_cfg_home = buffer;
+      mutt_buffer_printf (buffer, "%s/.config", Homedir);
+      xdg_cfg_home = mutt_b2s (buffer);
     }
 
     Muttrc = mutt_find_cfg (Homedir, xdg_cfg_home);
   }
   else
   {
-    strfcpy (buffer, Muttrc, sizeof (buffer));
+    mutt_buffer_strcpy (buffer, Muttrc);
     FREE (&Muttrc);
-    mutt_expand_path (buffer, sizeof (buffer));
-    Muttrc = safe_strdup (buffer);
+    mutt_buffer_expand_path (buffer);
+    Muttrc = safe_strdup (mutt_b2s (buffer));
     if (access (Muttrc, F_OK))
     {
-      snprintf (buffer, sizeof (buffer), "%s: %s", Muttrc, strerror (errno));
-      mutt_endwin (buffer);
+      mutt_buffer_printf (buffer, "%s: %s", Muttrc, strerror (errno));
+      mutt_endwin (mutt_b2s (buffer));
       exit (1);
     }
   }
@@ -3669,16 +3710,16 @@ void mutt_init (int skip_sys_rc, LIST *commands)
      requested not to via "-n".  */
   if (!skip_sys_rc)
   {
-    snprintf (buffer, sizeof(buffer), "%s/Muttrc-%s", SYSCONFDIR, MUTT_VERSION);
-    if (access (buffer, F_OK) == -1)
-      snprintf (buffer, sizeof(buffer), "%s/Muttrc", SYSCONFDIR);
-    if (access (buffer, F_OK) == -1)
-      snprintf (buffer, sizeof (buffer), "%s/Muttrc-%s", PKGDATADIR, MUTT_VERSION);
-    if (access (buffer, F_OK) == -1)
-      snprintf (buffer, sizeof (buffer), "%s/Muttrc", PKGDATADIR);
-    if (access (buffer, F_OK) != -1)
+    mutt_buffer_printf (buffer, "%s/Muttrc-%s", SYSCONFDIR, MUTT_VERSION);
+    if (access (mutt_b2s (buffer), F_OK) == -1)
+      mutt_buffer_printf (buffer, "%s/Muttrc", SYSCONFDIR);
+    if (access (mutt_b2s (buffer), F_OK) == -1)
+      mutt_buffer_printf (buffer, "%s/Muttrc-%s", PKGDATADIR, MUTT_VERSION);
+    if (access (mutt_b2s (buffer), F_OK) == -1)
+      mutt_buffer_printf (buffer, "%s/Muttrc", PKGDATADIR);
+    if (access (mutt_b2s (buffer), F_OK) != -1)
     {
-      if (source_rc (buffer, &err) != 0)
+      if (source_rc (mutt_b2s (buffer), &err) != 0)
       {
 	fputs (err.data, stderr);
 	fputc ('\n', stderr);
@@ -3715,6 +3756,7 @@ void mutt_init (int skip_sys_rc, LIST *commands)
     Fqdn_mid = safe_strdup(Fqdn);
 
   FREE (&err.data);
+  mutt_buffer_pool_release (&buffer);
 }
 
 int mutt_get_hook_type (const char *name)

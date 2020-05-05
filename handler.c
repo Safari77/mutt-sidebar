@@ -1140,7 +1140,7 @@ static int alternative_handler (BODY *a, STATE *s)
     /* didn't find anything that we could display! */
     state_mark_attach (s);
     state_puts(_("[-- Error:  Could not display any parts of Multipart/Alternative! --]\n"), s);
-    rc = -1;
+    rc = 1;
   }
 
   if (mustfree)
@@ -1373,17 +1373,25 @@ static int autoview_handler (BODY *a, STATE *s)
 	state_mark_attach (s);
 	state_printf (s, _("[-- Can't run %s. --]\n"), mutt_b2s (command));
       }
-      rc = -1;
+      rc = 1;
       goto bail;
     }
 
     if (s->prefix)
     {
+      /* Remove ansi and formatting from autoview output in replies only.
+       * The user may want to see the formatting in the pager, but it
+       * shouldn't be in their quoted reply text too.
+       */
+      BUFFER *stripped = mutt_buffer_pool_get ();
       while (fgets (buffer, sizeof(buffer), fpout) != NULL)
       {
+        mutt_buffer_strip_formatting (stripped, buffer);
         state_puts (s->prefix, s);
-        state_puts (buffer, s);
+        state_puts (mutt_b2s (stripped), s);
       }
+      mutt_buffer_pool_release (&stripped);
+
       /* check for data on stderr */
       if (fgets (buffer, sizeof(buffer), fperr))
       {
@@ -1770,8 +1778,16 @@ int mutt_body_handler (BODY *b, STATE *s)
   int plaintext = 0;
   handler_t handler = NULL, encrypted_handler = NULL;
   int rc = 0;
+  static unsigned short recurse_level = 0;
 
   int oflags = s->flags;
+
+  if (recurse_level >= 100)
+  {
+    dprint (1, (debugfile, "mutt_body_handler: recurse level too deep. giving up!\n"));
+    return -1;
+  }
+  recurse_level++;
 
   /* first determine which handler to use to process this part */
 
@@ -1892,6 +1908,7 @@ int mutt_body_handler (BODY *b, STATE *s)
   }
 
 cleanup:
+  recurse_level--;
   s->flags = oflags | (s->flags & MUTT_FIRSTDONE);
   if (rc)
   {

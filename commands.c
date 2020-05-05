@@ -59,7 +59,12 @@
 static const char *ExtPagerProgress = "all";
 
 /* The folder the user last saved to.  Used by ci_save_message() */
-static char LastSaveFolder[_POSIX_PATH_MAX] = "";
+static BUFFER *LastSaveFolder = NULL;
+
+void mutt_commands_cleanup (void)
+{
+  mutt_buffer_free (&LastSaveFolder);
+}
 
 static void process_protected_headers (HEADER *cur)
 {
@@ -255,6 +260,18 @@ int mutt_display_message (HEADER *cur)
     }
     mutt_unlink (mutt_b2s (tempfile));
     goto cleanup;
+  }
+
+  if (res > 0)
+  {
+    /* L10N:
+       Before displaying a message in the pager, Mutt iterates through
+       all the message parts, decoding, converting, running autoview,
+       decrypting, etc.  If there is an error somewhere in there, Mutt
+       will still display what it was able to generate, but will also
+       display this message in the message line.
+    */
+    mutt_error (_("There was an error displaying all or part of the message"));
   }
 
   if (fpfilterout != NULL && mutt_wait_filter (filterpid) != 0)
@@ -485,7 +502,7 @@ static void pipe_msg (HEADER *h, FILE *fp, int decode, int print)
 
 /* the following code is shared between printing and piping */
 
-static int _mutt_pipe_message (HEADER *h, char *cmd,
+static int _mutt_pipe_message (HEADER *h, const char *cmd,
 			       int decode,
 			       int print,
 			       int split,
@@ -600,19 +617,24 @@ static int _mutt_pipe_message (HEADER *h, char *cmd,
 
 void mutt_pipe_message (HEADER *h)
 {
-  char buffer[LONG_STRING];
+  BUFFER *buffer;
 
-  buffer[0] = 0;
-  if (mutt_get_field (_("Pipe to command: "), buffer, sizeof (buffer), MUTT_CMD)
-      != 0 || !buffer[0])
-    return;
+  buffer = mutt_buffer_pool_get ();
+  if (mutt_buffer_get_field (_("Pipe to command: "), buffer, MUTT_CMD) != 0)
+    goto cleanup;
 
-  mutt_expand_path (buffer, sizeof (buffer));
-  _mutt_pipe_message (h, buffer,
+  if (!mutt_buffer_len (buffer))
+    goto cleanup;
+
+  mutt_buffer_expand_path (buffer);
+  _mutt_pipe_message (h, mutt_b2s (buffer),
 		      option (OPTPIPEDECODE),
 		      0,
 		      option (OPTPIPESPLIT),
 		      PipeSep);
+
+cleanup:
+  mutt_buffer_pool_release (&buffer);
 }
 
 void mutt_print_message (HEADER *h)
@@ -732,7 +754,7 @@ void mutt_shell_escape (void)
 /* enter a mutt command */
 void mutt_enter_command (void)
 {
-  BUFFER err, token;
+  BUFFER err;
   char buffer[LONG_STRING];
   int r;
 
@@ -742,9 +764,7 @@ void mutt_enter_command (void)
   mutt_buffer_init (&err);
   err.dsize = STRING;
   err.data = safe_malloc(err.dsize);
-  mutt_buffer_init (&token);
-  r = mutt_parse_rc_line (buffer, &token, &err);
-  FREE (&token.data);
+  r = mutt_parse_rc_line (buffer, &err);
   if (err.data[0])
   {
     /* since errbuf could potentially contain printf() sequences in it,
@@ -852,8 +872,11 @@ int mutt_save_message (HEADER *h, int delete, int decode, int decrypt)
 {
   int i, need_buffy_cleanup;
   int need_passphrase = 0, app=0;
-  int rc = -1;
+  int rc = -1, context_flags;
   char prompt[SHORT_STRING];
+  const char *progress_msg;
+  progress_t progress;
+  int tagged_progress_count = 0;
   BUFFER *buf = NULL;
   CONTEXT ctx;
   struct stat st;
@@ -917,10 +940,12 @@ int mutt_save_message (HEADER *h, int delete, int decode, int decrypt)
   /* This is an undocumented feature of ELM pointed out to me by Felix von
    * Leitner <leitner@prz.fu-berlin.de>
    */
+  if (!LastSaveFolder)
+    LastSaveFolder = mutt_buffer_new ();
   if (mutt_strcmp (mutt_b2s (buf), ".") == 0)
-    mutt_buffer_strcpy (buf, LastSaveFolder);
+    mutt_buffer_strcpy (buf, mutt_b2s (LastSaveFolder));
   else
-    strfcpy (LastSaveFolder, mutt_b2s (buf), sizeof (LastSaveFolder));
+    mutt_buffer_strcpy (LastSaveFolder, mutt_b2s (buf));
 
   mutt_buffer_expand_path (buf);
 
@@ -955,7 +980,13 @@ int mutt_save_message (HEADER *h, int delete, int decode, int decrypt)
   }
 #endif
 
-  if (mx_open_mailbox (mutt_b2s (buf), MUTT_APPEND, &ctx) != NULL)
+  context_flags = MUTT_APPEND;
+  /* Display a tagged message progress counter, rather than (for
+   * IMAP) a per-message progress counter */
+  if (!h)
+    context_flags |= MUTT_QUIET;
+
+  if (mx_open_mailbox (mutt_b2s (buf), context_flags, &ctx) != NULL)
   {
     if (h)
     {
@@ -967,10 +998,22 @@ int mutt_save_message (HEADER *h, int delete, int decode, int decrypt)
     }
     else
     {
+      /* L10N:
+         Progress meter message when saving tagged messages
+      */
+      progress_msg = delete ? _("Saving tagged messages...") :
+      /* L10N:
+         Progress meter message when copying tagged messages
+      */
+        _("Copying tagged messages...");
+      mutt_progress_init (&progress, progress_msg, MUTT_PROGRESS_MSG,
+                          WriteInc, Context->tagged);
+
       for (i = 0; i < Context->vcount; i++)
       {
 	if (Context->hdrs[Context->v2r[i]]->tagged)
 	{
+          mutt_progress_update (&progress, ++tagged_progress_count, -1);
 	  mutt_message_hook (Context, Context->hdrs[Context->v2r[i]], MUTT_MESSAGEHOOK);
 	  if (_mutt_save_message(Context->hdrs[Context->v2r[i]],
                                  &ctx, delete, decode, decrypt) != 0)

@@ -35,6 +35,7 @@
 #include "sort.h"
 #include "charset.h"
 #include "rfc3676.h"
+#include "background.h"
 
 #ifdef MIXMASTER
 #include "remailer.h"
@@ -172,6 +173,7 @@ typedef struct
 {
   HEADER *msg;
   BUFFER *fcc;
+  SEND_CONTEXT *sctx;
 #ifdef USE_AUTOCRYPT
   autocrypt_rec_t autocrypt_rec;
   int autocrypt_rec_override;
@@ -229,8 +231,9 @@ static void snd_entry (char *b, size_t blen, MUTTMENU *menu, int num)
 {
   ATTACH_CONTEXT *actx = (ATTACH_CONTEXT *)menu->data;
 
-  mutt_FormatString (b, blen, 0, MuttIndexWindow->cols, NONULL (AttachFormat), mutt_attach_fmt,
-                     (unsigned long)(actx->idx[actx->v2r[num]]),
+  mutt_FormatString (b, blen, 0, MuttIndexWindow->cols, NONULL (AttachFormat),
+                     mutt_attach_fmt,
+                     actx->idx[actx->v2r[num]],
                      MUTT_FORMAT_STAT_FILE | MUTT_FORMAT_ARROWCURSOR);
 }
 
@@ -279,6 +282,7 @@ static void autocrypt_compose_menu (HEADER *msg)
 static void redraw_crypt_lines (compose_redraw_data_t *rd)
 {
   HEADER *msg = rd->msg;
+  SEND_CONTEXT *sctx = rd->sctx;
 
   SETCOLOR (MT_COLOR_COMPOSE_HEADER);
   mutt_window_mvprintw (MuttIndexWindow, HDR_CRYPT, 0,
@@ -340,7 +344,8 @@ static void redraw_crypt_lines (compose_redraw_data_t *rd)
     SETCOLOR (MT_COLOR_COMPOSE_HEADER);
     printw ("%*s", HeaderPadding[HDR_CRYPTINFO], _(Prompts[HDR_CRYPTINFO]));
     NORMAL_COLOR;
-    printw ("%s", PgpSignAs ? PgpSignAs : _("<default>"));
+    printw ("%s", sctx->pgp_sign_as ? sctx->pgp_sign_as :
+            (PgpSignAs ? PgpSignAs : _("<default>")));
   }
 
   if ((WithCrypto & APPLICATION_SMIME)
@@ -349,18 +354,23 @@ static void redraw_crypt_lines (compose_redraw_data_t *rd)
     SETCOLOR (MT_COLOR_COMPOSE_HEADER);
     printw ("%*s", HeaderPadding[HDR_CRYPTINFO], _(Prompts[HDR_CRYPTINFO]));
     NORMAL_COLOR;
-    printw ("%s", SmimeSignAs ? SmimeSignAs : _("<default>"));
+    printw ("%s", sctx->smime_sign_as ? sctx->smime_sign_as :
+            (SmimeSignAs ? SmimeSignAs : _("<default>")));
   }
 
+  /* Note: the smime crypt alg can be cleared in smime.c.
+   * this causes a NULL sctx->smime_crypt_alg to override SmimeCryptAlg.
+   */
   if ((WithCrypto & APPLICATION_SMIME)
       && (msg->security & APPLICATION_SMIME)
       && (msg->security & ENCRYPT)
-      && SmimeCryptAlg)
+      && (sctx->smime_crypt_alg ||
+          (!sctx->smime_crypt_alg_cleared && SmimeCryptAlg)))
   {
     SETCOLOR (MT_COLOR_COMPOSE_HEADER);
     mutt_window_mvprintw (MuttIndexWindow, HDR_CRYPTINFO, 40, "%s", _("Encrypt with: "));
     NORMAL_COLOR;
-    printw ("%s", NONULL(SmimeCryptAlg));
+    printw ("%s", sctx->smime_crypt_alg ? sctx->smime_crypt_alg : SmimeCryptAlg );
   }
 
 #ifdef USE_AUTOCRYPT
@@ -638,7 +648,7 @@ static int delete_attachment (ATTACH_CONTEXT *actx, int x)
    * leak because mutt_free_body() frees body->parts, not
    * body->hdr->content.
    *
-   * Other ci_send_message() message constructors are careful to free
+   * Other mutt_send_message() message constructors are careful to free
    * any body->parts, removing depth:
    *  - mutt_prepare_template() used by postponed, resent, and draft files
    *  - mutt_copy_body() used by the recvattach menu and $forward_attachments.
@@ -659,6 +669,124 @@ static int delete_attachment (ATTACH_CONTEXT *actx, int x)
 
   return (0);
 }
+
+/* The compose menu doesn't currently allow nested attachments.
+ * However due to the shared structures and functions with recvattach,
+ * most of the compose code at least works through the v2r table.
+ *
+ * The next three functions continue to support those abstractions,
+ * but currently only allow sibling swapping.  Adding the additional
+ * code to move an attachment across trees would be more complexity to
+ * no purpose.
+ */
+static void swap_attachments (ATTACH_CONTEXT *actx, int cur_rindex, int next_rindex)
+{
+  BODY *prev = NULL, *cur, *next, *parent = NULL;
+  int prev_rindex;
+  ATTACHPTR *tmp;
+
+  cur = actx->idx[cur_rindex]->content;
+  next = actx->idx[next_rindex]->content;
+
+  for (prev_rindex = 0; prev_rindex < cur_rindex; prev_rindex++)
+  {
+    if (actx->idx[prev_rindex]->content->parts == cur)
+      parent = actx->idx[prev_rindex]->content;
+    if (actx->idx[prev_rindex]->content->next == cur)
+    {
+      prev = actx->idx[prev_rindex]->content;
+      break;
+    }
+  }
+
+  if (prev)
+    prev->next = next;
+  else if (cur_rindex == 0)
+    actx->hdr->content = next;
+  else if (parent)
+    parent->parts = next;
+
+  cur->next = next->next;
+  next->next = cur;
+
+  tmp = actx->idx[cur_rindex];
+  actx->idx[cur_rindex] = actx->idx[next_rindex];
+  actx->idx[next_rindex] = tmp;
+}
+
+static int move_attachment_down (ATTACH_CONTEXT *actx, MUTTMENU *menu)
+{
+  int cur_rindex, next_rindex, next_vindex;
+  BODY *cur, *next;
+
+  cur_rindex = actx->v2r[menu->current];
+  cur = actx->idx[cur_rindex]->content;
+
+  next = cur->next;
+  if (!next)
+  {
+    mutt_error _("You are on the last entry.");
+    return -1;
+  }
+  for (next_rindex = cur_rindex + 1; next_rindex < actx->idxlen; next_rindex++)
+  {
+    if (actx->idx[next_rindex]->content == next)
+      break;
+  }
+  if (next_rindex == actx->idxlen)
+  {
+    mutt_error _("You are on the last entry.");
+    return -1;
+  }
+
+  swap_attachments (actx, cur_rindex, next_rindex);
+  for (next_vindex = menu->current; next_vindex < actx->vcount; next_vindex++)
+  {
+    if (actx->v2r[next_vindex] == next_rindex)
+    {
+      menu->current = next_vindex;
+      break;
+    }
+  }
+
+  return 0;
+}
+
+static int move_attachment_up (ATTACH_CONTEXT *actx, MUTTMENU *menu)
+{
+  int prev_rindex, cur_rindex, prev_vindex;
+  BODY *prev = NULL, *cur;
+
+  cur_rindex = actx->v2r[menu->current];
+  cur = actx->idx[cur_rindex]->content;
+
+  for (prev_rindex = 0; prev_rindex < cur_rindex; prev_rindex++)
+  {
+    if (actx->idx[prev_rindex]->content->next == cur)
+    {
+      prev = actx->idx[prev_rindex]->content;
+      break;
+    }
+  }
+  if (!prev)
+  {
+    mutt_error _("You are on the first entry.");
+    return -1;
+  }
+
+  swap_attachments (actx, prev_rindex, cur_rindex);
+  for (prev_vindex = 0; prev_vindex < menu->current; prev_vindex++)
+  {
+    if (actx->v2r[prev_vindex] == prev_rindex)
+    {
+      menu->current = prev_vindex;
+      break;
+    }
+  }
+
+  return 0;
+}
+
 
 static void mutt_gen_compose_attach_list (ATTACH_CONTEXT *actx,
                                           BODY *m,
@@ -789,7 +917,7 @@ static const char *
 compose_format_str (char *buf, size_t buflen, size_t col, int cols, char op, const char *src,
                     const char *prefix, const char *ifstring,
                     const char *elsestring,
-                    unsigned long data, format_flag flags)
+                    void *data, format_flag flags)
 {
   char fmt[SHORT_STRING], tmp[SHORT_STRING];
   int optional = (flags & MUTT_FORMAT_OPTIONAL);
@@ -840,7 +968,7 @@ static void compose_status_line (char *buf, size_t buflen, size_t col, int cols,
                                  MUTTMENU *menu, const char *p)
 {
   mutt_FormatString (buf, buflen, col, cols, p, compose_format_str,
-                     (unsigned long) menu, 0);
+                     menu, 0);
 }
 
 static void compose_menu_redraw (MUTTMENU *menu)
@@ -891,12 +1019,11 @@ static void compose_menu_redraw (MUTTMENU *menu)
  * 1	message should be postponed
  * 0	normal exit
  * -1	abort message
+ * 2    edit was backgrounded
  */
-int mutt_compose_menu (HEADER *msg,   /* structure for new message */
-                       BUFFER *fcc,     /* where to save a copy of the message */
-                       HEADER *cur,   /* current message */
-                       int flags)
+int mutt_compose_menu (SEND_CONTEXT *sctx)
 {
+  HEADER *msg;   /* structure for new message */
   char helpstr[LONG_STRING];
   char buf[LONG_STRING];
   BUFFER *fname = NULL;
@@ -914,10 +1041,13 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
   struct stat st;
   compose_redraw_data_t rd = {0};
 
+  msg = sctx->msg;
+
   init_header_padding ();
 
   rd.msg = msg;
-  rd.fcc = fcc;
+  rd.fcc = sctx->fcc;
+  rd.sctx = sctx;
 
   menu = mutt_new_menu (MENU_COMPOSE);
   menu->offset = HDR_ATTACH;
@@ -937,6 +1067,18 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
   /* Since this is rather long lived, we don't use the pool */
   fname = mutt_buffer_new ();
   mutt_buffer_increase_size (fname, LONG_STRING);
+
+  /* Another alternative would be to create a resume op and:
+   *   mutt_unget_event (0, OP_COMPOSE_EDIT_MESSAGE_RESUME);
+   */
+  if (sctx->state)
+  {
+    if (sctx->state == SEND_STATE_COMPOSE_EDIT)
+      goto edit_message_resume;
+    if (sctx->state == SEND_STATE_COMPOSE_EDIT_HEADERS)
+      goto edit_headers_resume;
+    sctx->state = 0;
+  }
 
   while (loop)
   {
@@ -983,13 +1125,13 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
         mutt_message_hook (NULL, msg, MUTT_SEND2HOOK);
 	break;
       case OP_COMPOSE_EDIT_FCC:
-	mutt_buffer_strcpy (fname, mutt_b2s (fcc));
+	mutt_buffer_strcpy (fname, mutt_b2s (sctx->fcc));
 	if (mutt_buffer_get_field (_("Fcc: "), fname, MUTT_FILE | MUTT_CLEAR) == 0)
 	{
-	  mutt_buffer_strcpy (fcc, mutt_b2s (fname));
-	  mutt_buffer_pretty_mailbox (fcc);
+	  mutt_buffer_strcpy (sctx->fcc, mutt_b2s (fname));
+	  mutt_buffer_pretty_multi_mailbox (sctx->fcc, FccDelimiter);
 	  mutt_window_move (MuttIndexWindow, HDR_FCC, HDR_XOFFSET);
-	  mutt_paddstr (W, mutt_b2s (fcc));
+	  mutt_paddstr (W, mutt_b2s (sctx->fcc));
 	  fccSet = 1;
 	}
         mutt_message_hook (NULL, msg, MUTT_SEND2HOOK);
@@ -998,7 +1140,22 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
 	if (Editor && (mutt_strcmp ("builtin", Editor) != 0) && !option (OPTEDITHDRS))
 	{
           mutt_rfc3676_space_unstuff (msg);
-	  mutt_edit_file (Editor, msg->content->filename);
+
+          if ((sctx->flags & SENDBACKGROUNDEDIT) && option (OPTBACKGROUNDEDIT))
+          {
+            if (mutt_background_edit_file (sctx, Editor,
+                                           msg->content->filename) == 2)
+            {
+              sctx->state = SEND_STATE_COMPOSE_EDIT;
+              loop = 0;
+              r = 2;
+              break;
+            }
+          }
+          else
+            mutt_edit_file (Editor, msg->content->filename);
+        edit_message_resume:
+          sctx->state = 0;
           mutt_rfc3676_space_stuff (msg);
 	  mutt_update_encoding (msg->content);
 	  menu->redraw = REDRAW_FULL;
@@ -1015,8 +1172,26 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
 	{
 	  char *tag = NULL, *err = NULL;
 	  mutt_env_to_local (msg->env);
-	  mutt_edit_headers (NONULL (Editor), msg->content->filename, msg,
-			     fcc);
+
+          if ((sctx->flags & SENDBACKGROUNDEDIT) && option (OPTBACKGROUNDEDIT))
+          {
+            if (mutt_edit_headers (Editor, sctx, MUTT_EDIT_HEADERS_BACKGROUND) == 2)
+            {
+              sctx->state = SEND_STATE_COMPOSE_EDIT_HEADERS;
+              loop = 0;
+              r = 2;
+              break;
+            }
+          }
+          else
+            mutt_edit_headers (NONULL (Editor), sctx, 0);
+
+        edit_headers_resume:
+          if (sctx->state == SEND_STATE_COMPOSE_EDIT_HEADERS)
+          {
+            mutt_edit_headers (Editor, sctx, MUTT_EDIT_HEADERS_RESUME);
+            sctx->state = 0;
+          }
 	  if (mutt_env_to_intl (msg->env, &tag, &err))
 	  {
 	    mutt_error (_("Bad IDN in \"%s\": '%s'"), tag, err);
@@ -1030,7 +1205,7 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
 	     attachment list could change if the user invokes ~v to edit
 	     the message with headers, in which we need to execute the
 	     code below to regenerate the index array */
-	  mutt_builtin_editor (msg->content->filename, msg, cur);
+	  mutt_builtin_editor (sctx);
 	}
 
         mutt_rfc3676_space_stuff (msg);
@@ -1225,6 +1400,20 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
         mutt_message_hook (NULL, msg, MUTT_SEND2HOOK);
         break;
 
+      case OP_COMPOSE_MOVE_DOWN:
+        CHECK_COUNT;
+        if (move_attachment_down (actx, menu) == -1)
+          break;
+	mutt_update_compose_menu (actx, menu, 0);
+        break;
+
+      case OP_COMPOSE_MOVE_UP:
+        CHECK_COUNT;
+        if (move_attachment_up (actx, menu) == -1)
+          break;
+	mutt_update_compose_menu (actx, menu, 0);
+        break;
+
       case OP_COMPOSE_TOGGLE_RECODE:
       {
         CHECK_COUNT;
@@ -1334,13 +1523,13 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
 	  break;
 #endif
 
-	if (!fccSet && mutt_buffer_len (fcc))
+	if (!fccSet && mutt_buffer_len (sctx->fcc))
 	{
 	  if ((i = query_quadoption (OPT_COPY,
                                      _("Save a copy of this message?"))) == -1)
 	    break;
 	  else if (i == MUTT_NO)
-	    mutt_buffer_clear (fcc);
+	    mutt_buffer_clear (sctx->fcc);
 	}
 
 	loop = 0;
@@ -1577,7 +1766,7 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
             if (actx->idx[i]->unowned)
               actx->idx[i]->content->unlink = 0;
 
-          if (!(flags & MUTT_COMPOSE_NOFREEHEADER))
+          if (!(sctx->flags & SENDNOFREEHEADER))
           {
             for (i = 0; i < actx->idxlen; i++)
             {
@@ -1642,7 +1831,7 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
           if (msg->content->next)
             msg->content = mutt_make_multipart_mixed (msg->content);
 
-          if (mutt_write_fcc (mutt_b2s (fname), msg, NULL, 0, NULL) == 0)
+          if (mutt_write_fcc (mutt_b2s (fname), sctx, NULL, 0, NULL) == 0)
             mutt_message _("Message written.");
 
           msg->content = mutt_remove_multipart_mixed (msg->content);
@@ -1676,7 +1865,7 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
 	  msg->security |= APPLICATION_PGP;
           update_crypt_info (&rd);
 	}
-	msg->security = crypt_pgp_send_menu (msg);
+	crypt_pgp_send_menu (sctx);
 	update_crypt_info (&rd);
         mutt_message_hook (NULL, msg, MUTT_SEND2HOOK);
         break;
@@ -1713,7 +1902,7 @@ int mutt_compose_menu (HEADER *msg,   /* structure for new message */
 	  msg->security |= APPLICATION_SMIME;
           update_crypt_info (&rd);
 	}
-	msg->security = crypt_smime_send_menu(msg);
+	crypt_smime_send_menu (sctx);
 	update_crypt_info (&rd);
         mutt_message_hook (NULL, msg, MUTT_SEND2HOOK);
         break;

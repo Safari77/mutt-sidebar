@@ -48,7 +48,6 @@ doc/stamp-doc-xml
 /flea
 .gdb_history
 *.gmo
-hcachever.sh
 hcversion.h
 install-sh
 keymap_defs.h
@@ -64,7 +63,6 @@ mutt
 muttbug.sh
 mutt_dotlock
 mutt_dotlock.c
-mutt_md5
 *.o
 *.orig
 patchlist.c

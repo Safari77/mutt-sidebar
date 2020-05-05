@@ -31,6 +31,9 @@
 #include "url.h"
 #include "mutt_crypt.h"
 #include "mutt_idna.h"
+#include "send.h"
+#include "background.h"
+
 #ifdef USE_SIDEBAR
 #include "sidebar.h"
 #endif
@@ -79,7 +82,7 @@ To report a bug, please contact the Mutt maintainers via gitlab:\n\
     https://gitlab.com/muttmua/mutt/issues\n");
 
 static const char *Notice = N_("\
-Copyright (C) 1996-2016 Michael R. Elkins and others.\n\
+Copyright (C) 1996-2020 Michael R. Elkins and others.\n\
 Mutt comes with ABSOLUTELY NO WARRANTY; for details type `mutt -vv'.\n\
 Mutt is free software, and you are welcome to redistribute it\n\
 under certain conditions; type `mutt -vv' for details.\n");
@@ -957,7 +960,7 @@ int main (int argc, char **argv, char **environ)
   {
     if (!option (OPTNOCURSES))
       mutt_flushinp ();
-    ci_send_message (SENDPOSTPONED, NULL, NULL, NULL, NULL);
+    mutt_send_message (SENDPOSTPONED, NULL, NULL, NULL, NULL);
   }
   else if (subject || msg || sendflags || draftFile || includeFile || attach ||
 	   optind < argc)
@@ -1100,7 +1103,7 @@ int main (int argc, char **argv, char **environ)
         sendflags |= SENDNOFREEHEADER;
 
       /* Parse the draftFile into the full HEADER/BODY structure.
-       * Set SENDDRAFTFILE so ci_send_message doesn't overwrite
+       * Set SENDDRAFTFILE so mutt_send_message doesn't overwrite
        * our msg->content.
        */
       if (draftFile)
@@ -1202,7 +1205,7 @@ int main (int argc, char **argv, char **environ)
       mutt_free_list (&attach);
     }
 
-    rv = ci_send_message (sendflags, msg, bodyfile, NULL, NULL);
+    rv = mutt_send_message (sendflags, msg, bodyfile, NULL, NULL);
 
     if (edit_infile)
     {
@@ -1365,6 +1368,8 @@ cleanup_and_exit:
   mutt_autocrypt_cleanup ();
 #endif
   mutt_browser_cleanup ();
+  mutt_commands_cleanup ();
+  crypt_cleanup ();
   mutt_free_opts ();
   mutt_free_windows ();
   mutt_buffer_pool_free ();

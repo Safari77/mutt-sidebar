@@ -27,7 +27,7 @@
 #include "buffy.h"
 
 #ifndef _MAKEDOC
-/* If you add a data type, be sure to update doc/makedoc.c */
+/* If you add a data type, be sure to update doc/makedoc.pl */
 #define DT_MASK		0x0f
 #define DT_BOOL		1 /* boolean option */
 #define DT_NUM		2 /* a number (short) */
@@ -374,6 +374,45 @@ struct option_t MuttVars[] = {
   ** .pp
   ** Also see $$fast_reply.
   */
+  { "background_edit",  DT_BOOL, R_NONE, {.l=OPTBACKGROUNDEDIT}, {.l=0} },
+  /*
+  ** .pp
+  ** When \fIset\fP, Mutt will run $$editor in the background during
+  ** message composition.  A landing page will display, waiting for
+  ** the $$editor to exit.  The landing page may be exited, allowing
+  ** perusal of the mailbox, or even for other messages to be
+  ** composed.  Backgrounded sessions may be returned to via the
+  ** \fC<background-compose-menu>\fP function.
+  ** .pp
+  ** For background editing to work properly, $$editor must be set to
+  ** an editor that does not try to use the Mutt terminal: for example
+  ** a graphical editor, or a script launching (and waiting for) the
+  ** editor in another Gnu Screen window.
+  ** .pp
+  ** For more details, see ``$bgedit'' ("Background Editing" in the manual).
+  */
+  { "background_confirm_quit", DT_BOOL, R_NONE, {.l=OPTBACKGROUNDCONFIRMQUIT}, {.l=1} },
+  /*
+  ** .pp
+  ** When \fIset\fP, if there are any background edit sessions, you
+  ** will be prompted to confirm exiting Mutt, in addition to the
+  ** $$quit prompt.
+  */
+  { "background_format", DT_STR, R_MENU, {.p=&BackgroundFormat}, {.p="%10S %7p %s"} },
+  /*
+  ** .pp
+  ** This variable describes the format of the ``background compose''
+  ** menu.  The following \fCprintf(3)\fP-style sequences are
+  ** understood:
+  ** .dl
+  ** .dt %i .dd parent message id (for replies and forwarded messages)
+  ** .dt %n .dd the running number on the menu
+  ** .dt %p .dd pid of the $$editor process
+  ** .dt %r .dd comma separated list of ``To:'' recipients
+  ** .dt %R .dd comma separated list of ``Cc:'' recipients
+  ** .dt %s .dd subject of the message
+  ** .dt %S .dd status of the $$editor process: running/finished
+  */
   { "beep",		DT_BOOL, R_NONE, {.l=OPTBEEP}, {.l=1} },
   /*
   ** .pp
@@ -649,6 +688,20 @@ struct option_t MuttVars[] = {
   ** be manually re-enabled in the pgp or smime menus.
   ** (Crypto only)
    */
+  { "crypt_opportunistic_encrypt_strong_keys", DT_BOOL, R_NONE, {.l=OPTCRYPTOPPENCSTRONGKEYS}, {.l=0} },
+  /*
+  ** .pp
+  ** When set, this modifies the behavior of $$crypt_opportunistic_encrypt
+  ** to only search for "strong keys", that is, keys with full validity
+  ** according to the web-of-trust algorithm.  A key with marginal or no
+  ** validity will not enable opportunistic encryption.
+  ** .pp
+  ** For S/MIME, the behavior depends on the backend.  Classic S/MIME will
+  ** filter for certificates with the 't' (trusted) flag in the .index file.
+  ** The GPGME backend will use the same filters as with OpenPGP, and depends
+  ** on GPGME's logic for assigning the GPGME_VALIDITY_FULL and
+  ** GPGME_VALIDITY_ULTIMATE validity flag.
+  */
   { "crypt_protected_headers_read", DT_BOOL, R_NONE, {.l=OPTCRYPTPROTHDRSREAD}, {.l=1} },
   /*
   ** .pp
@@ -1007,6 +1060,15 @@ struct option_t MuttVars[] = {
   ** unsigned, even when the actual message is encrypted and/or
   ** signed.
   ** (PGP only)
+  */
+  { "fcc_delimiter", DT_STR, R_NONE, {.p=&FccDelimiter}, {.p=0} },
+  /*
+  ** .pp
+  ** When specified, this allows the ability to Fcc to more than one
+  ** mailbox.  The fcc value will be split by this delimiter and Mutt
+  ** will evaluate each part as a mailbox separately.
+  ** .pp
+  ** See $$record, ``$fcc-hook'', and ``$fcc-save-hook''.
   */
   { "flag_safe", DT_BOOL, R_NONE, {.l=OPTFLAGSAFE}, {.l=0} },
   /*
@@ -1446,6 +1508,17 @@ struct option_t MuttVars[] = {
   ** those, and displays worse performance when enabled.  Your
   ** mileage may vary.
   */
+#ifdef USE_ZLIB
+  { "imap_deflate",		DT_BOOL, R_NONE, {.l=OPTIMAPDEFLATE}, {.l=0} },
+  /*
+  ** .pp
+  ** When \fIset\fP, mutt will use the COMPRESS=DEFLATE extension (RFC
+  ** 4978) if advertised by the server.
+  ** .pp
+  ** In general a good compression efficiency can be achieved, which
+  ** speeds up reading large mailboxes also on fairly good connections.
+  */
+#endif
   { "imap_delim_chars",		DT_STR, R_NONE, {.p=&ImapDelimChars}, {.p="/."} },
   /*
   ** .pp
@@ -1456,10 +1529,11 @@ struct option_t MuttVars[] = {
   { "imap_fetch_chunk_size",	DT_LNUM, R_NONE, {.p=&ImapFetchChunkSize}, {.l=0} },
   /*
   ** .pp
-  ** When set to a value greater than 0, new headers will be downloaded
-  ** in sets of this size.  If you have a very large mailbox, this might
-  ** prevent a timeout and disconnect when opening the mailbox, by sending
-  ** a FETCH per set of this size instead of a single FETCH for all new
+  ** When set to a value greater than 0, new headers will be
+  ** downloaded in groups of this many headers per request.  If you
+  ** have a very large mailbox, this might prevent a timeout and
+  ** disconnect when opening the mailbox, by sending a FETCH per set
+  ** of this many headers, instead of a single FETCH for all new
   ** headers.
   */
   { "imap_headers",	DT_STR, R_INDEX, {.p=&ImapHeaders}, {.p=0} },
@@ -2890,6 +2964,9 @@ struct option_t MuttVars[] = {
   ** The value of \fI$$record\fP is overridden by the $$force_name and
   ** $$save_name variables, and the ``$fcc-hook'' command.  Also see $$copy
   ** and $$write_bcc.
+  ** .pp
+  ** Multiple mailboxes may be specified if $$fcc_delimiter is
+  ** set to a string delimiter.
   */
   { "reflow_space_quotes",	DT_BOOL, R_NONE, {.l=OPTREFLOWSPACEQUOTES}, {.l=1} },
   /*
@@ -4009,7 +4086,7 @@ struct option_t MuttVars[] = {
   ** message mode (Certain operations like composing a new mail, replying,
   ** forwarding, etc. are not permitted in this mode).
   */
-  { "status_format",	DT_STR,	 R_BOTH, {.p=&Status}, {.p="-%r-Mutt: %f [Msgs:%?M?%M/?%m%?n? New:%n?%?o? Old:%o?%?d? Del:%d?%?F? Flag:%F?%?t? Tag:%t?%?p? Post:%p?%?b? Inc:%b?%?l? %l?]---(%s/%S)-%>-(%P)---"} },
+  { "status_format",	DT_STR,	 R_BOTH, {.p=&Status}, {.p="-%r-Mutt: %f [Msgs:%?M?%M/?%m%?n? New:%n?%?o? Old:%o?%?d? Del:%d?%?F? Flag:%F?%?t? Tag:%t?%?p? Post:%p?%?b? Inc:%b?%?B? Back:%B?%?l? %l?]---(%s/%S)-%>-(%P)---"} },
   /*
   ** .pp
   ** Controls the format of the status line displayed in the ``index''
@@ -4017,6 +4094,7 @@ struct option_t MuttVars[] = {
   ** set of \fCprintf(3)\fP-like sequences:
   ** .dl
   ** .dt %b  .dd number of mailboxes with new mail *
+  ** .dt %B  .dd number of backgrounded editing sessions *
   ** .dt %d  .dd number of deleted messages *
   ** .dt %f  .dd the full pathname of the current mailbox
   ** .dt %F  .dd number of flagged messages *
@@ -4483,11 +4561,11 @@ const struct mapping_t SortKeyMethods[] = {
 };
 
 const struct mapping_t SortSidebarMethods[] = {
-  { "alpha",		SORT_PATH },
+  { "alpha",		SORT_SUBJECT },
   { "count",		SORT_COUNT },
   { "flagged",		SORT_FLAGGED },
   { "mailbox-order",	SORT_ORDER },
-  { "name",		SORT_PATH },
+  { "name",		SORT_SUBJECT },
   { "new",		SORT_UNREAD },  /* kept for compatibility */
   { "path",		SORT_PATH },
   { "unread",		SORT_UNREAD },
@@ -4581,8 +4659,8 @@ const struct command_t Commands[] = {
   { "index-format-hook",mutt_parse_idxfmt_hook, {.l=MUTT_IDXFMTHOOK} },
   { "lists",		parse_lists,		{.l=0} },
   { "macro",		mutt_parse_macro,	{.l=0} },
-  { "mailboxes",	mutt_parse_mailboxes,	{.l=MUTT_MAILBOXES} },
-  { "unmailboxes",	mutt_parse_mailboxes,	{.l=MUTT_UNMAILBOXES} },
+  { "mailboxes",	mutt_parse_mailboxes,	{.l=0} },
+  { "unmailboxes",	mutt_parse_unmailboxes,	{.l=0} },
   { "mailto_allow",	parse_list,		{.p=&MailtoAllow} },
   { "unmailto_allow",	parse_unlist,		{.p=&MailtoAllow} },
   { "message-hook",	mutt_parse_hook,	{.l=MUTT_MESSAGEHOOK} },

@@ -111,7 +111,7 @@ typedef struct pgp_keyinfo *pgp_key_t;
 
 /* Some prototypes -- old crypt.h. */
 
-int mutt_protect (HEADER *, char *, int);
+int mutt_protect (SEND_CONTEXT *, char *, int);
 
 int mutt_is_multipart_encrypted (BODY *);
 
@@ -131,7 +131,7 @@ int mutt_protected_headers_handler (BODY *, STATE *);
 
 int mutt_signed_handler (BODY *, STATE *);
 
-int mutt_parse_crypt_hdr (const char *, int, int);
+int mutt_parse_crypt_hdr (const char *, int, int, SEND_CONTEXT *);
 
 
 void convert_to_7bit (BODY *);
@@ -249,7 +249,7 @@ BODY *crypt_pgp_encrypt_message (HEADER *msg, BODY *a, char *keylist, int sign);
 /* Invoke the PGP command to import a key. */
 void crypt_pgp_invoke_import (const char *fname);
 
-int crypt_pgp_send_menu (HEADER *msg);
+void crypt_pgp_send_menu (SEND_CONTEXT *sctx);
 
 /* fixme: needs documentation */
 int crypt_pgp_verify_one (BODY *sigbdy, STATE *s, const char *tempf);
@@ -299,7 +299,7 @@ BODY *crypt_smime_build_smime_entity (BODY *a, char *certlist);
 /* Add a certificate and update index file (externally). */
 void crypt_smime_invoke_import (const char *infile, const char *mailbox);
 
-int crypt_smime_send_menu (HEADER *msg);
+void crypt_smime_send_menu (SEND_CONTEXT *sctx);
 
 void crypt_smime_set_sender (const char *sender);
 
@@ -307,5 +307,7 @@ void crypt_smime_set_sender (const char *sender);
 int crypt_smime_verify_one (BODY *sigbdy, STATE *s, const char *tempf);
 
 void crypt_init (void);
+
+void crypt_cleanup (void);
 
 #endif /*MUTT_CRYPT_H*/

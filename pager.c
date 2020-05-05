@@ -31,6 +31,9 @@
 #include "mbyte.h"
 #include "sort.h"
 #include "buffy.h"
+#include "send.h"
+#include "background.h"
+
 #ifdef USE_SIDEBAR
 #include "sidebar.h"
 #endif
@@ -2506,7 +2509,8 @@ search_next:
 	  mutt_attach_mail_sender (extra->fp, extra->hdr, extra->actx,
                                    extra->bdy);
 	else
-	  ci_send_message (SENDTOSENDER, NULL, NULL, extra->ctx, extra->hdr);
+	  mutt_send_message (SENDTOSENDER | SENDBACKGROUNDEDIT,
+                             NULL, NULL, extra->ctx, extra->hdr);
 	pager_menu->redraw = REDRAW_FULL;
 	break;
 
@@ -2648,10 +2652,14 @@ search_next:
 	  mutt_print_message (extra->hdr);
 	break;
 
+      case OP_BACKGROUND_COMPOSE_MENU:
+        mutt_background_compose_menu ();
+        break;
+
       case OP_MAIL:
 	CHECK_MODE(IsHeader (extra) && !IsAttach (extra));
         CHECK_ATTACH;
-	ci_send_message (0, NULL, NULL, extra->ctx, NULL);
+	mutt_send_message (SENDBACKGROUNDEDIT, NULL, NULL, extra->ctx, NULL);
 	pager_menu->redraw = REDRAW_FULL;
 	break;
 
@@ -2665,7 +2673,7 @@ search_next:
 	CHECK_MODE(IsHeader (extra) || IsMsgAttach (extra));
         CHECK_ATTACH;
 
-        replyflags = SENDREPLY |
+        replyflags = SENDREPLY | SENDBACKGROUNDEDIT |
 	  (ch == OP_GROUP_REPLY ? SENDGROUPREPLY : 0) |
 	  (ch == OP_GROUP_CHAT_REPLY ? SENDGROUPCHATREPLY : 0) |
 	  (ch == OP_LIST_REPLY ? SENDLISTREPLY : 0);
@@ -2674,7 +2682,7 @@ search_next:
 	  mutt_attach_reply (extra->fp, extra->hdr, extra->actx,
 			     extra->bdy, replyflags);
 	else
-	  ci_send_message (replyflags, NULL, NULL, extra->ctx, extra->hdr);
+	  mutt_send_message (replyflags, NULL, NULL, extra->ctx, extra->hdr);
 	pager_menu->redraw = REDRAW_FULL;
 	break;
       }
@@ -2682,7 +2690,8 @@ search_next:
       case OP_RECALL_MESSAGE:
 	CHECK_MODE(IsHeader (extra) && !IsAttach(extra));
         CHECK_ATTACH;
-	ci_send_message (SENDPOSTPONED, NULL, NULL, extra->ctx, extra->hdr);
+	mutt_send_message (SENDPOSTPONED | SENDBACKGROUNDEDIT,
+                           NULL, NULL, extra->ctx, extra->hdr);
 	pager_menu->redraw = REDRAW_FULL;
 	break;
 
@@ -2693,7 +2702,8 @@ search_next:
 	  mutt_attach_forward (extra->fp, extra->hdr, extra->actx,
 			       extra->bdy);
         else
-	  ci_send_message (SENDFORWARD, NULL, NULL, extra->ctx, extra->hdr);
+	  mutt_send_message (SENDFORWARD | SENDBACKGROUNDEDIT,
+                             NULL, NULL, extra->ctx, extra->hdr);
 	pager_menu->redraw = REDRAW_FULL;
 	break;
 
@@ -2869,7 +2879,7 @@ search_next:
         }
 	CHECK_MODE(IsHeader(extra));
         CHECK_ATTACH;
-	ci_send_message (SENDKEY, NULL, NULL, extra->ctx, extra->hdr);
+	mutt_send_message (SENDKEY, NULL, NULL, extra->ctx, extra->hdr);
 	pager_menu->redraw = REDRAW_FULL;
 	break;
 
@@ -2898,6 +2908,8 @@ search_next:
 	break;
 
 #ifdef USE_SIDEBAR
+      case OP_SIDEBAR_FIRST:
+      case OP_SIDEBAR_LAST:
       case OP_SIDEBAR_NEXT:
       case OP_SIDEBAR_NEXT_NEW:
       case OP_SIDEBAR_PAGE_DOWN:

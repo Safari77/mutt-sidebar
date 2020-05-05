@@ -89,6 +89,7 @@ const struct binding_t OpMain[] = { /* map: index */
 #ifdef USE_AUTOCRYPT
   { "autocrypt-acct-menu",	OP_AUTOCRYPT_ACCT_MENU,		"A" },
 #endif
+  { "background-compose-menu",  OP_BACKGROUND_COMPOSE_MENU,     "B" },
   { "bounce-message",		OP_BOUNCE_MESSAGE,		"b" },
   { "break-thread",		OP_MAIN_BREAK_THREAD,		"#" },
   { "browse-mailboxes",		OP_MAIN_BROWSE_MAILBOXES,	"y" },
@@ -182,6 +183,8 @@ const struct binding_t OpMain[] = { /* map: index */
   { "decrypt-save",		OP_DECRYPT_SAVE,		NULL },
 
 #ifdef USE_SIDEBAR
+  { "sidebar-first",		OP_SIDEBAR_FIRST,		NULL },
+  { "sidebar-last",		OP_SIDEBAR_LAST,		NULL },
   { "sidebar-next",		OP_SIDEBAR_NEXT,		NULL },
   { "sidebar-next-new",		OP_SIDEBAR_NEXT_NEW,		NULL },
   { "sidebar-open",		OP_SIDEBAR_OPEN,		NULL },
@@ -196,6 +199,7 @@ const struct binding_t OpMain[] = { /* map: index */
 };
 
 const struct binding_t OpPager[] = { /* map: pager */
+  { "background-compose-menu",  OP_BACKGROUND_COMPOSE_MENU,     "B" },
   { "break-thread",	OP_MAIN_BREAK_THREAD,		"#" },
   { "browse-mailboxes",	OP_MAIN_BROWSE_MAILBOXES,	"y" },
   { "browse-mailboxes-readonly", OP_MAIN_BROWSE_MAILBOXES_READONLY, NULL },
@@ -306,6 +310,8 @@ const struct binding_t OpPager[] = { /* map: pager */
   { "check-stats",	OP_CHECK_STATS,		NULL },
 
 #ifdef USE_SIDEBAR
+  { "sidebar-first",		OP_SIDEBAR_FIRST,		NULL },
+  { "sidebar-last",		OP_SIDEBAR_LAST,		NULL },
   { "sidebar-next",		OP_SIDEBAR_NEXT,		NULL },
   { "sidebar-next-new",		OP_SIDEBAR_NEXT_NEW,		NULL },
   { "sidebar-open",		OP_SIDEBAR_OPEN,		NULL },
@@ -389,6 +395,8 @@ const struct binding_t OpCompose[] = { /* map: compose */
   { "view-alt-mailcap", OP_COMPOSE_VIEW_ALT_MAILCAP,    "V" },
   { "send-message",	OP_COMPOSE_SEND_MESSAGE,	"y" },
   { "pipe-entry",	OP_PIPE,			"|" },
+  { "move-down",	OP_COMPOSE_MOVE_DOWN,		NULL },
+  { "move-up",		OP_COMPOSE_MOVE_UP,		NULL },
 
   { "attach-key",	OP_COMPOSE_ATTACH_KEY,		"\033k" },
   { "pgp-menu",		OP_COMPOSE_PGP_MENU,		"p" 	},

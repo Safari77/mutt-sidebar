@@ -3,7 +3,7 @@
 include $(top_srcdir)/flymake.am
 
 AUTOMAKE_OPTIONS = 1.6 foreign
-EXTRA_PROGRAMS = mutt_dotlock mutt_pgpring pgpewrap mutt_md5
+EXTRA_PROGRAMS = mutt_dotlock mutt_pgpring pgpewrap
 
 if BUILD_IMAP
 IMAP_SUBDIR = imap
@@ -27,8 +27,8 @@ BUILT_SOURCES = keymap_defs.h patchlist.c reldate.h conststrings.c version.h $(H
 
 bin_PROGRAMS = mutt $(DOTLOCK_TARGET) $(PGPAUX_TARGET)
 mutt_SOURCES = \
-	addrbook.c alias.c attach.c base64.c browser.c buffer.c buffy.c color.c \
-	crypt.c cryptglue.c \
+	addrbook.c alias.c attach.c background.c base64.c browser.c buffer.c \
+	buffy.c color.c crypt.c cryptglue.c \
 	commands.c complete.c compose.c copy.c curs_lib.c curs_main.c date.c \
 	edit.c enter.c flags.c init.c filter.c from.c \
 	getdomain.c group.c \
@@ -63,7 +63,7 @@ EXTRA_mutt_SOURCES = account.c bcache.c compress.c crypt-gpgme.c crypt-mod-pgp-c
 	mutt_idna.c mutt_sasl.c mutt_socket.c mutt_ssl.c mutt_ssl_gnutls.c \
 	mutt_tunnel.c pgp.c pgpinvoke.c pgpkey.c pgplib.c pgpmicalg.c \
 	pgppacket.c pop.c pop_auth.c pop_lib.c remailer.c resize.c sha1.c \
-	smime.c smtp.c utf8.c wcwidth.c sidebar.c \
+	smime.c smtp.c utf8.c wcwidth.c sidebar.c mutt_zstrm.c \
 	bcache.h browser.h hcache.h mbyte.h monitor.h mutt_idna.h remailer.h url.h
 
 EXTRA_DIST = COPYRIGHT GPL OPS OPS.PGP OPS.CRYPT OPS.SMIME TODO UPDATING \
@@ -77,10 +77,10 @@ EXTRA_DIST = COPYRIGHT GPL OPS OPS.PGP OPS.CRYPT OPS.SMIME TODO UPDATING \
 	rfc2231.h rfc822.h rfc3676.h sha1.h sort.h mime.types VERSION prepare \
 	_mutt_regex.h OPS.MIX README.SECURITY remailer.c remailer.h browser.h \
 	mbyte.h lib.h extlib.c pgpewrap.c smime_keys.pl pgplib.h \
-	README.SSL smime.h group.h \
+	README.SSL smime.h group.h mutt_zstrm.h send.h background.h \
 	muttbug pgppacket.h depcomp ascii.h BEWARE PATCHES patchlist.sh \
 	ChangeLog mkchangelog.sh mkreldate.sh mutt_idna.h sidebar.h OPS.SIDEBAR \
-	snprintf.c regex.c crypt-gpgme.h hcachever.sh.in \
+	snprintf.c regex.c crypt-gpgme.h hcachever.pl \
 	txt2c.c txt2c.sh version.sh check_sec.sh
 
 EXTRA_SCRIPTS = smime_keys
@@ -93,14 +93,10 @@ mutt_pgpring_SOURCES = pgppubring.c pgplib.c lib.c extlib.c sha1.c md5.c pgppack
 mutt_pgpring_LDADD = $(LIBOBJS) $(INTLLIBS)
 mutt_pgpring_DEPENDENCIES = $(LIBOBJS) $(INTLDEPS)
 
-mutt_md5_SOURCES = md5.c
-mutt_md5_CFLAGS = -DMD5UTIL
-mutt_md5_LDADD =
-
 txt2c_SOURCES = txt2c.c
 txt2c_LDADD =
 
-noinst_PROGRAMS = $(MUTT_MD5) txt2c
+noinst_PROGRAMS = txt2c
 
 mutt_dotlock.c: dotlock.c
 	cp $(srcdir)/dotlock.c mutt_dotlock.c
@@ -166,9 +162,9 @@ reldate.h: $(srcdir)/mkreldate.sh $(srcdir)/ChangeLog
 # If configured with --with-included-gettext this means that intl will
 # not have generated libintl.h yet, and mutt.h -> lib.h will generate
 # an error.
-hcversion.h: $(srcdir)/mutt.h $(srcdir)/rfc822.h hcachever.sh $(MUTT_MD5)
+hcversion.h: $(srcdir)/mutt.h $(srcdir)/rfc822.h $(srcdir)/buffer.h config.h $(srcdir)/hcachever.pl
 	( echo '#include "config.h"'; echo '#undef ENABLE_NLS'; echo '#include "mutt.h"'; ) \
-	| $(CPP) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) - | sh ./hcachever.sh hcversion.h
+	| $(CPP) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) - | perl $(srcdir)/hcachever.pl > hcversion.h
 
 patchlist.c: $(srcdir)/PATCHES $(srcdir)/patchlist.sh
 	$(srcdir)/patchlist.sh < $(srcdir)/PATCHES > patchlist.c

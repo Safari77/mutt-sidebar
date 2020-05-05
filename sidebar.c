@@ -52,6 +52,7 @@ static int HilIndex = -1;    /* Highlighted mailbox */
 static int BotIndex = -1;    /* Last mailbox visible in sidebar */
 
 static int select_next (void);
+static int select_prev (void);
 
 
 /**
@@ -77,7 +78,7 @@ static int select_next (void);
  */
 static const char *cb_format_str(char *dest, size_t destlen, size_t col, int cols, char op,
                                  const char *src, const char *prefix, const char *ifstring,
-                                 const char *elsestring, unsigned long data, format_flag flags)
+                                 const char *elsestring, void *data, format_flag flags)
 {
   SBENTRY *sbe = (SBENTRY *) data;
   unsigned int optional;
@@ -188,9 +189,9 @@ static const char *cb_format_str(char *dest, size_t destlen, size_t col, int col
   }
 
   if (optional)
-    mutt_FormatString (dest, destlen, col, SidebarWidth, ifstring,   cb_format_str, (unsigned long) sbe, flags);
+    mutt_FormatString (dest, destlen, col, SidebarWidth, ifstring,   cb_format_str, sbe, flags);
   else if (flags & MUTT_FORMAT_OPTIONAL)
-    mutt_FormatString (dest, destlen, col, SidebarWidth, elsestring, cb_format_str, (unsigned long) sbe, flags);
+    mutt_FormatString (dest, destlen, col, SidebarWidth, elsestring, cb_format_str, sbe, flags);
 
   /* We return the format string, unchanged */
   return src;
@@ -216,7 +217,7 @@ static void make_sidebar_entry (char *buf, unsigned int buflen, int width, const
 
   strfcpy (sbe->box, box, sizeof (sbe->box));
 
-  mutt_FormatString (buf, buflen, 0, width, NONULL(SidebarFormat), cb_format_str, (unsigned long) sbe, 0);
+  mutt_FormatString (buf, buflen, 0, width, NONULL(SidebarFormat), cb_format_str, sbe, 0);
 
   /* Force string to be exactly the right width */
   int w = mutt_strwidth (buf);
@@ -268,6 +269,10 @@ static int cb_qsort_sbe (const void *a, const void *b)
       break;
     case SORT_PATH:
       result = mutt_strcasecmp (mutt_b2s (b1->pathbuf), mutt_b2s (b2->pathbuf));
+      break;
+    case SORT_SUBJECT:
+      result = mutt_strcasecmp (b1->label ? b1->label : mutt_b2s (b1->pathbuf),
+                                b2->label ? b2->label : mutt_b2s (b2->pathbuf));
       break;
   }
 
@@ -365,7 +370,8 @@ static void sort_entries (void)
   if ((ssm == SORT_COUNT)     ||
       (ssm == SORT_UNREAD)    ||
       (ssm == SORT_FLAGGED)   ||
-      (ssm == SORT_PATH))
+      (ssm == SORT_PATH)      ||
+      (ssm == SORT_SUBJECT))
     qsort (Entries, EntryCount, sizeof (*Entries), cb_qsort_sbe);
   else if ((ssm == SORT_ORDER) &&
            (SidebarSortMethod != PreviousSort))
@@ -419,8 +425,10 @@ static int prepare_sidebar (int page_size)
     else
     {
       HilIndex = 0;
+      /* Note is_hidden will only be set when OPTSIDEBARNEWMAILONLY */
       if (Entries[HilIndex]->is_hidden)
-        select_next ();
+        if (!select_next ())
+          HilIndex = -1;
     }
   }
 
@@ -456,7 +464,8 @@ static int prepare_sidebar (int page_size)
     BotIndex = EntryCount - 1;
 
   PreviousSort = SidebarSortMethod;
-  return 1;
+
+  return (HilIndex >= 0);
 }
 
 /**
@@ -661,7 +670,7 @@ static void draw_sidebar (int num_rows, int num_cols, int div_width)
       SETCOLOR(MT_COLOR_NORMAL);
 
     mutt_window_move (MuttSidebarWindow, row, 0);
-    if (Context && Context->realpath &&
+    if (Context && Context->realpath && !b->nopoll &&
         !mutt_strcmp (b->realpath, Context->realpath))
     {
       b->msg_unread  = Context->unread;
@@ -758,6 +767,10 @@ static void draw_sidebar (int num_rows, int num_cols, int div_width)
         sidebar_folder_name += i;
       }
 
+      /* For labels, ignore shortpath, but allow indentation */
+      if (b->label)
+        sidebar_folder_name = b->label;
+
       if (option (OPTSIDEBARFOLDERINDENT) && (indent_width > 0))
       {
         mutt_buffer_clear (indent_folder_name);
@@ -767,6 +780,8 @@ static void draw_sidebar (int num_rows, int num_cols, int div_width)
         sidebar_folder_name = mutt_b2s (indent_folder_name);
       }
     }
+    else if (b->label)
+      sidebar_folder_name = b->label;
 
     char str[STRING];
     make_sidebar_entry (str, sizeof (str), w, sidebar_folder_name, entry);
@@ -800,16 +815,53 @@ void mutt_sb_draw (void)
   if (div_width < 0)
     return;
 
-  if (!Incoming)
-  {
-    fill_empty_space (0, num_rows, SidebarWidth - div_width);
-    return;
-  }
-
   if (!prepare_sidebar (num_rows))
-    return;
+    fill_empty_space (0, num_rows, SidebarWidth - div_width);
+  else
+    draw_sidebar (num_rows, num_cols, div_width);
+}
 
-  draw_sidebar (num_rows, num_cols, div_width);
+/**
+ * select_first - Selects the first unhidden mailbox
+ *
+ * Returns:
+ *      1: Success
+ *      0: Failure
+ */
+static int select_first (void)
+{
+  int orig_hil_index = HilIndex;
+
+  if (!EntryCount || HilIndex < 0)
+    return 0;
+
+  HilIndex = 0;
+  if (Entries[HilIndex]->is_hidden)
+    if (!select_next ())
+      HilIndex = orig_hil_index;
+
+  return (orig_hil_index != HilIndex);
+}
+
+/**
+ * select_last - Selects the last unhidden mailbox
+ *
+ * Returns:
+ *      1: Success
+ *      0: Failure
+ */
+static int select_last (void)
+{
+  int orig_hil_index = HilIndex;
+
+  if (!EntryCount || HilIndex < 0)
+    return 0;
+
+  HilIndex = EntryCount;
+  if (!select_prev ())
+    HilIndex = orig_hil_index;
+
+  return (orig_hil_index != HilIndex);
 }
 
 /**
@@ -989,7 +1041,8 @@ static int select_page_up (void)
  * If the operation is successful, HilBuffy will be set to the new mailbox.
  * This function only *selects* the mailbox, doesn't *open* it.
  *
- * Allowed values are: OP_SIDEBAR_NEXT, OP_SIDEBAR_NEXT_NEW,
+ * Allowed values are: OP_SIDEBAR_FIRST, OP_SIDEBAR_LAST,
+ * OP_SIDEBAR_NEXT, OP_SIDEBAR_NEXT_NEW,
  * OP_SIDEBAR_PAGE_DOWN, OP_SIDEBAR_PAGE_UP, OP_SIDEBAR_PREV,
  * OP_SIDEBAR_PREV_NEW.
  */
@@ -1003,6 +1056,14 @@ void mutt_sb_change_mailbox (int op)
 
   switch (op)
   {
+    case OP_SIDEBAR_FIRST:
+      if (! select_first ())
+        return;
+      break;
+    case OP_SIDEBAR_LAST:
+      if (! select_last ())
+        return;
+      break;
     case OP_SIDEBAR_NEXT:
       if (! select_next ())
         return;
@@ -1052,9 +1113,12 @@ void mutt_sb_set_buffystats (const CONTEXT *ctx)
   {
     if (!mutt_strcmp (b->realpath, ctx->realpath))
     {
-      b->msg_unread  = ctx->unread;
-      b->msg_count   = ctx->msgcount;
-      b->msg_flagged = ctx->flagged;
+      if (!b->nopoll)
+      {
+        b->msg_unread  = ctx->unread;
+        b->msg_count   = ctx->msgcount;
+        b->msg_flagged = ctx->flagged;
+      }
       break;
     }
   }

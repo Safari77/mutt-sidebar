@@ -27,6 +27,16 @@
 #include "crypt-mod.h"
 #include "smime.h"
 
+static void crypt_mod_smime_init (void)
+{
+  smime_init ();
+}
+
+static void crypt_mod_smime_cleanup (void)
+{
+  smime_cleanup ();
+}
+
 static void crypt_mod_smime_void_passphrase (void)
 {
   smime_void_passphrase ();
@@ -61,9 +71,9 @@ static int crypt_mod_smime_verify_one (BODY *sigbdy, STATE *s, const char *tempf
   return smime_verify_one (sigbdy, s, tempf);
 }
 
-static int crypt_mod_smime_send_menu (HEADER *msg)
+static void crypt_mod_smime_send_menu (SEND_CONTEXT *sctx)
 {
-  return smime_send_menu (msg);
+  smime_send_menu (sctx);
 }
 
 static void crypt_mod_smime_getkeys (ENVELOPE *env)
@@ -90,7 +100,8 @@ static void crypt_mod_smime_invoke_import (const char *infile, const char *mailb
 struct crypt_module_specs crypt_mod_smime_classic =
 { APPLICATION_SMIME,
   {
-    NULL,			/* init */
+    crypt_mod_smime_init,
+    crypt_mod_smime_cleanup,
     crypt_mod_smime_void_passphrase,
     crypt_mod_smime_valid_passphrase,
     crypt_mod_smime_decrypt_mime,

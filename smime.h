@@ -32,6 +32,9 @@ typedef struct smime_key {
   struct smime_key *next;
 } smime_key_t;
 
+void smime_init (void);
+
+void smime_cleanup (void);
 
 void smime_free_key (smime_key_t **);
 
@@ -63,6 +66,6 @@ char *smime_findKeys (ADDRESS *adrlist, int oppenc_mode);
 
 void  smime_invoke_import (const char *, const char *);
 
-int smime_send_menu (HEADER *msg);
+void smime_send_menu (SEND_CONTEXT *sctx);
 
 #endif

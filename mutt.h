@@ -343,7 +343,7 @@ enum
   OPT_MAX
 };
 
-/* flags to ci_send_message() */
+/* flags to mutt_send_message() */
 #define SENDREPLY	(1<<0)
 #define SENDGROUPREPLY	(1<<1)
 #define SENDLISTREPLY	(1<<2)
@@ -358,9 +358,11 @@ enum
 #define SENDDRAFTFILE		(1<<11)   /* Used by the -H flag */
 #define SENDTOSENDER            (1<<12)
 #define SENDGROUPCHATREPLY      (1<<13)
+#define SENDBACKGROUNDEDIT      (1<<14)  /* Allow background editing */
 
-/* flags for mutt_compose_menu() */
-#define MUTT_COMPOSE_NOFREEHEADER (1<<0)
+/* flags for mutt_edit_headers() */
+#define MUTT_EDIT_HEADERS_BACKGROUND  1
+#define MUTT_EDIT_HEADERS_RESUME      2
 
 /* flags to _mutt_select_file() */
 #define MUTT_SEL_BUFFY  (1<<0)
@@ -389,6 +391,8 @@ enum
   OPTAUTOSUBSCRIBE,
   OPTAUTOTAG,
   OPTBEEP,
+  OPTBACKGROUNDEDIT,
+  OPTBACKGROUNDCONFIRMQUIT,
   OPTBEEPNEW,
   OPTBOUNCEDELIVERED,
   OPTCHANGEFOLDERNEXT,
@@ -444,6 +448,9 @@ enum
   OPTIMAPPEEK,
   OPTIMAPQRESYNC,
   OPTIMAPSERVERNOISE,
+#ifdef USE_ZLIB
+  OPTIMAPDEFLATE,
+#endif
 #endif
 #if defined(USE_SSL)
 # ifndef USE_SSL_GNUTLS
@@ -566,6 +573,7 @@ enum
   OPTCRYPTAUTOSMIME,
   OPTCRYPTCONFIRMHOOK,
   OPTCRYPTOPPORTUNISTICENCRYPT,
+  OPTCRYPTOPPENCSTRONGKEYS,
   OPTCRYPTPROTHDRSREAD,
   OPTCRYPTPROTHDRSSAVE,
   OPTCRYPTPROTHDRSWRITE,
@@ -883,8 +891,7 @@ typedef struct header
   unsigned int collapsed : 1; 	/* is this message part of a collapsed thread? */
   unsigned int limited : 1;   	/* is this message in a limited view?  */
   size_t num_hidden;            /* number of hidden messages in this view.
-                                 * only valid for the root header, when
-                                 * collapsed is set. */
+                                 * only valid when collapsed is set. */
 
   short recipient;		/* user_is_recipient()'s return value, cached */
 
@@ -945,6 +952,7 @@ struct mutt_thread
 /* flag to mutt_pattern_comp() */
 #define MUTT_FULL_MSG           (1<<0)  /* enable body and header matching */
 #define MUTT_PATTERN_DYNAMIC    (1<<1)  /* enable runtime date range evaluation */
+#define MUTT_SEND_MODE_SEARCH   (1<<2)  /* allow send-mode body searching */
 
 typedef enum {
   MUTT_MATCH_FULL_ADDRESS = 1
@@ -973,6 +981,7 @@ typedef struct pattern_t
   unsigned int ign_case : 1;		/* ignore case for local stringmatch searches */
   unsigned int isalias : 1;
   unsigned int dynamic : 1;  /* evaluate date ranges at run time */
+  unsigned int sendmode : 1; /* evaluate searches in send-mode */
   int min;
   int max;
   struct pattern_t *next;
@@ -1163,8 +1172,12 @@ typedef struct
   char *orig_str;
 } mbchar_table;
 
-#define MUTT_PARTS_TOPLEVEL	(1<<0)	/* is the top-level part */
+/* flags for count_body_parts() */
+#define MUTT_PARTS_TOPLEVEL      (1<<0) /* is the top-level part */
+#define MUTT_PARTS_ROOT_MPALT    (1<<1) /* root multipart/alternative */
+#define MUTT_PARTS_NONROOT_MPALT (1<<2) /* non-root multipart/alternative */
 
+#include "send.h"
 #include "ascii.h"
 #include "protos.h"
 #include "lib.h"

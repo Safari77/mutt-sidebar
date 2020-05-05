@@ -85,9 +85,9 @@ static int crypt_mod_pgp_verify_one (BODY *sigbdy, STATE *s, const char *tempf)
   return pgp_gpgme_verify_one (sigbdy, s, tempf);
 }
 
-static int crypt_mod_pgp_send_menu (HEADER *msg)
+static void crypt_mod_pgp_send_menu (SEND_CONTEXT *sctx)
 {
-  return pgp_gpgme_send_menu (msg);
+  pgp_gpgme_send_menu (sctx);
 }
 
 static BODY *crypt_mod_pgp_encrypt_message (BODY *a, char *keylist, int sign)
@@ -110,6 +110,7 @@ struct crypt_module_specs crypt_mod_pgp_gpgme =
   {
     /* Common.  */
     crypt_mod_pgp_init,
+    NULL,                           /* cleanup */
     crypt_mod_pgp_void_passphrase,
     crypt_mod_pgp_valid_passphrase,
     crypt_mod_pgp_decrypt_mime,

@@ -756,6 +756,39 @@ then
 fi
 AM_CONDITIONAL(USE_GSS, test x$need_gss = xyes)
 
+# if zlib
+AC_ARG_WITH(zlib, AS_HELP_STRING([--with-zlib@<:@=PFX@:>@],[Enable DEFLATE support for IMAP using libz]),
+    zlib_prefix="$withval", zlib_prefix="auto")
+if test "$zlib_prefix" != "no"
+then
+  if test "$need_imap" = "yes"
+  then
+	have_zlib=
+	if test "$zlib_prefix" != "yes" -a "$zlib_prefix" != "auto"
+	then
+	  LDFLAGS="$LDFLAGS -L$zlib_prefix/lib"
+          CPPFLAGS="$CPPFLAGS -I$zlib_prefix/include"
+	fi
+        saved_LIBS="$LIBS"
+	AC_CHECK_HEADERS([zlib.h], [AC_CHECK_LIB([z], [deflate],
+					 [have_zlib=yes])])
+	if test "x$have_zlib" = "x"
+	then
+	  if test "x$zlib_prefix" != "xauto"
+	  then
+		AC_MSG_ERROR([ZLIB requested, but library or headers not found])
+	  fi
+	else
+	  MUTTLIBS="$MUTTLIBS -lz"
+	  AC_DEFINE(USE_ZLIB, 1, [Define if you have libz available])
+	  MUTT_LIB_OBJECTS="$MUTT_LIB_OBJECTS mutt_zstrm.o"
+	fi
+        LIBS="$saved_LIBS"
+  else
+    AC_MSG_WARN([ZLIB was requested but IMAP is not enabled])
+  fi
+fi
+
 dnl -- end imap dependencies --
 
 AC_ARG_WITH(ssl, AS_HELP_STRING([--with-ssl@<:@=PFX@:>@],[Enable TLS support using OpenSSL]),
@@ -1250,11 +1283,6 @@ then
   MUTT_LIB_OBJECTS="$MUTT_LIB_OBJECTS md5.o"
 fi
 
-if test x$db_found != xno ; then
-  MUTT_MD5="mutt_md5$EXEEXT"
-fi
-AC_SUBST(MUTT_MD5)
-
 AC_SUBST(MUTTLIBS)
 AC_SUBST(MUTT_LIB_OBJECTS)
 AC_SUBST(LIBIMAP)
@@ -1644,5 +1672,5 @@ fi
 
 AC_CONFIG_FILES(Makefile contrib/Makefile doc/Makefile imap/Makefile
         intl/Makefile m4/Makefile po/Makefile.in autocrypt/Makefile
-        hcachever.sh doc/instdoc.sh)
+        doc/instdoc.sh)
 AC_OUTPUT

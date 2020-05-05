@@ -316,8 +316,10 @@ static void be_edit_header (ENVELOPE *e, int force)
   }
 }
 
-int mutt_builtin_editor (const char *path, HEADER *msg, HEADER *cur)
+int mutt_builtin_editor (SEND_CONTEXT *sctx)
 {
+  HEADER *msg, *cur;
+  const char *path;
   char **buf = NULL;
   int bufmax = 0, buflen = 0;
   char tmp[LONG_STRING];
@@ -325,6 +327,15 @@ int mutt_builtin_editor (const char *path, HEADER *msg, HEADER *cur)
   int done = 0;
   int i;
   char *p;
+
+  msg = sctx->msg;
+  /* note: the built-in editor is not backgroundable.
+   * it's not likely the user backgrounds, then switches to the builtin
+   * editor and wants to include cur, so leaving the null-cur check
+   * logic rather than trying to port over to using message-id.
+   */
+  cur = sctx->cur;
+  path = sctx->msg->content->filename;
 
   scrollok (stdscr, TRUE);
 
@@ -410,9 +421,11 @@ int mutt_builtin_editor (const char *path, HEADER *msg, HEADER *cur)
 	case 'r':
 	  if (*p)
           {
-	    strncpy(tmp, p, sizeof(tmp));
-	    mutt_expand_path(tmp, sizeof(tmp));
-	    buf = be_snarf_file (tmp, buf, &bufmax, &buflen, 1);
+            BUFFER *filename = mutt_buffer_pool_get ();
+	    mutt_buffer_strcpy (filename, p);
+	    mutt_buffer_expand_path (filename);
+	    buf = be_snarf_file (mutt_b2s (filename), buf, &bufmax, &buflen, 1);
+            mutt_buffer_pool_release (&filename);
           }
 	  else
 	    addstr (_("missing filename.\n"));
@@ -450,7 +463,7 @@ int mutt_builtin_editor (const char *path, HEADER *msg, HEADER *cur)
 	    if (option (OPTEDITHDRS))
 	    {
 	      mutt_env_to_local (msg->env);
-	      mutt_edit_headers (NONULL(Visual), path, msg, NULL);
+	      mutt_edit_headers (NONULL(Visual), sctx, 0);
 	      if (mutt_env_to_intl (msg->env, &tag, &err))
 		printw (_("Bad IDN in %s: '%s'\n"), tag, err);
 	    }

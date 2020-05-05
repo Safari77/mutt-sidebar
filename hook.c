@@ -138,9 +138,13 @@ int mutt_parse_hook (BUFFER *buf, BUFFER *s, union pointer_long_t udata, BUFFER 
     mutt_check_simple (pattern, DefaultHook);
   }
 
-  if (data & (MUTT_MBOXHOOK | MUTT_SAVEHOOK | MUTT_FCCHOOK))
+  if (data & (MUTT_MBOXHOOK | MUTT_SAVEHOOK))
   {
     mutt_buffer_expand_path (command);
+  }
+  else if (data & MUTT_FCCHOOK)
+  {
+    mutt_buffer_expand_multi_path (command, FccDelimiter);
   }
 
   /* check to make sure that a matching hook doesn't already exist */
@@ -180,8 +184,17 @@ int mutt_parse_hook (BUFFER *buf, BUFFER *s, union pointer_long_t udata, BUFFER 
 
   if (data & (MUTT_SENDHOOK | MUTT_SEND2HOOK | MUTT_SAVEHOOK | MUTT_FCCHOOK | MUTT_MESSAGEHOOK | MUTT_REPLYHOOK))
   {
+    int comp_flags;
+
+    if (data & (MUTT_SEND2HOOK))
+      comp_flags = MUTT_SEND_MODE_SEARCH;
+    else if (data & (MUTT_SENDHOOK | MUTT_FCCHOOK))
+      comp_flags = 0;
+    else
+      comp_flags = MUTT_FULL_MSG;
+
     if ((pat = mutt_pattern_comp (pattern->data,
-                                  (data & (MUTT_SENDHOOK | MUTT_SEND2HOOK | MUTT_FCCHOOK)) ? 0 : MUTT_FULL_MSG,
+                                  comp_flags,
 				  err)) == NULL)
       goto cleanup;
   }
@@ -425,14 +438,13 @@ int mutt_parse_unhook (BUFFER *buf, BUFFER *s, union pointer_long_t udata, BUFFE
 void mutt_folder_hook (const char *path)
 {
   HOOK *tmp = Hooks;
-  BUFFER err, token;
+  BUFFER err;
 
   current_hook_type = MUTT_FOLDERHOOK;
 
   mutt_buffer_init (&err);
   err.dsize = STRING;
   err.data = safe_malloc (err.dsize);
-  mutt_buffer_init (&token);
   for (; tmp; tmp = tmp->next)
   {
     if (!tmp->command)
@@ -442,10 +454,9 @@ void mutt_folder_hook (const char *path)
     {
       if ((regexec (tmp->rx.rx, path, 0, NULL, 0) == 0) ^ tmp->rx.not)
       {
-	if (mutt_parse_rc_line (tmp->command, &token, &err) == -1)
+	if (mutt_parse_rc_line (tmp->command, &err) == -1)
 	{
 	  mutt_error ("%s", err.data);
-	  FREE (&token.data);
 	  mutt_sleep (1);	/* pause a moment to let the user see the error */
 	  current_hook_type = 0;
 	  FREE (&err.data);
@@ -455,7 +466,6 @@ void mutt_folder_hook (const char *path)
       }
     }
   }
-  FREE (&token.data);
   FREE (&err.data);
 
   current_hook_type = 0;
@@ -476,7 +486,7 @@ char *mutt_find_hook (int type, const char *pat)
 
 void mutt_message_hook (CONTEXT *ctx, HEADER *hdr, int type)
 {
-  BUFFER err, token;
+  BUFFER err;
   HOOK *hook;
   pattern_cache_t cache;
 
@@ -485,7 +495,6 @@ void mutt_message_hook (CONTEXT *ctx, HEADER *hdr, int type)
   mutt_buffer_init (&err);
   err.dsize = STRING;
   err.data = safe_malloc (err.dsize);
-  mutt_buffer_init (&token);
   memset (&cache, 0, sizeof (cache));
   for (hook = Hooks; hook; hook = hook->next)
   {
@@ -495,9 +504,8 @@ void mutt_message_hook (CONTEXT *ctx, HEADER *hdr, int type)
     if (hook->type & type)
       if ((mutt_pattern_exec (hook->pattern, 0, ctx, hdr, &cache) > 0) ^ hook->rx.not)
       {
-	if (mutt_parse_rc_line (hook->command, &token, &err) != 0)
+	if (mutt_parse_rc_line (hook->command, &err) != 0)
 	{
-	  FREE (&token.data);
 	  mutt_error ("%s", err.data);
 	  mutt_sleep (1);
 	  current_hook_type = 0;
@@ -510,7 +518,6 @@ void mutt_message_hook (CONTEXT *ctx, HEADER *hdr, int type)
         memset (&cache, 0, sizeof (cache));
       }
   }
-  FREE (&token.data);
   FREE (&err.data);
 
   current_hook_type = 0;
@@ -597,7 +604,7 @@ void mutt_select_fcc (BUFFER *path, HEADER *hdr)
   else
     mutt_buffer_fix_dptr (path);
 
-  mutt_buffer_pretty_mailbox (path);
+  mutt_buffer_pretty_multi_mailbox (path, FccDelimiter);
 }
 
 static char *_mutt_string_hook (const char *match, int hook)
@@ -651,7 +658,6 @@ void mutt_account_hook (const char* url)
   static int inhook = 0;
 
   HOOK* hook;
-  BUFFER token;
   BUFFER err;
 
   if (inhook)
@@ -660,7 +666,6 @@ void mutt_account_hook (const char* url)
   mutt_buffer_init (&err);
   err.dsize = STRING;
   err.data = safe_malloc (err.dsize);
-  mutt_buffer_init (&token);
 
   for (hook = Hooks; hook; hook = hook->next)
   {
@@ -671,9 +676,8 @@ void mutt_account_hook (const char* url)
     {
       inhook = 1;
 
-      if (mutt_parse_rc_line (hook->command, &token, &err) == -1)
+      if (mutt_parse_rc_line (hook->command, &err) == -1)
       {
-	FREE (&token.data);
 	mutt_error ("%s", err.data);
 	FREE (&err.data);
 	mutt_sleep (1);
@@ -686,7 +690,6 @@ void mutt_account_hook (const char* url)
     }
   }
 
-  FREE (&token.data);
   FREE (&err.data);
 }
 #endif

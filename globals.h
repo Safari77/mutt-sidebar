@@ -46,6 +46,7 @@ WHERE char *AutocryptDir;
 WHERE char *AutocryptSignAs;  /* This is used in crypt-gpgme.c */
 WHERE char *AutocryptDefaultKey;  /* Used for postponing messages */
 #endif
+WHERE char *BackgroundFormat;
 WHERE char *Charset;
 WHERE char *ComposeFormat;
 WHERE char *ConfigCharset;
@@ -57,6 +58,7 @@ WHERE char *DsnNotify;
 WHERE char *DsnReturn;
 WHERE char *Editor;
 WHERE char *EscChar;
+WHERE char *FccDelimiter;
 WHERE char *FolderFormat;
 WHERE char *ForwardAttrIntro;
 WHERE char *ForwardAttrTrailer;
@@ -188,6 +190,8 @@ WHERE LIST *AttachAllow;
 WHERE LIST *AttachExclude;
 WHERE LIST *InlineAllow;
 WHERE LIST *InlineExclude;
+WHERE LIST *RootAllow;
+WHERE LIST *RootExclude;
 WHERE LIST *HeaderOrderList;
 WHERE LIST *Ignore;
 WHERE LIST *MailtoAllow;
@@ -256,6 +260,7 @@ WHERE short ImapPollTimeout;
 WHERE SIG_ATOMIC_VOLATILE_T SigAlrm;
 WHERE SIG_ATOMIC_VOLATILE_T SigInt;
 WHERE SIG_ATOMIC_VOLATILE_T SigWinch;
+WHERE SIG_ATOMIC_VOLATILE_T SigChld;
 
 WHERE int CurrentMenu;
 

@@ -593,6 +593,14 @@ BODY *mutt_read_mime_header (FILE *fp, int digest)
 void mutt_parse_part (FILE *fp, BODY *b)
 {
   char *bound = 0;
+  static unsigned short recurse_level = 0;
+
+  if (recurse_level >= 100)
+  {
+    dprint (1, (debugfile, "mutt_parse_part(): recurse level too deep. giving up!\n"));
+    return;
+  }
+  recurse_level++;
 
   switch (b->type)
   {
@@ -619,12 +627,12 @@ void mutt_parse_part (FILE *fp, BODY *b)
 	else if (ascii_strcasecmp (b->subtype, "external-body") == 0)
 	  b->parts = mutt_read_mime_header (fp, 0);
 	else
-	  return;
+	  goto bail;
       }
       break;
 
     default:
-      return;
+      goto bail;
   }
 
   /* try to recover from parsing error */
@@ -633,6 +641,8 @@ void mutt_parse_part (FILE *fp, BODY *b)
     b->type = TYPETEXT;
     mutt_str_replace (&b->subtype, "plain");
   }
+bail:
+  recurse_level--;
 }
 
 /* parse a MESSAGE/RFC822 body
@@ -1703,7 +1713,7 @@ static int count_body_parts_check(LIST **checklist, BODY *b, int dflt)
 static int count_body_parts (BODY *body, int flags)
 {
   int count = 0;
-  int shallcount, shallrecurse;
+  int shallcount, shallrecurse, recurse_flags = 0;
   BODY *bp;
 
   if (body == NULL)
@@ -1738,16 +1748,21 @@ static int count_body_parts (BODY *body, int flags)
       /* Always recurse multiparts, except multipart/alternative. */
       shallrecurse = 1;
       if (!ascii_strcasecmp(bp->subtype, "alternative"))
+      {
         shallrecurse = option (OPTCOUNTALTERNATIVES);
+        /* alternative counting needs to distinguish between a "root"
+         * multipart/alternative and non-root.  See further below.
+         */
+        if (bp == body)
+          recurse_flags |= MUTT_PARTS_ROOT_MPALT;
+        else
+          recurse_flags |= MUTT_PARTS_NONROOT_MPALT;
+      }
 
       /* Don't count containers if they're top-level. */
       if (flags & MUTT_PARTS_TOPLEVEL)
 	AT_NOCOUNT("top-level multipart");
     }
-
-    if (bp->disposition == DISPINLINE &&
-        bp->type != TYPEMULTIPART && bp->type != TYPEMESSAGE && bp == body)
-      AT_NOCOUNT("ignore fundamental inlines");
 
     /* If this body isn't scheduled for enumeration already, don't bother
      * profiling it further.
@@ -1768,10 +1783,27 @@ static int count_body_parts (BODY *body, int flags)
       }
       else
       {
-        if (!count_body_parts_check(&InlineAllow, bp, 1))
-	  AT_NOCOUNT("inline not allowed");
-        if (count_body_parts_check(&InlineExclude, bp, 0))
-	  AT_NOCOUNT("excluded");
+        /* - root multipart/alternative top-level inline parts are
+         *   also treated as root parts
+         * - nonroot multipart/alternative top-level parts are NOT
+         *   treated as root parts
+         * - otherwise, initial inline parts are considered root
+         */
+        if (((bp == body) && !(flags & MUTT_PARTS_NONROOT_MPALT)) ||
+            (flags & MUTT_PARTS_ROOT_MPALT))
+        {
+          if (!count_body_parts_check(&RootAllow, bp, 1))
+            AT_NOCOUNT("root not allowed");
+          if (count_body_parts_check(&RootExclude, bp, 0))
+            AT_NOCOUNT("root excluded");
+        }
+        else
+        {
+          if (!count_body_parts_check(&InlineAllow, bp, 1))
+            AT_NOCOUNT("inline not allowed");
+          if (count_body_parts_check(&InlineExclude, bp, 0))
+            AT_NOCOUNT("excluded");
+        }
       }
     }
 
@@ -1784,7 +1816,7 @@ static int count_body_parts (BODY *body, int flags)
     if (shallrecurse)
     {
       dprint(5, (debugfile, "cbp: %p pre count = %d\n", (void *)bp, count));
-      bp->attach_count = count_body_parts(bp->parts, flags & ~MUTT_PARTS_TOPLEVEL);
+      bp->attach_count = count_body_parts(bp->parts, recurse_flags);
       count += bp->attach_count;
       dprint(5, (debugfile, "cbp: %p post count = %d\n", (void *)bp, count));
     }
@@ -1806,7 +1838,8 @@ int mutt_count_body_parts (CONTEXT *ctx, HEADER *hdr)
   else
     mutt_parse_mime_message (ctx, hdr);
 
-  if (AttachAllow || AttachExclude || InlineAllow || InlineExclude)
+  if (AttachAllow || AttachExclude || InlineAllow || InlineExclude ||
+      RootAllow || RootExclude)
     hdr->attach_total = count_body_parts(hdr->content, MUTT_PARTS_TOPLEVEL);
   else
     hdr->attach_total = 0;

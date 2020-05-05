@@ -30,6 +30,7 @@
 #include "mapping.h"
 #include "copy.h"
 #include "mutt_idna.h"
+#include "send.h"
 
 /* some helper functions to verify that we are exclusively operating
  * on message/rfc822 attachments
@@ -552,13 +553,11 @@ static void attach_forward_bodies (FILE * fp, HEADER * hdr,
   mutt_forward_trailer (Context, parent_hdr, tmpfp);
 
   safe_fclose (&tmpfp);
-  tmpfp = NULL;
 
   /* now that we have the template, send it. */
-  ci_send_message (0, tmphdr, mutt_b2s (tmpbody), NULL, parent_hdr);
-
-  mutt_buffer_pool_release (&tmpbody);
-  return;
+  mutt_send_message (SENDBACKGROUNDEDIT, tmphdr, mutt_b2s (tmpbody), NULL,
+                     parent_hdr);
+  tmphdr = NULL;  /* mutt_send_message frees this */
 
 bail:
   if (tmpfp)
@@ -577,8 +576,8 @@ bail:
  * is different from the previous function
  * since we want to mimic the index menu's behavior.
  *
- * Code reuse from ci_send_message is not possible here -
- * ci_send_message relies on a context structure to find messages,
+ * Code reuse from mutt_send_message is not possible here -
+ * mutt_send_message relies on a context structure to find messages,
  * while, on the attachment menu, messages are referenced through
  * the attachment index.
  */
@@ -688,10 +687,10 @@ static void attach_forward_msgs (FILE * fp, HEADER * hdr,
   else
     mutt_free_header (&tmphdr);
 
-  ci_send_message (0, tmphdr,
-                   mutt_buffer_len (tmpbody) ? mutt_b2s (tmpbody) : NULL,
-		   NULL, curhdr);
-  tmphdr = NULL;  /* ci_send_message frees this */
+  mutt_send_message (SENDBACKGROUNDEDIT, tmphdr,
+                     mutt_buffer_len (tmpbody) ? mutt_b2s (tmpbody) : NULL,
+                     NULL, curhdr);
+  tmphdr = NULL;  /* mutt_send_message frees this */
 
 cleanup:
   mutt_free_header (&tmphdr);
@@ -746,7 +745,7 @@ void mutt_attach_mail_sender (FILE *fp, HEADER *hdr, ATTACH_CONTEXT *actx,
 	return;
     }
   }
-  ci_send_message (0, tmphdr, NULL, NULL, NULL);
+  mutt_send_message (SENDBACKGROUNDEDIT, tmphdr, NULL, NULL, NULL);
 }
 
 
@@ -997,11 +996,11 @@ void mutt_attach_reply (FILE * fp, HEADER * hdr,
 
   safe_fclose (&tmpfp);
 
-  if (ci_send_message (flags, tmphdr, mutt_b2s (tmpbody), NULL,
-                       parent_hdr ? parent_hdr : (cur ? cur->hdr : NULL)) == 0)
+  if (mutt_send_message (flags, tmphdr, mutt_b2s (tmpbody), NULL,
+                         parent_hdr ? parent_hdr : (cur ? cur->hdr : NULL)) == 0)
     mutt_set_flag (Context, hdr, MUTT_REPLIED, 1);
 
-  tmphdr = NULL;  /* ci_send_message frees this */
+  tmphdr = NULL;  /* mutt_send_message frees this */
 
 cleanup:
   if (tmpfp)

@@ -28,6 +28,8 @@
 #include "sort.h"
 #include "buffy.h"
 #include "mx.h"
+#include "send.h"
+#include "background.h"
 
 #ifdef USE_SIDEBAR
 #include "sidebar.h"
@@ -1050,6 +1052,18 @@ int mutt_index_menu (void)
 	{
 	  int check;
 
+          if (mutt_background_has_backgrounded () &&
+              option (OPTBACKGROUNDCONFIRMQUIT) &&
+              /* L10N:
+                 Prompt when trying to quit Mutt while there are backgrounded
+                 compose sessions in process.
+              */
+              mutt_yesorno (_("There are $background_edit sessions. Really quit Mutt?"),
+                            MUTT_NO) == MUTT_NO)
+          {
+            break;
+          }
+
 	  oldcount = Context ? Context->msgcount : 0;
 
 	  if (!Context || (check = mx_close_mailbox (Context, &index_hint)) == 0)
@@ -1466,6 +1480,14 @@ int mutt_index_menu (void)
 	    && (query_quadoption (OPT_QUIT,
 				  _("Exit Mutt without saving?")) == MUTT_YES))
 	{
+          if (mutt_background_has_backgrounded () &&
+              option (OPTBACKGROUNDCONFIRMQUIT) &&
+              mutt_yesorno (_("There are $background_edit sessions. Really quit Mutt?"),
+                            MUTT_NO) == MUTT_NO)
+          {
+            break;
+          }
+
 	  if (Context)
 	  {
 	    mx_fastclose_mailbox (Context);
@@ -2085,7 +2107,8 @@ int mutt_index_menu (void)
 	CHECK_ATTACH;
 	CHECK_MSGCOUNT;
         CHECK_VISIBLE;
-	ci_send_message (SENDTOSENDER, NULL, NULL, Context, tag ? NULL : CURHDR);
+	mutt_send_message (SENDTOSENDER | SENDBACKGROUNDEDIT,
+                           NULL, NULL, Context, tag ? NULL : CURHDR);
 	menu->redraw = REDRAW_FULL;
 	break;
 
@@ -2204,7 +2227,8 @@ int mutt_index_menu (void)
 	CHECK_ATTACH;
 	if (option (OPTPGPAUTODEC) && (tag || !(CURHDR->security & PGP_TRADITIONAL_CHECKED)))
 	  mutt_check_traditional_pgp (tag ? NULL : CURHDR, &menu->redraw);
-	ci_send_message (SENDFORWARD, NULL, NULL, Context, tag ? NULL : CURHDR);
+	mutt_send_message (SENDFORWARD | SENDBACKGROUNDEDIT,
+                           NULL, NULL, Context, tag ? NULL : CURHDR);
 	menu->redraw = REDRAW_FULL;
 	break;
 
@@ -2235,10 +2259,14 @@ int mutt_index_menu (void)
 	}
 	break;
 
+      case OP_BACKGROUND_COMPOSE_MENU:
+        mutt_background_compose_menu ();
+        break;
+
       case OP_MAIL:
 
 	CHECK_ATTACH;
-	ci_send_message (0, NULL, NULL, Context, NULL);
+        mutt_send_message (SENDBACKGROUNDEDIT, NULL, NULL, Context, NULL);
 	menu->redraw = REDRAW_FULL;
 	break;
 
@@ -2246,7 +2274,7 @@ int mutt_index_menu (void)
         if (!(WithCrypto & APPLICATION_PGP))
           break;
 	CHECK_ATTACH;
-	ci_send_message (SENDKEY, NULL, NULL, NULL, NULL);
+	mutt_send_message (SENDKEY, NULL, NULL, NULL, NULL);
 	menu->redraw = REDRAW_FULL;
 	break;
 
@@ -2382,7 +2410,8 @@ int mutt_index_menu (void)
       case OP_RECALL_MESSAGE:
 
 	CHECK_ATTACH;
-	ci_send_message (SENDPOSTPONED, NULL, NULL, Context, NULL);
+	mutt_send_message (SENDPOSTPONED | SENDBACKGROUNDEDIT,
+                           NULL, NULL, Context, NULL);
 	menu->redraw = REDRAW_FULL;
 	break;
 
@@ -2417,14 +2446,14 @@ int mutt_index_menu (void)
 	CHECK_MSGCOUNT;
         CHECK_VISIBLE;
 
-        replyflags = SENDREPLY |
+        replyflags = SENDREPLY | SENDBACKGROUNDEDIT |
 	  (op == OP_GROUP_REPLY ? SENDGROUPREPLY : 0) |
 	  (op == OP_GROUP_CHAT_REPLY ? SENDGROUPCHATREPLY : 0) |
 	  (op == OP_LIST_REPLY ? SENDLISTREPLY : 0);
 
 	if (option (OPTPGPAUTODEC) && (tag || !(CURHDR->security & PGP_TRADITIONAL_CHECKED)))
 	  mutt_check_traditional_pgp (tag ? NULL : CURHDR, &menu->redraw);
-	ci_send_message (replyflags, NULL, NULL, Context, tag ? NULL : CURHDR);
+	mutt_send_message (replyflags, NULL, NULL, Context, tag ? NULL : CURHDR);
 	menu->redraw = REDRAW_FULL;
 	break;
       }
@@ -2546,6 +2575,8 @@ int mutt_index_menu (void)
 	break;
 
 #ifdef USE_SIDEBAR
+      case OP_SIDEBAR_FIRST:
+      case OP_SIDEBAR_LAST:
       case OP_SIDEBAR_NEXT:
       case OP_SIDEBAR_NEXT_NEW:
       case OP_SIDEBAR_PAGE_DOWN:

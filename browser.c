@@ -173,7 +173,7 @@ static int link_is_dir (const char *full_path)
 static const char *
 folder_format_str (char *dest, size_t destlen, size_t col, int cols, char op, const char *src,
 		   const char *fmt, const char *ifstring, const char *elsestring,
-		   unsigned long data, format_flag flags)
+		   void *data, format_flag flags)
 {
   char fn[SHORT_STRING], tmp[SHORT_STRING], permission[11];
   char date[SHORT_STRING], *t_fmt;
@@ -496,7 +496,7 @@ static int examine_directory (MUTTMENU *menu, struct browser_state *state,
     tmp = Incoming;
     while (tmp && mutt_strcmp (mutt_b2s (full_path), mutt_b2s (tmp->pathbuf)))
       tmp = tmp->next;
-    if (tmp && Context &&
+    if (tmp && Context && !tmp->nopoll &&
         !mutt_strcmp (tmp->realpath, Context->realpath))
     {
       tmp->msg_count = Context->msgcount;
@@ -528,16 +528,21 @@ static int examine_mailboxes (MUTTMENU *menu, struct browser_state *state)
 
   do
   {
-    if (Context &&
+    if (Context && !tmp->nopoll &&
         !mutt_strcmp (tmp->realpath, Context->realpath))
     {
       tmp->msg_count = Context->msgcount;
       tmp->msg_unread = Context->unread;
     }
 
-    mutt_buffer_strcpy (mailbox, mutt_b2s (tmp->pathbuf));
-    if (option (OPTBROWSERABBRMAILBOXES))
-      mutt_buffer_pretty_mailbox (mailbox);
+    if (tmp->label)
+      mutt_buffer_strcpy (mailbox, tmp->label);
+    else
+    {
+      mutt_buffer_strcpy (mailbox, mutt_b2s (tmp->pathbuf));
+      if (option (OPTBROWSERABBRMAILBOXES))
+        mutt_buffer_pretty_mailbox (mailbox);
+    }
 
 #ifdef USE_IMAP
     if (mx_is_imap (mutt_b2s (tmp->pathbuf)))
@@ -597,7 +602,7 @@ static void folder_entry (char *s, size_t slen, MUTTMENU *menu, int num)
   folder.num = num;
 
   mutt_FormatString (s, slen, 0, MuttIndexWindow->cols, NONULL(FolderFormat), folder_format_str,
-                     (unsigned long) &folder, MUTT_FORMAT_ARROWCURSOR);
+                     &folder, MUTT_FORMAT_ARROWCURSOR);
 }
 
 static void set_sticky_cursor (struct browser_state *state, MUTTMENU *menu, const char *defaultsel)
