@@ -1,3 +1,211 @@
+2020-05-25 13:29:22 -0700  Kevin McCarthy  <kevin@8t8.us> (642a1cfd)
+
+        * Update UPDATING file for release.
+
+M	UPDATING
+
+2020-05-25 12:44:43 -0700  Kevin McCarthy  <kevin@8t8.us> (f6fb5a17)
+
+        * Fix mutt_pattern_comp() to not segv on a NULL pattern string.
+        
+        The change to mutt_parse_score() could now result in a NULL score
+        pattern if the user specified ''.  It might be possible for this to
+        happen elsewhere too, so just add a check at the top of
+        mutt_pattern_comp() to handle the case.
+
+M	pattern.c
+
+2020-05-25 12:23:02 -0700  Kevin McCarthy  <kevin@8t8.us> (5761113a)
+
+        * Fix buffer pool buffer truncation with my_hdr and score commands.
+        
+        The buffer pool is now used for command invocation, but unfortunately
+        a couple cases of mutt_buffer_init() were hidden in the my_hdr and
+        score command processors.
+        
+        This would result in a shortened buffer being returned to the pool and
+        used later for something like the prompt - which expects LONG_STRING
+        everywhere.
+        
+        Fix up the two places to instead copy the string over.  They don't
+        need to grab a large buffer pool sized hunk of memory.
+        
+        Also, fix the mutt_buffer_pool_release() to resize upwards in case
+        future code does this.  I should have done this originally, but was
+        afraid it would paper over more serious issues.  :-/
+        
+        Thanks to Armin Wolfermann for reporting the problem.
+
+M	buffer.c
+M	init.c
+M	score.c
+
+2020-05-24 13:26:49 -0700  Kevin McCarthy  <kevin@8t8.us> (d8e518db)
+
+        * Increase the buffer size in _mutt_get_field().
+        
+        Not doing so caused the subsequent _mutt_enter_string() to use the
+        default buffer pool size of 1024 - negating the HUGE_STRING value
+        passed into _mutt_get_field().
+        
+        (Once we fully transition to buffers, this awkwardness can go away...)
+
+M	curs_lib.c
+
+2020-05-19 12:26:55 -0700  Kevin McCarthy  <kevin@8t8.us> (c72f740a)
+
+        * Add mitigation against DoS from thousands of parts.
+        
+        A demonstration attack using a million tiny parts will freeze Mutt for
+        several minutes.  This is actually better than some other mail
+        software, but can still be a problem at large levels.
+        
+        For now, set it to a very conservative 5000, but this can be adjusted
+        up (or down) if necessary.
+        
+        Declare the previous stack-limit max depth as a constant too, and
+        decrease it down to 50.  Change the handler to return non-fatal "1" on
+        reaching the limit.
+
+M	handler.c
+M	mime.h
+M	parse.c
+
+2020-05-16 14:34:07 -0700  Kevin McCarthy  <kevin@8t8.us> (a4059dd2)
+
+        * Document my release process.
+        
+        The old script contents is for mercurial so remove it.
+        
+        My process is not automated, but at least write it down.
+
+M	build-release
+
+2020-05-16 10:43:06 -0700  Kevin McCarthy  <kevin@8t8.us> (12cf5b46)
+
+        * automatic post-release commit for mutt-1.14.1
+
+M	ChangeLog
+M	UPDATING
+M	VERSION
+
+2020-05-03 17:29:55 +0200  Vincent Lefevre  <vincent@vinc17.net> (b4936342)
+
+        * Add missing blank lines in ChangeLog due to buggy update-changelog.
+
+M	ChangeLog
+
+2020-05-03 17:18:28 +0200  Vincent Lefevre  <vincent@vinc17.net> (274b1c5a)
+
+        * Fix update-changelog rule (missing blank line in generated ChangeLog).
+
+M	Makefile.am
+
+2020-05-09 18:30:13 -0700  Kevin McCarthy  <kevin@8t8.us> (7bd57bc3)
+
+        * Set AM_DISTCHECK_CONFIGURE_FLAGS to allow make distcheck to run.
+        
+        Add the '--with-homespool' flag, to allow it to run as non-root.
+
+M	Makefile.am
+
+2020-05-09 16:26:20 -0700  Kevin McCarthy  <kevin@8t8.us> (ba0c9f9e)
+
+        * Fix doc installation directories.
+        
+        The conversion of makedoc.c to perl goofed up the documentation
+        build/install process from a tarball.  A late commit, 3c575cab, tried
+        to fix this, but didn't fix the problem when building with a separate
+        srcdir.
+        
+        Previously, because makedoc didn't exist, all the documentation would
+        be rebuilt, even though it was distributed in the tarball.
+        
+        Now the files don't need to be rebuilt, and so exist in $(srcdir)
+        instead of the build directory.
+        
+        I'm a little bit unsure how this would all work, trying to install
+        from git with a separate srcdir.  I think it would fail now.  However,
+        I don't believe that's a common use case.
+        
+        If I'm wrong, then an alternative would be to go back to rebuilding
+        everything.  This would be done by creating a new makedoc target, with
+        rule 'cp $(srcdir)/makedoc.pl makedoc', and then changing all the
+        other targets to depend on and invoke makedoc instead.
+
+M	doc/Makefile.am
+
+2020-05-08 12:48:19 -0700  Kevin McCarthy  <kevin@8t8.us> (30340e50)
+
+        * Fix edit-message false-modified bug.
+        
+        The file was being stat() before the truncate, and
+        mutt_decrease_mtime() only decreases if the sb.st_mtime is equal to
+        the current time.  That means operations crossing the second boundary:
+          time x:   stat
+          time x+1: truncate, decrease_mtime
+        would result in a false-modified bug if no changes were made during
+        editing.
+        
+        The mutt_decrease_mtime() and callers need to be cleaned up for better
+        error handling, but I will do that in master.
+
+M	editmsg.c
+
+2020-05-08 12:10:51 -0700  Kevin McCarthy  <kevin@8t8.us> (094a07fc)
+
+        * Fix rc error setting in edit_one_message().
+        
+        In a couple places, the rc was not set before bailing on an error.
+        With a default of 0, the original message would be marked for
+        delete/purge.
+
+M	editmsg.c
+
+2020-05-07 15:23:12 -0700  Kevin McCarthy  <kevin@8t8.us> (51ed59a7)
+
+        * Wrap 'saving fcc' message in curses and sendmailx check.
+
+M	send.c
+
+2020-05-02 15:16:46 -0700  Kevin McCarthy  <kevin@8t8.us> (020321ed)
+
+        * automatic post-release commit for mutt-1.14.0
+
+M	ChangeLog
+M	VERSION
+M	build-release
+M	po/bg.po
+M	po/ca.po
+M	po/cs.po
+M	po/da.po
+M	po/de.po
+M	po/el.po
+M	po/eo.po
+M	po/es.po
+M	po/et.po
+M	po/eu.po
+M	po/fi.po
+M	po/fr.po
+M	po/ga.po
+M	po/gl.po
+M	po/hu.po
+M	po/id.po
+M	po/it.po
+M	po/ja.po
+M	po/ko.po
+M	po/lt.po
+M	po/nl.po
+M	po/pl.po
+M	po/pt_BR.po
+M	po/ru.po
+M	po/sk.po
+M	po/sv.po
+M	po/tr.po
+M	po/uk.po
+M	po/zh_CN.po
+M	po/zh_TW.po
+
 2020-05-02 14:58:03 -0700  Kevin McCarthy  <kevin@8t8.us> (3c575cab)
 
         * Add missing doc built distfiles.
@@ -1784,6 +1992,7 @@ M	init.h
 M	mutt.h
 A	mutt_zstrm.c
 A	mutt_zstrm.h
+
 2020-03-28 11:20:21 -0700  Kevin McCarthy  <kevin@8t8.us> (f42ee069)
 
         * Update UPDATING for 1.13.5.
@@ -1844,6 +2053,7 @@ M	muttlib.c
 
 M	ChangeLog
 M	VERSION
+
 2020-02-15 11:25:37 -0800  Kevin McCarthy  <kevin@8t8.us> (05a257e8)
 
         * Update UPDATING file 1.13.4.
@@ -1978,6 +2188,7 @@ M	pager.c
 
 M	ChangeLog
 M	VERSION
+
 2020-01-12 13:01:58 -0800  Kevin McCarthy  <kevin@8t8.us> (f76b45e2)
 
         * Update UPDATING file for 1.13.3 release.
@@ -2035,6 +2246,7 @@ M	mutt.h
 M	ChangeLog
 M	UPDATING
 M	VERSION
+
 2019-12-18 14:10:38 -0800  Kevin McCarthy  <kevin@8t8.us> (7aed228a)
 
         * Revert "Fixes unchecked return from link() in dotlock.c"
@@ -2049,6 +2261,7 @@ M	dotlock.c
 
 M	ChangeLog
 M	VERSION
+
 2019-12-14 11:33:51 -0800  Kevin McCarthy  <kevin@8t8.us> (fcfd5ee5)
 
         * Update UPDATING file for 1.13.1 release.
@@ -2208,6 +2421,7 @@ M	po/tr.po
 M	po/uk.po
 M	po/zh_CN.po
 M	po/zh_TW.po
+
 2019-11-30 10:08:44 -0800  Kevin McCarthy  <kevin@8t8.us> (b1d99670)
 
         * Set UPDATING file release date for 1.13.0.
@@ -4712,6 +4926,7 @@ M	init.h
           other way round) will get you back to the exact same line as before.
 
 M	pager.c
+
 2019-09-21 12:27:57 -0700  Kevin McCarthy  <kevin@8t8.us> (6931c1ad)
 
         * Update UPDATING file for 1.12.2 release.
@@ -4814,6 +5029,7 @@ M	attach.c
 
 M	ChangeLog
 M	VERSION
+
 2019-06-15 09:02:36 -0700  Kevin McCarthy  <kevin@8t8.us> (e299de25)
 
         * Update UPDATING file for 1.12.1 release.
@@ -5039,6 +5255,7 @@ M	po/tr.po
 M	po/uk.po
 M	po/zh_CN.po
 M	po/zh_TW.po
+
 2019-05-25 09:08:33 -0700  Kevin McCarthy  <kevin@8t8.us> (7d8db3e2)
 
         * Set UPDATING file release date for 1.12.0.
@@ -7621,6 +7838,7 @@ M	pager.c
         at one time it made sense.
 
 M	pager.c
+
 2019-03-13 12:06:11 +0800  Kevin McCarthy  <kevin@8t8.us> (fedb91e2)
 
         * Fix incorrect IMAP message purging bug.
@@ -7666,6 +7884,7 @@ M	imap/imap.c
 
 M	ChangeLog
 M	VERSION
+
 2019-02-01 12:34:19 -0800  Kevin McCarthy  <kevin@8t8.us> (cd5db026)
 
         * Update UPDATING file for 1.11.3 release.
@@ -7813,6 +8032,7 @@ M	mutt_ssl.c
 
 M	ChangeLog
 M	VERSION
+
 2019-01-07 17:26:53 -0800  Kevin McCarthy  <kevin@8t8.us> (5f1f14e2)
 
         * Add UPDATING notes for 1.11.2 release.
@@ -7975,6 +8195,7 @@ M	po/fi.po
 M	ChangeLog
 M	UPDATING
 M	VERSION
+
 2018-12-01 11:27:20 -0800  Kevin McCarthy  <kevin@8t8.us> (bf2f59d4)
 
         * Document Sender header as a default in $imap_headers.
@@ -8047,6 +8268,7 @@ M	po/tr.po
 M	po/uk.po
 M	po/zh_CN.po
 M	po/zh_TW.po
+
 2018-11-25 09:33:53 -0800  Kevin McCarthy  <kevin@8t8.us> (6de8a20e)
 
         * Bump release date.
@@ -9847,6 +10069,7 @@ M	mbyte.c
         consistent with the other token comparisons.
 
 M	color.c
+
 2018-07-13 14:25:28 -0700  Kevin McCarthy  <kevin@8t8.us> (3d9028fe)
 
         * Check outbuf length in mutt_from_base64()
@@ -10077,6 +10300,7 @@ M	po/tr.po
 M	po/uk.po
 M	po/zh_CN.po
 M	po/zh_TW.po
+
 2018-05-17 12:24:31 -0700  Ivan Vilata i Balaguer  <ivan@selidor.net> (70c9c89b)
 
         * Updated Catalan translation.
@@ -11398,6 +11622,7 @@ M	crypt.c
 2017-09-04 09:47:26 -0700  Kevin McCarthy  <kevin@8t8.us> (61c7e548)
 
         * merge stable
+
 2018-04-13 20:39:35 -0700  Kevin McCarthy  <kevin@8t8.us> (ceb0534d)
 
         * Improve gss debug printing of status_string.
@@ -11489,6 +11714,7 @@ M	crypt-gpgme.c
 M	ChangeLog
 M	UPDATING
 M	VERSION
+
 2018-02-28 15:20:59 -0800  Kevin McCarthy  <kevin@8t8.us> (65068235)
 
         * Add subjectrx section to the muttrc man page.
@@ -11607,6 +11833,7 @@ M	po/zh_TW.po
 M	ChangeLog
 M	UPDATING
 M	VERSION
+
 2018-01-21 18:33:16 -0800  Kevin McCarthy  <kevin@8t8.us> (45b15d3d)
 
         * Fix the ftp site url in the manual.
@@ -11789,6 +12016,7 @@ M	version.sh
 M	ChangeLog
 M	UPDATING
 M	VERSION
+
 2017-12-15 12:09:42 -0800  Kevin McCarthy  <kevin@8t8.us> (9eedfd4e)
 
         * Fix s/mime certificate deletion bug. (closes #3982)
@@ -11936,6 +12164,7 @@ M	.hgtags
 M	ChangeLog
 M	UPDATING
 M	VERSION
+
 2017-09-22 11:14 -0700  Kevin McCarthy  <kevin@8t8.us>  (19c81a140c6e)
 
 	* imap/imap.c: Add missing IMAP_CMD_POLL flag in imap buffy check.
@@ -27252,7 +27481,7 @@ M	VERSION
 	(fallout from conversion from article to book).
 
 	* UPDATING: Use +/-/! instead of N/D/M in UPDATING.
-                                 
+
 2006-05-19 18:30:10  Rocco Rutte  <pdmef@gmx.net>  (brendan)
 
 	* Makefile.am, README, UPDATING: The UPDATING document is supposed
@@ -27746,7 +27975,7 @@ M	VERSION
 	destabilised things. Time for some brave (or lazy
 	non-Changelog-reading) testers to report... next up, IDLE
 	support.
-                                 
+
 2005-12-10 07:06:44  Brendan Cully  <brendan@kublai.com>  (brendan)
 
 	* imap/browse.c, imap/command.c, imap/imap.c, imap/imap_private.h,
