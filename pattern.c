@@ -283,7 +283,7 @@ Flags[] =
     /* L10N:
        Pattern Completion Menu description for ~/
     */
-    N_("Gmail server search") },  },
+    N_("Gmail server search") },
   { 0, 0, 0, 0, NULL }
 };
 
