@@ -695,6 +695,11 @@ void _mutt_select_file (char *f, size_t flen, int flags, char ***files, int *num
   mutt_buffer_pool_release (&f_buf);
 }
 
+/* If flags & MUTT_SELECT_MULTI is set, numfiles and files will contain
+ * the (one or more) selected files.
+ *
+ * If MUTT_SELECT_MULTI is not set, then the result, if any, will be in f
+ */
 void _mutt_buffer_select_file (BUFFER *f, int flags, char ***files, int *numfiles)
 {
   BUFFER *buf = NULL;
@@ -1139,7 +1144,9 @@ void _mutt_buffer_select_file (BUFFER *f, int flags, char ***files, int *numfile
 	    mutt_buffer_len (buf))
 	{
 	  buffy = 0;
-	  mutt_buffer_expand_path (buf);
+          /* no relative path expansion, because that should be compared
+           * to LastDir, not cwd */
+	  mutt_buffer_expand_path_norel (buf);
 #ifdef USE_IMAP
 	  if (mx_is_imap (mutt_b2s (buf)))
 	  {

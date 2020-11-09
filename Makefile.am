@@ -38,8 +38,9 @@ mutt_SOURCES = \
 	rfc822.c rfc1524.c rfc2047.c rfc2231.c rfc3676.c \
 	score.c send.c sendlib.c signal.c sort.c \
 	status.c system.c thread.c charset.c history.c lib.c \
-	muttlib.c editmsg.c mbyte.c \
-	url.c ascii.c crypt-mod.c crypt-mod.h safe_asprintf.c
+	mutt_lisp.c muttlib.c editmsg.c mbyte.c \
+	url.c ascii.c crypt-mod.c crypt-mod.h safe_asprintf.c \
+	mutt_random.c
 
 nodist_mutt_SOURCES = $(BUILT_SOURCES)
 
@@ -69,7 +70,8 @@ EXTRA_mutt_SOURCES = account.c bcache.c compress.c crypt-gpgme.c crypt-mod-pgp-c
 	mutt_tunnel.c pgp.c pgpinvoke.c pgpkey.c pgplib.c pgpmicalg.c \
 	pgppacket.c pop.c pop_auth.c pop_lib.c remailer.c resize.c sha1.c \
 	smime.c smtp.c utf8.c wcwidth.c sidebar.c mutt_zstrm.c \
-	bcache.h browser.h hcache.h mbyte.h monitor.h mutt_idna.h remailer.h url.h
+	bcache.h browser.h hcache.h mbyte.h monitor.h mutt_idna.h remailer.h url.h \
+  mutt_lisp.h
 
 EXTRA_DIST = COPYRIGHT GPL OPS OPS.PGP OPS.CRYPT OPS.SMIME TODO UPDATING \
 	configure account.h \
@@ -83,7 +85,7 @@ EXTRA_DIST = COPYRIGHT GPL OPS OPS.PGP OPS.CRYPT OPS.SMIME TODO UPDATING \
 	_mutt_regex.h OPS.MIX README.SECURITY remailer.c remailer.h browser.h \
 	mbyte.h lib.h extlib.c pgpewrap.c smime_keys.pl pgplib.h \
 	README.SSL smime.h group.h mutt_zstrm.h send.h background.h \
-	muttbug pgppacket.h depcomp ascii.h BEWARE PATCHES patchlist.sh \
+	muttbug pgppacket.h depcomp ascii.h PATCHES patchlist.sh \
 	ChangeLog mkchangelog.sh mkreldate.sh mutt_idna.h sidebar.h OPS.SIDEBAR \
 	snprintf.c regex.c crypt-gpgme.h hcachever.pl \
 	txt2c.c txt2c.sh version.sh check_sec.sh
@@ -217,4 +219,7 @@ mutt-dist:
 update-doc:
 	(cd doc && $(MAKE) update-doc)
 
-.PHONY: commit pclean check-security
+shellcheck:
+	(find . -name \*.sh && echo "gen_defs muttbug prepare") | xargs shellcheck --exclude=SC2003,SC2006,SC2086,SC2162,SC2046
+
+.PHONY: commit pclean check-security shellcheck

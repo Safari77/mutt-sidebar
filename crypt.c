@@ -30,6 +30,7 @@
 #include "mime.h"
 #include "copy.h"
 #include "mutt_crypt.h"
+#include "mutt_idna.h"
 
 #ifdef USE_AUTOCRYPT
 #include "autocrypt.h"
@@ -250,19 +251,30 @@ int mutt_protect (SEND_CONTEXT *sctx, char *keylist, int postpone)
 
   if (option (OPTCRYPTPROTHDRSWRITE))
   {
+    BUFFER *date = NULL;
     protected_headers = mutt_new_envelope ();
-    mutt_str_replace (&protected_headers->subject, msg->env->subject);
-    /* Note: if other headers get added, such as to, cc, then a call to
-     * mutt_env_to_intl() will need to be added here too. */
+
+    protected_headers->subject = safe_strdup (msg->env->subject);
+
+    /* Note that we set sctx->date_header too so the values match */
+    date = mutt_buffer_pool_get ();
+    mutt_make_date (date);
+    mutt_str_replace (&sctx->date_header, mutt_b2s (date));
+    protected_headers->date = safe_strdup (mutt_b2s (date));
+    mutt_buffer_pool_release (&date);
+
+    protected_headers->from = rfc822_cpy_adr (msg->env->from, 0);
+    protected_headers->to = rfc822_cpy_adr (msg->env->to, 0);
+    protected_headers->cc = rfc822_cpy_adr (msg->env->cc, 0);
+    protected_headers->reply_to = rfc822_cpy_adr (msg->env->reply_to, 0);
+
     mutt_prepare_envelope (protected_headers, 0);
+    mutt_env_to_intl (protected_headers, NULL, NULL);
 
     mutt_free_envelope (&msg->content->mime_headers);
     msg->content->mime_headers = protected_headers;
-    /* Optional part of the draft RFC, but required by Enigmail */
-    mutt_set_parameter("protected-headers", "v1", &msg->content->parameter);
+    mutt_set_parameter ("protected-headers", "v1", &msg->content->parameter);
   }
-  else
-    mutt_delete_parameter("protected-headers", &msg->content->parameter);
 
   /* A note about msg->content->mime_headers.  If postpone or send
    * fails, the mime_headers is cleared out before returning to the
@@ -377,7 +389,11 @@ int mutt_protect (SEND_CONTEXT *sctx, char *keylist, int postpone)
 
 cleanup:
   if (rc != 0)
+  {
     mutt_free_envelope (&msg->content->mime_headers);
+    mutt_delete_parameter ("protected-headers", &msg->content->parameter);
+    FREE (&sctx->date_header);
+  }
 
   if (sctx->pgp_sign_as)
     mutt_str_replace (&PgpSignAs, orig_pgp_sign_as);

@@ -52,7 +52,7 @@ int mutt_parse_hook (BUFFER *buf, BUFFER *s, union pointer_long_t udata, BUFFER 
 {
   HOOK *ptr;
   BUFFER *command, *pattern;
-  int rc = -1, not = 0;
+  int rc = -1, not = 0, token_flags = 0;
   regex_t *rx = NULL;
   pattern_t *pat = NULL;
   long data = udata.l;
@@ -75,7 +75,18 @@ int mutt_parse_hook (BUFFER *buf, BUFFER *s, union pointer_long_t udata, BUFFER 
     goto cleanup;
   }
 
-  mutt_extract_token (command, s, (data & (MUTT_FOLDERHOOK | MUTT_SENDHOOK | MUTT_SEND2HOOK | MUTT_ACCOUNTHOOK | MUTT_REPLYHOOK)) ?  MUTT_TOKEN_SPACE : 0);
+  /* These hook types have a "command" parameter.
+   * It's useful be able include spaces without having to quote it.
+   *
+   * Note: MUTT_TOKEN_ESC_VARS was briefly added to the flag for
+   * backwards compatibilty, but after research and discussion
+   * was removed.
+   */
+  if (data & (MUTT_FOLDERHOOK | MUTT_SENDHOOK | MUTT_SEND2HOOK |
+              MUTT_ACCOUNTHOOK | MUTT_REPLYHOOK | MUTT_MESSAGEHOOK))
+    token_flags = MUTT_TOKEN_SPACE;
+
+  mutt_extract_token (command, s, token_flags);
 
   if (!mutt_buffer_len (command))
   {
@@ -103,7 +114,8 @@ int mutt_parse_hook (BUFFER *buf, BUFFER *s, union pointer_long_t udata, BUFFER 
 
     tmp = mutt_buffer_pool_get ();
     mutt_buffer_strcpy (tmp, mutt_b2s (pattern));
-    _mutt_buffer_expand_path (tmp, 1);
+    /* expand_relative off because this is a regexp also */
+    _mutt_buffer_expand_path (tmp, 1, 0);
 
     /* Check for other mailbox shortcuts that expand to the empty string.
      * This is likely a mistake too */
@@ -138,13 +150,27 @@ int mutt_parse_hook (BUFFER *buf, BUFFER *s, union pointer_long_t udata, BUFFER 
     mutt_check_simple (pattern, DefaultHook);
   }
 
-  if (data & (MUTT_MBOXHOOK | MUTT_SAVEHOOK))
+  if (data & MUTT_MBOXHOOK)
   {
     mutt_buffer_expand_path (command);
   }
+  else if (data & MUTT_SAVEHOOK)
+  {
+    /* Do not perform relative path expansion.  "\^" can be expanded later:
+     *   mutt_default_save() => mutt_addr_hook() => mutt_make_string()
+     * which will perform backslash expansion, converting "\^" to "^".
+     * The saving code then calls mutt_buffer_expand_path() after prompting.
+     */
+    mutt_buffer_expand_path_norel (command);
+  }
   else if (data & MUTT_FCCHOOK)
   {
-    mutt_buffer_expand_multi_path (command, FccDelimiter);
+    /* Do not perform relative path expansion  "\^" can be expanded later:
+     *   mutt_select_fcc() => mutt_addr_hook() => mutt_make_string()
+     * which will perform backslash expansion, converting "\^" to "^".
+     * save_fcc_mailbox_part() then calls mutt_buffer_expand_path() on each part.
+     */
+    mutt_buffer_expand_multi_path_norel (command, FccDelimiter);
   }
 
   /* check to make sure that a matching hook doesn't already exist */

@@ -460,7 +460,7 @@ static void pipe_set_flags (int decode, int print, int *cmflags, int *chflags)
     *chflags |= CH_DECODE | CH_REORDER;
     *cmflags |= MUTT_CM_DECODE | MUTT_CM_CHARCONV;
 
-    if (option (OPTWEED))
+    if (print ? option (OPTPRINTDECODEWEED) : option (OPTPIPEDECODEWEED))
     {
       *chflags |= CH_WEED;
       *cmflags |= MUTT_CM_WEED;
@@ -626,7 +626,8 @@ void mutt_pipe_message (HEADER *h)
   if (!mutt_buffer_len (buffer))
     goto cleanup;
 
-  mutt_buffer_expand_path (buffer);
+  /* norel because it's a command which searches path */
+  mutt_buffer_expand_path_norel (buffer);
   _mutt_pipe_message (h, mutt_b2s (buffer),
 		      option (OPTPIPEDECODE),
 		      0,
@@ -834,7 +835,7 @@ static void set_copy_flags (HEADER *hdr, int decode, int decrypt, int *cmflags, 
     {
       *chflags |= CH_DECODE;	/* then decode RFC 2047 headers, */
 
-      if (option (OPTWEED))
+      if (option (OPTCOPYDECODEWEED))
       {
 	*chflags |= CH_WEED;	/* and respect $weed. */
 	*cmflags |= MUTT_CM_WEED;
@@ -932,7 +933,7 @@ int mutt_save_message (HEADER *h, int delete, int decode, int decrypt)
   }
 
   mutt_buffer_pretty_mailbox (buf);
-  if (mutt_buffer_enter_fname (prompt, buf, 0) == -1)
+  if (mutt_enter_mailbox (prompt, buf, 0) == -1)
     goto cleanup;
   if (!mutt_buffer_len (buf))
     goto cleanup;

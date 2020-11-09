@@ -107,15 +107,16 @@ struct timespec
 #include "mutt_regex.h"
 
 /* flags for mutt_enter_string() */
-#define  MUTT_ALIAS   1      /* do alias "completion" by calling up the alias-menu */
-#define  MUTT_FILE    (1<<1) /* do file completion */
-#define  MUTT_EFILE   (1<<2) /* do file completion, plus incoming folders */
-#define  MUTT_CMD     (1<<3) /* do completion on previous word */
-#define  MUTT_PASS    (1<<4) /* password mode (no echo) */
-#define  MUTT_CLEAR   (1<<5) /* clear input if printable character is pressed */
-#define  MUTT_COMMAND (1<<6) /* do command completion */
-#define  MUTT_PATTERN (1<<7) /* pattern mode - only used for history classes */
-#define  MUTT_LABEL   (1<<8) /* do label completion */
+#define  MUTT_ALIAS    1      /* do alias "completion" by calling up the alias-menu */
+#define  MUTT_FILE     (1<<1) /* do file completion, file history ring */
+#define  MUTT_MAILBOX  (1<<2) /* do file completion, mailbox history ring */
+#define  MUTT_INCOMING (1<<3) /* do incoming folders buffy cycle */
+#define  MUTT_CMD      (1<<4) /* do completion on previous word */
+#define  MUTT_PASS     (1<<5) /* password mode (no echo) */
+#define  MUTT_CLEAR    (1<<6) /* clear input if printable character is pressed */
+#define  MUTT_COMMAND  (1<<7) /* do command completion */
+#define  MUTT_PATTERN  (1<<8) /* pattern mode - only used for history classes */
+#define  MUTT_LABEL    (1<<9) /* do label completion */
 
 /* flags for mutt_get_token() */
 #define MUTT_TOKEN_EQUAL      1       /* treat '=' as a special */
@@ -125,6 +126,9 @@ struct timespec
 #define MUTT_TOKEN_PATTERN    (1<<4)  /* !)|~ are terms (for patterns) */
 #define MUTT_TOKEN_COMMENT    (1<<5)  /* don't reap comments */
 #define MUTT_TOKEN_SEMICOLON  (1<<6)  /* don't treat ; as special */
+#define MUTT_TOKEN_ESC_VARS   (1<<7)  /* escape configuration variables */
+#define MUTT_TOKEN_LISP       (1<<8)  /* enable lisp processing */
+#define MUTT_TOKEN_NOLISP     (1<<9)  /* force-disable lisp, ignoring $lisp_args */
 
 typedef struct
 {
@@ -404,7 +408,9 @@ enum
   OPTCOLLAPSEUNREAD,
   OPTCONFIRMAPPEND,
   OPTCONFIRMCREATE,
+  OPTCOPYDECODEWEED,
   OPTCOUNTALTERNATIVES,
+  OPTCURSOROVERLAY,
   OPTDELETEUNTAG,
   OPTDIGESTCOLLAPSE,
   OPTDUPTHREADS,
@@ -473,6 +479,7 @@ enum
   OPTINCLUDEENCRYPTED,
   OPTINCLUDEONLYFIRST,
   OPTKEEPFLAGGED,
+  OPTMUTTLISPINLINEEVAL,
   OPTMAILCAPSANITIZE,
   OPTMAILCHECKRECENT,
   OPTMAILCHECKSTATS,
@@ -493,6 +500,7 @@ enum
   OPTNARROWTREE,
   OPTPAGERSTOP,
   OPTPIPEDECODE,
+  OPTPIPEDECODEWEED,
   OPTPIPESPLIT,
 #ifdef USE_POP
   OPTPOPAUTHTRYALL,
@@ -500,6 +508,7 @@ enum
 #endif
   OPTPOSTPONEENCRYPT,
   OPTPRINTDECODE,
+  OPTPRINTDECODEWEED,
   OPTPRINTSPLIT,
   OPTPROMPTAFTER,
   OPTREADONLY,
@@ -542,6 +551,7 @@ enum
   OPTTHREADRECEIVED,
   OPTTILDE,
   OPTTSENABLED,
+  OPTTUNNELISSECURE,
   OPTUNCOLLAPSEJUMP,
   OPTUNCOLLAPSENEW,
   OPTUSE8BITMIME,
@@ -690,6 +700,12 @@ typedef struct alias
   short num;
 } ALIAS;
 
+/* Flags for envelope->changed.
+ * Note that additions to this list also need to be added to:
+ *   mutt_copy_header()
+ *   mutt_merge_envelopes()
+ *   imap_reconnect()
+ */
 #define MUTT_ENV_CHANGED_IRT     (1<<0)  /* In-Reply-To changed to link/break threads */
 #define MUTT_ENV_CHANGED_REFS    (1<<1)  /* References changed to break thread */
 #define MUTT_ENV_CHANGED_XLABEL  (1<<2)  /* X-Label edited */

@@ -35,6 +35,7 @@ WHERE ADDRESS *From;
 WHERE char *AliasFile;
 WHERE char *AliasFmt;
 WHERE char *AssumedCharset;
+WHERE char *AttachSaveDir;
 WHERE char *AttachSep;
 WHERE char *Attribution;
 WHERE char *AttributionLocale;
@@ -113,6 +114,7 @@ WHERE char *Muttrc;
 WHERE char *Outbox;
 WHERE char *Pager;
 WHERE char *PagerFmt;
+WHERE char *PatternFormat;
 WHERE char *PipeSep;
 #ifdef USE_POP
 WHERE char *PopAuthenticators;

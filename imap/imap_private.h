@@ -113,6 +113,7 @@ enum
   AGSSAPI,			/* RFC 1731: GSSAPI authentication */
   AUTH_ANON,			/* AUTH=ANONYMOUS */
   AUTH_OAUTHBEARER,		/* RFC 7628: AUTH=OAUTHBEARER */
+  AUTH_XOAUTH2,       /* Deprecated precursor to OAUTHBEARER */
   STARTTLS,			/* RFC 2595: STARTTLS */
   LOGINDISABLED,		/*           LOGINDISABLED */
   IDLE,                         /* RFC 2177: IDLE */
@@ -272,6 +273,7 @@ void imap_logout (IMAP_DATA** idata);
 int imap_sync_message_for_copy (IMAP_DATA *idata, HEADER *hdr, BUFFER *cmd,
                                 int *err_continue);
 int imap_has_flag (LIST* flag_list, const char* flag);
+int imap_reconnect (IMAP_DATA **p_idata);
 
 /* auth.c */
 int imap_authenticate (IMAP_DATA* idata);

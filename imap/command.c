@@ -66,6 +66,7 @@ static const char * const Capabilities[] = {
   "AUTH=GSSAPI",
   "AUTH=ANONYMOUS",
   "AUTH=OAUTHBEARER",
+  "AUTH=XOAUTH2",
   "STARTTLS",
   "LOGINDISABLED",
   "IDLE",
@@ -277,7 +278,7 @@ int imap_exec (IMAP_DATA* idata, const char* cmdstr, int flags)
       (mutt_socket_poll (idata->conn, ImapPollTimeout)) == 0)
   {
     mutt_error (_("Connection to %s timed out"), idata->conn->account.host);
-    mutt_sleep (2);
+    mutt_sleep (0);
     cmd_handle_fatal (idata);
     return -1;
   }
@@ -358,7 +359,7 @@ int imap_cmd_idle (IMAP_DATA* idata)
       (mutt_socket_poll (idata->conn, ImapPollTimeout)) == 0)
   {
     mutt_error (_("Connection to %s timed out"), idata->conn->account.host);
-    mutt_sleep (2);
+    mutt_sleep (0);
     cmd_handle_fatal (idata);
     return -1;
   }
@@ -487,6 +488,23 @@ static int cmd_status (const char *s)
 /* cmd_handle_fatal: when IMAP_DATA is in fatal state, do what we can */
 static void cmd_handle_fatal (IMAP_DATA* idata)
 {
+  /* Attempt to reconnect later during mx_check_mailbox() */
+  if (Context && idata->ctx == Context)
+  {
+    if (idata->status != IMAP_FATAL)
+    {
+      idata->status = IMAP_FATAL;
+      /* L10N:
+         When a fatal error occurs with the IMAP connnection for
+         the currently open mailbox, we print this message, and
+         will try to reconnect and merge current changes back during
+         mx_check_mailbox()
+      */
+      mutt_error _("A fatal error occurred.  Will attempt reconnection.");
+    }
+    return;
+  }
+
   idata->status = IMAP_FATAL;
 
   if ((idata->state >= IMAP_SELECTED) &&
@@ -1011,9 +1029,7 @@ static void cmd_parse_list (IMAP_DATA* idata, char* s)
 
 static void cmd_parse_lsub (IMAP_DATA* idata, char* s)
 {
-  char buf[STRING];
-  char quoted_name[STRING];
-  BUFFER err;
+  BUFFER *mailbox = NULL;
   ciss_url_t url;
   IMAP_LIST list;
 
@@ -1037,23 +1053,16 @@ static void cmd_parse_lsub (IMAP_DATA* idata, char* s)
 
   dprint (3, (debugfile, "Subscribing to %s\n", list.name));
 
-  strfcpy (buf, "mailboxes \"", sizeof (buf));
   mutt_account_tourl (&idata->conn->account, &url);
-  /* escape \ and ". Also escape ` because the resulting
-   * string will be passed to mutt_parse_rc_line. */
-  imap_quote_string_and_backquotes (quoted_name, sizeof (quoted_name), list.name);
-  url.path = quoted_name + 1;
-  url.path[strlen(url.path) - 1] = '\0';
+  url.path = list.name;
   if (!mutt_strcmp (url.user, ImapUser))
     url.user = NULL;
-  url_ciss_tostring (&url, buf + 11, sizeof (buf) - 11, 0);
-  safe_strcat (buf, sizeof (buf), "\"");
-  mutt_buffer_init (&err);
-  err.dsize = STRING;
-  err.data = safe_malloc (err.dsize);
-  if (mutt_parse_rc_line (buf, &err))
-    dprint (1, (debugfile, "Error adding subscribed mailbox: %s\n", err.data));
-  FREE (&err.data);
+
+  mailbox = mutt_buffer_pool_get ();
+  url_ciss_tobuffer (&url, mailbox, 0);
+
+  mutt_buffy_add (mutt_b2s (mailbox), NULL, -1);
+  mutt_buffer_pool_release (&mailbox);
 }
 
 /* cmd_parse_myrights: set rights bits according to MYRIGHTS response */

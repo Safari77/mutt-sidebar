@@ -33,12 +33,11 @@
 #include "mutt_crypt.h"
 #include "mutt_idna.h"
 #include "group.h"
+#include "mutt_lisp.h"
 
 #if defined(USE_SSL)
 #include "mutt_ssl.h"
 #endif
-
-
 
 #include "mx.h"
 #include "init.h"
@@ -71,7 +70,8 @@ typedef struct myvar
 
 static myvar_t* MyVars;
 
-static int var_to_string (int idx, char* val, size_t len);
+static int var_to_string (int idx, BUFFER *val);
+static void escape_string_to_buffer (BUFFER *dst, const char *src);
 
 static void myvar_set (const char* var, const char* val);
 static const char* myvar_get (const char* var);
@@ -144,6 +144,15 @@ int mutt_extract_token (BUFFER *dest, BUFFER *tok, int flags)
   mutt_buffer_clear (dest);
 
   SKIPWS (tok->dptr);
+
+  if ((*tok->dptr == '(') && !(flags & MUTT_TOKEN_NOLISP) &&
+      ((flags & MUTT_TOKEN_LISP) || option (OPTMUTTLISPINLINEEVAL)))
+  {
+    int rc = mutt_lisp_eval_list (dest, tok);
+    SKIPWS (tok->dptr);
+    return rc;
+  }
+
   while ((ch = *tok->dptr))
   {
     if (!qc)
@@ -313,10 +322,25 @@ int mutt_extract_token (BUFFER *dest, BUFFER *tok, int flags)
         else if ((idx = mutt_option_index (var)) != -1)
         {
           /* expand settable mutt variables */
-          char val[LONG_STRING];
+          BUFFER *val = mutt_buffer_pool_get ();
 
-          if (var_to_string (idx, val, sizeof (val)))
-            mutt_buffer_addstr (dest, val);
+          if (var_to_string (idx, val))
+          {
+            /* This flag is not used.  I'm keeping the code for the next
+             * release cycle in case it needs to be reenabled for hooks.
+             */
+            if (flags & MUTT_TOKEN_ESC_VARS)
+            {
+              BUFFER *escval = mutt_buffer_pool_get ();
+
+              escape_string_to_buffer (escval, mutt_b2s (val));
+              mutt_buffer_addstr (dest, mutt_b2s (escval));
+              mutt_buffer_pool_release (&escval);
+            }
+            else
+              mutt_buffer_addstr (dest, mutt_b2s (val));
+          }
+          mutt_buffer_pool_release (&val);
         }
         FREE (&var);
       }
@@ -324,7 +348,6 @@ int mutt_extract_token (BUFFER *dest, BUFFER *tok, int flags)
     else
       mutt_buffer_addch (dest, ch);
   }
-  mutt_buffer_addch (dest, 0); /* terminate the string */
   SKIPWS (tok->dptr);
   return 0;
 }
@@ -348,6 +371,7 @@ static void mutt_free_opt (struct option_t* p)
       }
       break;
     case DT_PATH:
+    case DT_CMD_PATH:
     case DT_STR:
       FREE ((char**)p->data.p);		/* __FREE_CHECKED__ */
       break;
@@ -1760,8 +1784,11 @@ static void mutt_set_default (struct option_t *p)
   {
     case DT_STR:
     case DT_PATH:
+    case DT_CMD_PATH:
       if (!p->init.p && *((char **) p->data.p))
         p->init.p = safe_strdup (* ((char **) p->data.p));
+      else if (p->init.p && (p->type & DT_L10N_STR))
+        p->init.p = safe_strdup (_(p->init.p));
       break;
     case DT_ADDR:
       if (!p->init.p && *((ADDRESS **) p->data.p))
@@ -1794,13 +1821,17 @@ static void mutt_restore_default (struct option_t *p)
       *((mbchar_table **) p->data.p) = parse_mbchar_table ((char *) p->init.p);
       break;
     case DT_PATH:
+    case DT_CMD_PATH:
       FREE((char **) p->data.p);   /* __FREE_CHECKED__ */
       if (p->init.p)
       {
         BUFFER *path;
         path = mutt_buffer_pool_get ();
         mutt_buffer_strcpy (path, (char *) p->init.p);
-        mutt_buffer_expand_path (path);
+        if (DTYPE (p->type) == DT_CMD_PATH)
+          mutt_buffer_expand_path_norel (path);
+        else
+          mutt_buffer_expand_path (path);
         *((char **) p->data.p) = safe_strdup (mutt_b2s (path));
         mutt_buffer_pool_release (&path);
       }
@@ -1889,6 +1920,36 @@ static void mutt_restore_default (struct option_t *p)
 #endif
   if (p->flags & R_MENU)
     mutt_set_current_menu_redraw_full ();
+}
+
+static void escape_string_to_buffer (BUFFER *dst, const char *src)
+{
+  mutt_buffer_clear (dst);
+
+  if (!src || !*src)
+    return;
+
+  for (; *src; src++)
+  {
+    switch (*src)
+    {
+      case '\n':
+        mutt_buffer_addstr (dst, "\\n");
+        break;
+      case '\r':
+        mutt_buffer_addstr (dst, "\\r");
+        break;
+      case '\t':
+        mutt_buffer_addstr (dst, "\\t");
+        break;
+      case '\\':
+      case '"':
+        mutt_buffer_addch (dst, '\\');
+        /* fall through */
+      default:
+        mutt_buffer_addch (dst, *src);
+    }
+  }
 }
 
 static size_t escape_string (char *dst, size_t len, const char* src)
@@ -2257,6 +2318,7 @@ static int parse_set (BUFFER *tmp, BUFFER *s, union pointer_long_t udata, BUFFER
     }
     else if (myvar || DTYPE (MuttVars[idx].type) == DT_STR ||
 	     DTYPE (MuttVars[idx].type) == DT_PATH ||
+	     DTYPE (MuttVars[idx].type) == DT_CMD_PATH ||
 	     DTYPE (MuttVars[idx].type) == DT_ADDR ||
 	     DTYPE (MuttVars[idx].type) == DT_MBCHARTBL)
     {
@@ -2299,7 +2361,8 @@ static int parse_set (BUFFER *tmp, BUFFER *s, union pointer_long_t udata, BUFFER
 	  rfc822_write_address (_tmp, sizeof (_tmp), *((ADDRESS **) MuttVars[idx].data.p), 0);
 	  val = _tmp;
 	}
-	else if (DTYPE (MuttVars[idx].type) == DT_PATH)
+	else if (DTYPE (MuttVars[idx].type) == DT_PATH ||
+                 DTYPE (MuttVars[idx].type) == DT_CMD_PATH)
 	{
           path_buf = mutt_buffer_pool_get ();
           mutt_buffer_strcpy (path_buf, NONULL(*((char **) MuttVars[idx].data.p)));
@@ -2332,7 +2395,6 @@ static int parse_set (BUFFER *tmp, BUFFER *s, union pointer_long_t udata, BUFFER
 	{
 	  /* myvar is a pointer to tmp and will be lost on extract_token */
 	  myvar = safe_strdup (myvar);
-          myvar_del (myvar);
 	}
 
         mutt_extract_token (tmp, s, 0);
@@ -2343,7 +2405,8 @@ static int parse_set (BUFFER *tmp, BUFFER *s, union pointer_long_t udata, BUFFER
           FREE (&myvar);
 	  myvar="don't resort";
         }
-        else if (DTYPE (MuttVars[idx].type) == DT_PATH)
+        else if (DTYPE (MuttVars[idx].type) == DT_PATH ||
+                 DTYPE (MuttVars[idx].type) == DT_CMD_PATH)
         {
 	  /* MuttVars[idx].data is already 'char**' (or some 'void**') or...
 	   * so cast to 'void*' is okay */
@@ -2353,6 +2416,12 @@ static int parse_set (BUFFER *tmp, BUFFER *s, union pointer_long_t udata, BUFFER
 	  mutt_buffer_strcpy (scratch, tmp->data);
           if (mutt_strcmp (MuttVars[idx].option, "record") == 0)
             mutt_buffer_expand_multi_path (scratch, FccDelimiter);
+          else if ((mutt_strcmp (MuttVars[idx].option, "signature") == 0) &&
+                   mutt_buffer_len (scratch) &&
+                   (*(scratch->dptr - 1) == '|'))
+            mutt_buffer_expand_path_norel (scratch);
+          else if (DTYPE (MuttVars[idx].type) == DT_CMD_PATH)
+            mutt_buffer_expand_path_norel (scratch);
           else
             mutt_buffer_expand_path (scratch);
 	  *((char **) MuttVars[idx].data.p) = safe_strdup (mutt_b2s (scratch));
@@ -2822,6 +2891,29 @@ static int source_rc (const char *rcfile, BUFFER *err)
 
 #undef MAXERRS
 
+static int parse_run (BUFFER *buf, BUFFER *s, union pointer_long_t udata, BUFFER *err)
+{
+  int rc;
+  BUFFER *token = NULL;
+
+  if (mutt_extract_token (buf, s, MUTT_TOKEN_LISP) != 0)
+  {
+    snprintf (err->data, err->dsize, _("source: error at %s"), s->dptr);
+    return (-1);
+  }
+  if (MoreArgs (s))
+  {
+    strfcpy (err->data, _("run: too many arguments"), err->dsize);
+    return (-1);
+  }
+
+  token = mutt_buffer_pool_get ();
+  rc = mutt_parse_rc_buffer (buf, token, err);
+  mutt_buffer_pool_release (&token);
+
+  return rc;
+}
+
 static int parse_source (BUFFER *tmp, BUFFER *s, union pointer_long_t udata, BUFFER *err)
 {
   BUFFER *path;
@@ -2840,7 +2932,10 @@ static int parse_source (BUFFER *tmp, BUFFER *s, union pointer_long_t udata, BUF
 
   path = mutt_buffer_new ();
   mutt_buffer_strcpy (path, tmp->data);
-  mutt_buffer_expand_path (path);
+  if (mutt_buffer_len (path) && (*(path->dptr - 1) == '|'))
+    mutt_buffer_expand_path_norel (path);
+  else
+    mutt_buffer_expand_path (path);
   rc = source_rc (mutt_b2s (path), err);
   mutt_buffer_free (&path);
 
@@ -2866,6 +2961,32 @@ int mutt_parse_rc_line (const char *line, BUFFER *err)
   mutt_buffer_pool_release (&token);
   return rc;
 }
+
+static int parse_cd (BUFFER *tmp, BUFFER *s, union pointer_long_t udata, BUFFER *err)
+{
+  mutt_extract_token (tmp, s, 0);
+  /* norel because could be '..' or other parent directory traversal */
+  mutt_buffer_expand_path_norel (tmp);
+  if (!mutt_buffer_len (tmp))
+  {
+    if (Homedir)
+      mutt_buffer_strcpy (tmp, Homedir);
+    else
+    {
+      mutt_buffer_strcpy (err, _("too few arguments"));
+      return -1;
+    }
+  }
+
+  if (chdir (mutt_b2s (tmp)) != 0)
+  {
+    mutt_buffer_printf (err, "cd: %s", strerror (errno));
+    return (-1);
+  }
+
+  return (0);
+}
+
 
 /* line		command to execute
 
@@ -3134,7 +3255,7 @@ int mutt_command_complete (char *buffer, size_t len, int pos, int numtabs)
 int mutt_var_value_complete (char *buffer, size_t len, int pos)
 {
   char var[STRING], *pt = buffer;
-  int spaces;
+  int spaces, rv = 0;
 
   if (buffer[0] == 0)
     return 0;
@@ -3152,7 +3273,6 @@ int mutt_var_value_complete (char *buffer, size_t len, int pos)
   if (mutt_strncmp (buffer, "set", 3) == 0)
   {
     int idx;
-    char val[LONG_STRING];
     const char *myvarval;
 
     strfcpy (var, pt, sizeof (var));
@@ -3163,54 +3283,66 @@ int mutt_var_value_complete (char *buffer, size_t len, int pos)
       if ((myvarval = myvar_get(var)) != NULL)
       {
 	pretty_var (pt, len - (pt - buffer), var, myvarval);
-	return 1;
+	rv = 1;
       }
-      return 0; /* no such variable. */
     }
-    else if (var_to_string (idx, val, sizeof (val)))
+    else
     {
-      snprintf (pt, len - (pt - buffer), "%s=\"%s\"", var, val);
-      return 1;
+      BUFFER *val = mutt_buffer_pool_get ();
+
+      if (var_to_string (idx, val))
+      {
+        pretty_var (pt, len - (pt - buffer), var, mutt_b2s (val));
+        rv = 1;
+      }
+      mutt_buffer_pool_release (&val);
     }
   }
-  return 0;
+  return rv;
 }
 
-static int var_to_string (int idx, char* val, size_t len)
+static int var_to_string (int idx, BUFFER *val)
 {
-  char tmp[LONG_STRING];
-  BUFFER *path_buf = NULL;
   static const char * const vals[] = { "no", "yes", "ask-no", "ask-yes" };
 
-  tmp[0] = '\0';
+  mutt_buffer_clear (val);
+  mutt_buffer_increase_size (val, LONG_STRING);
 
   if ((DTYPE(MuttVars[idx].type) == DT_STR) ||
       (DTYPE(MuttVars[idx].type) == DT_RX))
   {
-    strfcpy (tmp, NONULL (*((char **) MuttVars[idx].data.p)), sizeof (tmp));
+    mutt_buffer_strcpy (val, NONULL (*((char **) MuttVars[idx].data.p)));
   }
-  else if (DTYPE (MuttVars[idx].type) == DT_PATH)
+  else if (DTYPE (MuttVars[idx].type) == DT_PATH ||
+           DTYPE (MuttVars[idx].type) == DT_CMD_PATH)
   {
-    path_buf = mutt_buffer_pool_get ();
-    mutt_buffer_strcpy (path_buf, NONULL (*((char **) MuttVars[idx].data.p)));
+    mutt_buffer_strcpy (val, NONULL (*((char **) MuttVars[idx].data.p)));
     if (mutt_strcmp (MuttVars[idx].option, "record") == 0)
-      mutt_buffer_pretty_multi_mailbox (path_buf, FccDelimiter);
+      mutt_buffer_pretty_multi_mailbox (val, FccDelimiter);
     else
-      mutt_buffer_pretty_mailbox (path_buf);
-    strfcpy (tmp, mutt_b2s (path_buf), sizeof (tmp));
-    mutt_buffer_pool_release (&path_buf);
+      mutt_buffer_pretty_mailbox (val);
   }
   else if (DTYPE (MuttVars[idx].type) == DT_MBCHARTBL)
   {
     mbchar_table *mbt = (*((mbchar_table **) MuttVars[idx].data.p));
-    strfcpy (tmp, mbt ? NONULL (mbt->orig_str) : "", sizeof (tmp));
+    if (mbt)
+      mutt_buffer_strcpy (val, NONULL (mbt->orig_str));
   }
   else if (DTYPE (MuttVars[idx].type) == DT_ADDR)
   {
-    rfc822_write_address (tmp, sizeof (tmp), *((ADDRESS **) MuttVars[idx].data.p), 0);
+    rfc822_write_address (val->data, val->dsize, *((ADDRESS **) MuttVars[idx].data.p), 0);
+    mutt_buffer_fix_dptr (val);
+    /* XXX: this is a hack until we have buffer address writing */
+    if (mutt_buffer_len (val) + 1 == val->dsize)
+    {
+      mutt_buffer_clear (val);
+      mutt_buffer_increase_size (val, HUGE_STRING);
+      rfc822_write_address (val->data, val->dsize, *((ADDRESS **) MuttVars[idx].data.p), 0);
+      mutt_buffer_fix_dptr (val);
+    }
   }
   else if (DTYPE (MuttVars[idx].type) == DT_QUAD)
-    strfcpy (tmp, vals[quadoption (MuttVars[idx].data.l)], sizeof (tmp));
+    mutt_buffer_strcpy (val, vals[quadoption (MuttVars[idx].data.l)]);
   else if (DTYPE (MuttVars[idx].type) == DT_NUM)
   {
     short sval = *((short *) MuttVars[idx].data.p);
@@ -3219,13 +3351,13 @@ static int var_to_string (int idx, char* val, size_t len)
     if (mutt_strcmp (MuttVars[idx].option, "wrapmargin") == 0)
       sval = sval > 0 ? 0 : -sval;
 
-    snprintf (tmp, sizeof (tmp), "%d", sval);
+    mutt_buffer_printf (val, "%d", sval);
   }
   else if (DTYPE (MuttVars[idx].type) == DT_LNUM)
   {
     long sval = *((long *) MuttVars[idx].data.p);
 
-    snprintf (tmp, sizeof (tmp), "%ld", sval);
+    mutt_buffer_printf (val, "%ld", sval);
   }
   else if (DTYPE (MuttVars[idx].type) == DT_SORT)
   {
@@ -3251,7 +3383,7 @@ static int var_to_string (int idx, char* val, size_t len)
         break;
     }
     p = mutt_getnamebyvalue (*((short *) MuttVars[idx].data.p) & SORT_MASK, map);
-    snprintf (tmp, sizeof (tmp), "%s%s%s",
+    mutt_buffer_printf (val, "%s%s%s",
               (*((short *) MuttVars[idx].data.p) & SORT_REVERSE) ? "reverse-" : "",
               (*((short *) MuttVars[idx].data.p) & SORT_LAST) ? "last-" : "",
               p);
@@ -3277,14 +3409,12 @@ static int var_to_string (int idx, char* val, size_t len)
       default:
         p = "unknown";
     }
-    strfcpy (tmp, p, sizeof (tmp));
+    mutt_buffer_strcpy (val, p);
   }
   else if (DTYPE (MuttVars[idx].type) == DT_BOOL)
-    strfcpy (tmp, option (MuttVars[idx].data.l) ? "yes" : "no", sizeof (tmp));
+    mutt_buffer_strcpy (val, option (MuttVars[idx].data.l) ? "yes" : "no");
   else
     return 0;
-
-  escape_string (val, len - 1, tmp);
 
   return 1;
 }
@@ -3535,11 +3665,15 @@ void mutt_init (int skip_sys_rc, LIST *commands)
     start_debug ();
 #endif
 
-  /* And about the host... */
 
-#ifdef DOMAIN
-  domain = safe_strdup (DOMAIN);
-#endif /* DOMAIN */
+  /*
+   * Determine Hostname.
+   *
+   * This is used in tempfile creation, so set it early.  We delay
+   * Fqdn ($hostname) setting until the muttrc is evaluated, so the
+   * user has the ability to manually set it (for example, if their
+   * DNS resolution has issues).
+   */
 
   buffer = mutt_buffer_pool_get ();
 
@@ -3560,30 +3694,6 @@ void mutt_init (int skip_sys_rc, LIST *commands)
     Hostname = mutt_substrdup (utsname.nodename, p);
   else
     Hostname = safe_strdup (utsname.nodename);
-
-  /* now get FQDN.  Use configured domain first, DNS next, then uname */
-  if (domain)
-  {
-    /* we have a compile-time domain name, use that for Fqdn */
-    Fqdn = safe_malloc (mutt_strlen (domain) + mutt_strlen (Hostname) + 2);
-    sprintf (Fqdn, "%s.%s", NONULL(Hostname), domain);	/* __SPRINTF_CHECKED__ */
-  }
-  else if (!(getdnsdomainname (buffer)))
-  {
-    Fqdn = safe_malloc (mutt_buffer_len (buffer) + mutt_strlen (Hostname) + 2);
-    sprintf (Fqdn, "%s.%s", NONULL(Hostname), mutt_b2s (buffer));	/* __SPRINTF_CHECKED__ */
-  }
-  else
-    /*
-     * DNS failed, use the nodename.  Whether or not the nodename had a '.' in
-     * it, we can use the nodename as the FQDN.  On hosts where DNS is not
-     * being used, e.g. small network that relies on hosts files, a short host
-     * name is all that is required for SMTP to work correctly.  It could be
-     * wrong, but we've done the best we can, at this point the onus is on the
-     * user to provide the correct hostname if the nodename won't work in their
-     * network.
-     */
-    Fqdn = safe_strdup(utsname.nodename);
 
 
   if ((p = getenv ("MAIL")))
@@ -3751,6 +3861,41 @@ void mutt_init (int skip_sys_rc, LIST *commands)
     if (mutt_any_key_to_continue (NULL) == -1)
       mutt_exit(1);
   }
+
+
+  /* If not set in the muttrc or mutt_execute_commands(), set Fqdn ($hostname).
+   * Use configured domain first, DNS next, then uname
+   */
+  if (!Fqdn)
+  {
+#ifdef DOMAIN
+    domain = safe_strdup (DOMAIN);
+#endif /* DOMAIN */
+
+    if (domain)
+    {
+      /* we have a compile-time domain name, use that for Fqdn */
+      Fqdn = safe_malloc (mutt_strlen (domain) + mutt_strlen (Hostname) + 2);
+      sprintf (Fqdn, "%s.%s", NONULL(Hostname), domain);	/* __SPRINTF_CHECKED__ */
+    }
+    else if (!(getdnsdomainname (buffer)))
+    {
+      Fqdn = safe_malloc (mutt_buffer_len (buffer) + mutt_strlen (Hostname) + 2);
+      sprintf (Fqdn, "%s.%s", NONULL(Hostname), mutt_b2s (buffer));	/* __SPRINTF_CHECKED__ */
+    }
+    else
+      /*
+       * DNS failed, use the nodename.  Whether or not the nodename had a '.' in
+       * it, we can use the nodename as the FQDN.  On hosts where DNS is not
+       * being used, e.g. small network that relies on hosts files, a short host
+       * name is all that is required for SMTP to work correctly.  It could be
+       * wrong, but we've done the best we can, at this point the onus is on the
+       * user to provide the correct hostname if the nodename won't work in their
+       * network.
+       */
+      Fqdn = safe_strdup(utsname.nodename);
+  }
+
 
   mutt_read_histfile ();
 

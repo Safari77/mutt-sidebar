@@ -1,7 +1,5 @@
 /*
- * Copyright (C) 2005 Andreas Krennmair <ak@synflood.at>
- * Copyright (C) 2005 Peter J. Holzer <hjp@hjp.net>
- * Copyright (C) 2005,2007 Rocco Rutte <pdmef@gmx.net>
+ * Copyright (C) 2020 Kevin J. McCarthy <kevin@8t8.us>
  *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
@@ -16,23 +14,11 @@
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- *
  */
 
-/* This file was originally part of mutt-ng */
+#ifndef _MUTT_LISP_H
+#define _MUTT_LISP_H 1
 
-#ifndef _MUTT_RFC3676_H
-#define _MUTT_RFC3676_H
+int mutt_lisp_eval_list (BUFFER *result, BUFFER *line);
 
-#include "mutt.h"
-
-/* body handler implementing RfC 3676 for format=flowed */
-int rfc3676_handler (BODY *a, STATE *s);
-
-int mutt_rfc3676_is_format_flowed (BODY *b);
-void mutt_rfc3676_space_stuff (HEADER *hdr);
-void mutt_rfc3676_space_unstuff (HEADER *hdr);
-void mutt_rfc3676_space_unstuff_attachment (BODY *b, const char *filename);
-void mutt_rfc3676_space_stuff_attachment (BODY *b, const char *filename);
-
-#endif /* !_MUTT_RFC3676_H */
+#endif

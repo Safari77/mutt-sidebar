@@ -46,6 +46,7 @@ static int ColorQuoteSize;
 
 typedef struct color_list
 {
+  int pair;
   short fg;
   short bg;
   short index;
@@ -117,6 +118,12 @@ static const struct mapping_t ComposeFields[] =
 };
 
 #define COLOR_QUOTE_INIT	8
+
+#ifdef NCURSES_VERSION
+#define ATTR_MASK (A_ATTRIBUTES ^ A_COLOR)
+#elif defined (USE_SLANG_CURSES)
+#define ATTR_MASK (~(unsigned int)A_NORMAL ^ (A_CHARTEXT | A_UNUSED | A_COLOR))
+#endif
 
 static COLOR_LINE *mutt_new_color_line (void)
 {
@@ -218,7 +225,58 @@ static char *get_color_name (char *dest, size_t destlen, int val)
 }
 #endif
 
-int mutt_alloc_color (int fg, int bg)
+static COLOR_LIST *mutt_find_color_by_pair (int pair)
+{
+  COLOR_LIST *p = ColorList;
+
+  while (p)
+  {
+    if (p->pair == pair)
+    {
+      return p;
+    }
+    p = p->next;
+  }
+
+  return NULL;
+}
+
+int mutt_merge_colors (int source_pair, int overlay_pair)
+{
+  COLOR_LIST *source, *overlay;
+  int merged_pair, merged_fg, merged_bg;
+
+  merged_pair = overlay_pair;
+
+  overlay = mutt_find_color_by_pair (overlay_pair & A_COLOR);
+
+  if (overlay && (overlay->fg < 0 || overlay->bg < 0))
+  {
+    source = mutt_find_color_by_pair (source_pair & A_COLOR);
+    if (source)
+    {
+      merged_fg = overlay->fg < 0 ? source->fg : overlay->fg;
+      merged_bg = overlay->bg < 0 ? source->bg : overlay->bg;
+      merged_pair = mutt_alloc_color (merged_fg, merged_bg, 0);
+    }
+  }
+
+  merged_pair |= (source_pair & ATTR_MASK) | (overlay_pair & ATTR_MASK);
+
+  return merged_pair;
+}
+
+void mutt_attrset_cursor (int source_pair, int cursor_pair)
+{
+  int merged_pair = cursor_pair;
+
+  if (option (OPTCURSOROVERLAY))
+    merged_pair = mutt_merge_colors (source_pair, cursor_pair);
+
+  ATTRSET (merged_pair);
+}
+
+int mutt_alloc_color (int fg, int bg, int ref)
 {
   COLOR_LIST *p = ColorList;
   int i;
@@ -232,8 +290,9 @@ int mutt_alloc_color (int fg, int bg)
   {
     if (p->fg == fg && p->bg == bg)
     {
-      (p->count)++;
-      return (COLOR_PAIR (p->index));
+      if (ref)
+        (p->count)++;
+      return p->pair;
     }
     p = p->next;
   }
@@ -280,7 +339,9 @@ int mutt_alloc_color (int fg, int bg)
   dprint (3, (debugfile,"mutt_alloc_color(): Color pairs used so far: %d\n",
 	      UserColors));
 
-  return (COLOR_PAIR (p->index));
+  p->pair = COLOR_PAIR (p->index);
+
+  return p->pair;
 }
 
 void mutt_free_color (int fg, int bg)
@@ -569,7 +630,7 @@ add_pattern (COLOR_LINE **top, const char *s, int sensitive,
 	mutt_free_color (tmp->fg, tmp->bg);
 	tmp->fg = fg;
 	tmp->bg = bg;
-	attr |= mutt_alloc_color (fg, bg);
+	attr |= mutt_alloc_color (fg, bg, 1);
       }
       else
 	attr |= (tmp->pair & ~A_BOLD);
@@ -609,7 +670,7 @@ add_pattern (COLOR_LINE **top, const char *s, int sensitive,
     {
       tmp->fg = fg;
       tmp->bg = bg;
-      attr |= mutt_alloc_color (fg, bg);
+      attr |= mutt_alloc_color (fg, bg, 1);
     }
 #endif
     tmp->pair = attr;
@@ -775,7 +836,7 @@ static int fgbgattr_to_color(int fg, int bg, int attr)
 {
 #ifdef HAVE_COLOR
   if (fg != -1 && bg != -1)
-    return attr | mutt_alloc_color(fg, bg);
+    return attr | mutt_alloc_color(fg, bg, 1);
   else
 #endif
     return attr;

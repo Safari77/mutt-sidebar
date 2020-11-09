@@ -309,7 +309,7 @@ static void process_user_header (ENVELOPE *env)
     }
     else if (ascii_strncasecmp ("message-id:", uh->data, 11) == 0)
     {
-      char *tmp = mutt_extract_message_id (uh->data + 11, NULL);
+      char *tmp = mutt_extract_message_id (uh->data + 11, NULL, 0);
       if (rfc822_valid_msgid (tmp) >= 0)
       {
 	FREE(&env->message_id);
@@ -567,6 +567,8 @@ static int include_reply (CONTEXT *ctx, HEADER *cur, FILE *out)
 static int default_to (ADDRESS **to, ENVELOPE *env, int flags, int hmfupto)
 {
   char prompt[STRING];
+  ADDRESS *default_addr = NULL;
+  int default_prune = 0;
 
   if (flags && env->mail_followup_to && hmfupto == MUTT_YES)
   {
@@ -582,64 +584,76 @@ static int default_to (ADDRESS **to, ENVELOPE *env, int flags, int hmfupto)
 
   if (!option(OPTREPLYSELF) && mutt_addr_is_user (env->from))
   {
-    /* mail is from the user, assume replying to recipients */
-    rfc822_append (to, env->to, 1);
-  }
-  else if (env->reply_to)
-  {
-    if ((mutt_addrcmp (env->from, env->reply_to) && !env->reply_to->next &&
-         !env->reply_to->personal) ||
-	(option (OPTIGNORELISTREPLYTO) &&
-         mutt_is_mail_list (env->reply_to) &&
-         (mutt_addrsrc (env->reply_to, env->to) ||
-          mutt_addrsrc (env->reply_to, env->cc))))
-    {
-      /* If the Reply-To: address is a mailing list, assume that it was
-       * put there by the mailing list, and use the From: address
-       *
-       * We also take the from header if our correspondent has a reply-to
-       * header which is identical to the electronic mail address given
-       * in his From header, and the reply-to has no display-name.
-       *
-       */
-      rfc822_append (to, env->from, 0);
-    }
-    else if (!(mutt_addrcmp (env->from, env->reply_to) &&
-	       !env->reply_to->next) &&
-	     quadoption (OPT_REPLYTO) != MUTT_YES)
-    {
-      /* There are quite a few mailing lists which set the Reply-To:
-       * header field to the list address, which makes it quite impossible
-       * to send a message to only the sender of the message.  This
-       * provides a way to do that.
-       */
-      /* L10N:
-         Asks whether the user respects the reply-to header.
-         If she says no, mutt will reply to the from header's address instead. */
-      snprintf (prompt, sizeof (prompt), _("Reply to %s%s?"),
-		env->reply_to->mailbox,
-		env->reply_to->next?",...":"");
-      switch (query_quadoption (OPT_REPLYTO, prompt))
-      {
-        case MUTT_YES:
-          rfc822_append (to, env->reply_to, 0);
-          break;
-
-        case MUTT_NO:
-          rfc822_append (to, env->from, 0);
-          break;
-
-        default:
-          return (-1); /* abort */
-      }
-    }
-    else
-      rfc822_append (to, env->reply_to, 0);
+    default_addr = env->to;
+    default_prune = 1;
   }
   else
-    rfc822_append (to, env->from, 0);
+    default_addr = env->from;
 
-  return (0);
+  if (env->reply_to)
+  {
+    /* If the Reply-To: address is a mailing list, assume that it was
+     * put there by the mailing list.
+     */
+    if (option (OPTIGNORELISTREPLYTO) &&
+        mutt_is_mail_list (env->reply_to) &&
+        (mutt_addrsrc (env->reply_to, env->to) ||
+         mutt_addrsrc (env->reply_to, env->cc)))
+    {
+      rfc822_append (to, default_addr, default_prune);
+      return 0;
+    }
+
+    /* Use the From header if our correspondent has a reply-to
+     * header which is identical.
+     *
+     * Trac ticket 3909 mentioned a case where the reply-to display
+     * name field had significance, so this is done more selectively
+     * now.
+     */
+    if (default_addr == env->from &&
+        mutt_addrcmp (env->from, env->reply_to) &&
+        !env->from->next &&
+        !env->reply_to->next &&
+        (!env->reply_to->personal ||
+         !mutt_strcasecmp (env->reply_to->personal, env->from->personal)))
+    {
+      rfc822_append (to, env->from, 0);
+      return 0;
+    }
+
+    /* Aside from the above two exceptions, prompt via $reply_to quadoption.
+     *
+     * There are quite a few mailing lists which set the Reply-To:
+     * header field to the list address, which makes it quite impossible
+     * to send a message to only the sender of the message.  This
+     * provides a way to do that.
+     */
+
+    /* L10N:
+       Asks whether the user wishes respects the reply-to header when replying.
+    */
+    snprintf (prompt, sizeof (prompt), _("Reply to %s%s?"),
+              env->reply_to->mailbox,
+              env->reply_to->next?",...":"");
+    switch (query_quadoption (OPT_REPLYTO, prompt))
+    {
+      case MUTT_YES:
+        rfc822_append (to, env->reply_to, 0);
+        break;
+
+      case MUTT_NO:
+        rfc822_append (to, default_addr, default_prune);
+        break;
+
+      default:
+        return -1; /* abort */
+    }
+    return 0;
+  }
+
+  rfc822_append (to, default_addr, default_prune);
+  return 0;
 }
 
 int mutt_fetch_recips (ENVELOPE *out, ENVELOPE *in, int flags)
@@ -756,7 +770,7 @@ void mutt_make_misc_reply_headers (ENVELOPE *env, CONTEXT *ctx,
     sprintf (env->subject, "Re: %s", curenv->real_subj);	/* __SPRINTF_CHECKED__ */
   }
   else if (!env->subject)
-    env->subject = safe_strdup ("Re: your mail");
+    env->subject = safe_strdup ("Re:");
 }
 
 void mutt_add_to_reference_headers (ENVELOPE *env, ENVELOPE *curenv, LIST ***pp, LIST ***qq)
@@ -1114,16 +1128,22 @@ static int generate_multipart_alternative (HEADER *msg, int flags)
       return 0;
   }
   else
-  {
-    if (query_quadoption (OPT_SENDMULTIPARTALT,
+    switch (query_quadoption (OPT_SENDMULTIPARTALT,
                           /* L10N:
                              This is the query for the $send_multipart_alternative quadoption.
                              Answering yes generates an alternative content using
                              $send_multipart_alternative_filter
                           */
-                          _("Generate multipart/alternative content?")) != MUTT_YES)
-      return 0;
-  }
+                          _("Generate multipart/alternative content?")))
+    {
+      case MUTT_NO:
+	return 0;
+      case MUTT_YES:
+	break;
+      case -1:
+      default:
+	return -1;
+    }
 
 
   alternative = mutt_run_send_alternative_filter (msg->content);
@@ -1135,8 +1155,9 @@ static int generate_multipart_alternative (HEADER *msg, int flags)
   return 0;
 }
 
-static int invoke_mta (HEADER *msg)
+static int invoke_mta (SEND_CONTEXT *sctx)
 {
+  HEADER *msg = sctx->msg;
   BUFFER *tempfile = NULL;
   FILE *tempfp = NULL;
   int i = -1;
@@ -1156,12 +1177,12 @@ static int invoke_mta (HEADER *msg)
     unset_option (OPTWRITEBCC);
 #endif
 #ifdef MIXMASTER
-  mutt_write_rfc822_header (tempfp, msg->env, msg->content,
+  mutt_write_rfc822_header (tempfp, msg->env, msg->content, sctx->date_header,
                             MUTT_WRITE_HEADER_NORMAL, msg->chain ? 1 : 0,
                             mutt_should_hide_protected_subject (msg));
 #endif
 #ifndef MIXMASTER
-  mutt_write_rfc822_header (tempfp, msg->env, msg->content,
+  mutt_write_rfc822_header (tempfp, msg->env, msg->content, sctx->date_header,
                             MUTT_WRITE_HEADER_NORMAL, 0,
                             mutt_should_hide_protected_subject (msg));
 #endif
@@ -1243,7 +1264,14 @@ static void save_fcc_mailbox_part (BUFFER *fcc_mailbox, SEND_CONTEXT *sctx,
       mx_is_imap (mutt_b2s (fcc_mailbox)))
   {
     mutt_sleep (1);
-    mutt_error _ ("Fcc to an IMAP mailbox is not supported in batch mode");
+    mutt_error _("Warning: Fcc to an IMAP mailbox is not supported in batch mode");
+    /* L10N:
+       Printed after the "Fcc to an IMAP mailbox is not supported" message.
+       To make it clearer that the message doesn't mean Mutt is aborting
+       sending the mail too.
+       %s is the full mailbox URL, including imap(s)://
+    */
+    mutt_error (_("Skipping Fcc to %s"), mutt_b2s (fcc_mailbox));
     return;
   }
 #endif
@@ -1274,7 +1302,7 @@ static void save_fcc_mailbox_part (BUFFER *fcc_mailbox, SEND_CONTEXT *sctx,
            This is the prompt to enter an "alternate (m)ailbox" when the
            initial Fcc fails.
         */
-        rc = mutt_buffer_enter_fname (_("Fcc mailbox"), fcc_mailbox, 1);
+        rc = mutt_enter_mailbox (_("Fcc mailbox"), fcc_mailbox, 0);
         if ((rc == -1) || !mutt_buffer_len (fcc_mailbox))
         {
           rc = 0;
@@ -1327,6 +1355,7 @@ static int save_fcc (SEND_CONTEXT *sctx,
       msg->content = clear_content;
       msg->security &= ~(ENCRYPT | SIGN | AUTOCRYPT);
       mutt_free_envelope (&msg->content->mime_headers);
+      mutt_delete_parameter ("protected-headers", &msg->content->parameter);
     }
 
     /* check to see if the user wants copies of all attachments */
@@ -1657,7 +1686,12 @@ static int postpone_message (SEND_CONTEXT *sctx)
       mutt_free_body (&msg->content);
       msg->content = clear_content;
     }
-    mutt_free_envelope (&msg->content->mime_headers);  /* protected headers */
+
+    /* protected headers cleanup: */
+    mutt_free_envelope (&msg->content->mime_headers);
+    mutt_delete_parameter ("protected-headers", &msg->content->parameter);
+    FREE (&sctx->date_header);
+
     msg->content = mutt_remove_multipart_mixed (msg->content);
     decode_descriptions (msg->content);
     mutt_unprepare_envelope (msg->env);
@@ -1781,6 +1815,7 @@ static void send_ctx_free (SEND_CONTEXT **psctx)
     mutt_free_header (&sctx->msg);
   mutt_buffer_free (&sctx->fcc);
   mutt_buffer_free (&sctx->tempfile);
+  FREE (&sctx->date_header);
 
   FREE (&sctx->cur_message_id);
   FREE (&sctx->ctx_realpath);
@@ -2102,6 +2137,11 @@ static int send_message_resume_first_edit (SEND_CONTEXT *sctx)
     else
     {
       sctx->mtime = mutt_decrease_mtime (sctx->msg->content->filename, NULL);
+      if (sctx->mtime == (time_t) -1)
+      {
+        mutt_perror (sctx->msg->content->filename);
+        goto cleanup;
+      }
       mutt_update_encoding (sctx->msg->content);
 
       /*
@@ -2507,7 +2547,7 @@ main_loop:
   if (option (OPTFCCBEFORESEND))
     save_fcc (sctx, clear_content, pgpkeylist, sctx->flags);
 
-  if ((mta_rc = invoke_mta (sctx->msg)) < 0)
+  if ((mta_rc = invoke_mta (sctx)) < 0)
   {
     if (!(sctx->flags & SENDBATCH))
     {
@@ -2529,7 +2569,12 @@ main_loop:
       }
 
       FREE (&pgpkeylist);
-      mutt_free_envelope (&sctx->msg->content->mime_headers);  /* protected headers */
+
+      /* protected headers cleanup: */
+      mutt_free_envelope (&sctx->msg->content->mime_headers);
+      mutt_delete_parameter ("protected-headers", &sctx->msg->content->parameter);
+      FREE (&sctx->date_header);
+
       sctx->msg->content = mutt_remove_multipart_mixed (sctx->msg->content);
       sctx->msg->content = mutt_remove_multipart_alternative (sctx->msg->content);
       decode_descriptions (sctx->msg->content);

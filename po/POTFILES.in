@@ -42,12 +42,14 @@ imap/imap.c
 imap/message.c
 imap/util.c
 init.c
+init.h
 keymap.c
 lib.c
 main.c
 mbox.c
 menu.c
 mh.c
+mutt_lisp.c
 mutt_sasl.c
 mutt_socket.c
 mutt_ssl.c

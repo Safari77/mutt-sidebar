@@ -33,6 +33,7 @@
 #include "copy.h"
 #include "mx.h"
 #include "mutt_crypt.h"
+#include "rfc3676.h"
 
 #include <ctype.h>
 #include <stdlib.h>
@@ -356,7 +357,7 @@ int mutt_view_attachment (FILE *fp, BODY *a, int flag, HEADER *hdr,
   char *fname;
   rfc1524_entry *entry = NULL;
   int rc = -1;
-  int unlink_tempfile = 0;
+  int unlink_tempfile = 0, unlink_pagerfile = 0;
 
   is_message = mutt_is_message_type(a->type, a->subtype);
   if (WithCrypto && is_message && a->hdr && (a->hdr->security & ENCRYPT) &&
@@ -398,36 +399,19 @@ int mutt_view_attachment (FILE *fp, BODY *a, int flag, HEADER *hdr,
     }
     mutt_buffer_strcpy (command, entry->command);
 
-    if (fp)
-    {
-      fname = safe_strdup (a->filename);
-      mutt_sanitize_filename (fname, 1);
-    }
-    else
-      fname = a->filename;
-
+    fname = safe_strdup (a->filename);
+    /* In send mode (!fp), we allow slashes because those are part of
+     * the tempfile.  The path will be removed in expand_filename */
+    mutt_sanitize_filename (fname, fp ? 1 : 0);
     mutt_rfc1524_expand_filename (entry->nametemplate, fname,
                                   tempfile);
+    FREE (&fname);
 
-    /* send case: the file is already there; symlink to it */
-    if (fp == NULL)
-    {
-      if (safe_symlink (a->filename, mutt_b2s (tempfile)) == -1)
-      {
-        if (mutt_yesorno (_("Can't match nametemplate, continue?"), MUTT_YES) != MUTT_YES)
-          goto return_error;
-        mutt_buffer_strcpy (tempfile, a->filename);
-      }
-      else
-        unlink_tempfile = 1;
-    }
-    /* recv case: we need to save the attachment to a file */
-    else
-    {
-      FREE (&fname);
-      if (mutt_save_attachment (fp, a, mutt_b2s (tempfile), 0, NULL) == -1)
-	goto return_error;
-    }
+    if (mutt_save_attachment (fp, a, mutt_b2s (tempfile), 0, NULL) == -1)
+      goto return_error;
+    unlink_tempfile = 1;
+
+    mutt_rfc3676_space_unstuff_attachment (a, mutt_b2s (tempfile));
 
     use_pipe = mutt_rfc1524_expand_command (a, mutt_b2s (tempfile), type,
                                             command);
@@ -461,6 +445,8 @@ int mutt_view_attachment (FILE *fp, BODY *a, int flag, HEADER *hdr,
 	mutt_perror ("open");
 	goto return_error;
       }
+      unlink_pagerfile = 1;
+
       if (use_pipe && ((tempfd = open (mutt_b2s (tempfile), 0)) == -1))
       {
 	if (pagerfd != -1)
@@ -540,6 +526,8 @@ int mutt_view_attachment (FILE *fp, BODY *a, int flag, HEADER *hdr,
 	  mutt_sleep(1);
 	  goto return_error;
 	}
+        unlink_pagerfile = 1;
+
 	decode_state.fpin = fp;
 	decode_state.flags = MUTT_CHARCONV;
 	mutt_decode_attachment(a, &decode_state);
@@ -555,7 +543,9 @@ int mutt_view_attachment (FILE *fp, BODY *a, int flag, HEADER *hdr,
 	 */
 	if (mutt_save_attachment(fp, a, mutt_b2s (pagerfile), 0, NULL))
 	  goto return_error;
+        unlink_pagerfile = 1;
       }
+      mutt_rfc3676_space_unstuff_attachment (a, mutt_b2s (pagerfile));
     }
     else
     {
@@ -567,6 +557,7 @@ int mutt_view_attachment (FILE *fp, BODY *a, int flag, HEADER *hdr,
 	unset_option (OPTVIEWATTACH);
 	goto return_error;
       }
+      unlink_pagerfile = 1;
       unset_option (OPTVIEWATTACH);
     }
 
@@ -594,7 +585,7 @@ int mutt_view_attachment (FILE *fp, BODY *a, int flag, HEADER *hdr,
 
     rc = mutt_do_pager (descrip, mutt_b2s (pagerfile),
 			MUTT_PAGER_ATTACHMENT | (is_message ? MUTT_PAGER_MESSAGE : 0), &info);
-    mutt_buffer_clear (pagerfile);
+    unlink_pagerfile = 0;
   }
   else
     rc = 0;
@@ -602,12 +593,9 @@ int mutt_view_attachment (FILE *fp, BODY *a, int flag, HEADER *hdr,
 return_error:
 
   rfc1524_free_entry (&entry);
-  if (fp && (mutt_b2s (tempfile))[0])
+  if (unlink_tempfile)
     mutt_unlink (mutt_b2s (tempfile));
-  else if (unlink_tempfile)
-    unlink (mutt_b2s (tempfile));
-
-  if ((mutt_b2s (pagerfile))[0])
+  if (unlink_pagerfile)
     mutt_unlink (mutt_b2s (pagerfile));
 
   mutt_buffer_pool_release (&tempfile);
@@ -620,9 +608,10 @@ return_error:
 /* returns 1 on success, 0 on error */
 int mutt_pipe_attachment (FILE *fp, BODY *b, const char *path, const char *outfile)
 {
-  pid_t thepid;
-  int out = -1;
-  int rv = 0;
+  pid_t thepid = 0;
+  int out = -1, rv = 0, is_flowed = 0, unlink_unstuff = 0;
+  FILE *filter_fp = NULL, *unstuff_fp = NULL, *ifp = NULL;
+  BUFFER *unstuff_tempfile = NULL;
 
   if (outfile && *outfile)
     if ((out = safe_open (outfile, O_CREAT | O_EXCL | O_WRONLY)) < 0)
@@ -631,78 +620,118 @@ int mutt_pipe_attachment (FILE *fp, BODY *b, const char *path, const char *outfi
       return 0;
     }
 
+  if (mutt_rfc3676_is_format_flowed (b))
+  {
+    is_flowed = 1;
+    unstuff_tempfile = mutt_buffer_pool_get ();
+    mutt_buffer_mktemp (unstuff_tempfile);
+  }
+
   mutt_endwin (NULL);
 
+  if (outfile && *outfile)
+    thepid = mutt_create_filter_fd (path, &filter_fp, NULL, NULL, -1, out, -1);
+  else
+    thepid = mutt_create_filter (path, &filter_fp, NULL, NULL);
+  if (thepid < 0)
+  {
+    mutt_perror _("Can't create filter");
+    goto bail;
+  }
+
+  /* recv case */
   if (fp)
   {
-    /* recv case */
-
     STATE s;
 
     memset (&s, 0, sizeof (STATE));
     /* perform charset conversion on text attachments when piping */
     s.flags = MUTT_CHARCONV;
 
-    if (outfile && *outfile)
-      thepid = mutt_create_filter_fd (path, &s.fpout, NULL, NULL, -1, out, -1);
-    else
-      thepid = mutt_create_filter (path, &s.fpout, NULL, NULL);
-
-    if (thepid < 0)
+    if (is_flowed)
     {
-      mutt_perror _("Can't create filter");
-      goto bail;
-    }
+      unstuff_fp = safe_fopen (mutt_b2s (unstuff_tempfile), "w");
+      if (unstuff_fp == NULL)
+      {
+        mutt_perror ("safe_fopen");
+        goto bail;
+      }
+      unlink_unstuff = 1;
 
-    s.fpin = fp;
-    mutt_decode_attachment (b, &s);
-    safe_fclose (&s.fpout);
+      s.fpin = fp;
+      s.fpout = unstuff_fp;
+      mutt_decode_attachment (b, &s);
+      safe_fclose (&unstuff_fp);
+
+      mutt_rfc3676_space_unstuff_attachment (b, mutt_b2s (unstuff_tempfile));
+
+      unstuff_fp = safe_fopen (mutt_b2s (unstuff_tempfile), "r");
+      if (unstuff_fp == NULL)
+      {
+        mutt_perror ("safe_fopen");
+        goto bail;
+      }
+      mutt_copy_stream (unstuff_fp, filter_fp);
+      safe_fclose (&unstuff_fp);
+    }
+    else
+    {
+      s.fpin = fp;
+      s.fpout = filter_fp;
+      mutt_decode_attachment (b, &s);
+    }
   }
+
+  /* send case */
   else
   {
-    /* send case */
+    const char *infile;
 
-    FILE *ifp, *ofp;
+    if (is_flowed)
+    {
+      if (mutt_save_attachment (fp, b, mutt_b2s (unstuff_tempfile), 0, NULL) == -1)
+        goto bail;
+      unlink_unstuff = 1;
+      mutt_rfc3676_space_unstuff_attachment (b, mutt_b2s (unstuff_tempfile));
+      infile = mutt_b2s (unstuff_tempfile);
+    }
+    else
+      infile = b->filename;
 
-    if ((ifp = fopen (b->filename, "r")) == NULL)
+    if ((ifp = fopen (infile, "r")) == NULL)
     {
       mutt_perror ("fopen");
-      if (outfile && *outfile)
-      {
-	close (out);
-	unlink (outfile);
-      }
-      return 0;
-    }
-
-    if (outfile && *outfile)
-      thepid = mutt_create_filter_fd (path, &ofp, NULL, NULL, -1, out, -1);
-    else
-      thepid = mutt_create_filter (path, &ofp, NULL, NULL);
-
-    if (thepid < 0)
-    {
-      mutt_perror _("Can't create filter");
-      safe_fclose (&ifp);
       goto bail;
     }
-
-    mutt_copy_stream (ifp, ofp);
-    safe_fclose (&ofp);
+    mutt_copy_stream (ifp, filter_fp);
     safe_fclose (&ifp);
   }
 
+  safe_fclose (&filter_fp);
   rv = 1;
 
 bail:
-
   if (outfile && *outfile)
+  {
     close (out);
+    if (rv == 0)
+      unlink (outfile);
+    else if (is_flowed)
+      mutt_rfc3676_space_stuff_attachment (NULL, outfile);
+  }
+
+  safe_fclose (&unstuff_fp);
+  safe_fclose (&filter_fp);
+  safe_fclose (&ifp);
+
+  if (unlink_unstuff)
+    mutt_unlink (mutt_b2s (unstuff_tempfile));
+  mutt_buffer_pool_release (&unstuff_tempfile);
 
   /*
    * check for error exit from child process
    */
-  if (mutt_wait_filter (thepid) != 0)
+  if ((thepid > 0) && (mutt_wait_filter (thepid) != 0))
     rv = 0;
 
   if (rv == 0 || option (OPTWAITKEY))
@@ -939,7 +968,7 @@ int mutt_print_attachment (FILE *fp, BODY *a)
   if (rfc1524_mailcap_lookup (a, type, sizeof(type), NULL, MUTT_PRINT))
   {
     rfc1524_entry *entry = NULL;
-    int piped = FALSE;
+    int piped = 0;
 
     dprint (2, (debugfile, "Using mailcap...\n"));
 
@@ -948,24 +977,11 @@ int mutt_print_attachment (FILE *fp, BODY *a)
     mutt_rfc1524_expand_filename (entry->nametemplate, a->filename,
                                   newfile);
 
-    /* send mode: symlink from existing file to the newfile */
-    if (!fp)
-    {
-      if (safe_symlink (a->filename, mutt_b2s (newfile)) == -1)
-      {
-        if (mutt_yesorno (_("Can't match nametemplate, continue?"), MUTT_YES) != MUTT_YES)
-          goto mailcap_cleanup;
-        mutt_buffer_strcpy (newfile, a->filename);
-      }
-      else
-        unlink_newfile = 1;
-    }
-    /* in recv mode, save file to newfile first */
-    else
-    {
-      if (mutt_save_attachment (fp, a, mutt_b2s (newfile), 0, NULL) == -1)
-        goto mailcap_cleanup;
-    }
+    if (mutt_save_attachment (fp, a, mutt_b2s (newfile), 0, NULL) == -1)
+      goto mailcap_cleanup;
+    unlink_newfile = 1;
+
+    mutt_rfc3676_space_unstuff_attachment (a, mutt_b2s (newfile));
 
     mutt_buffer_strcpy (command, entry->printcommand);
     piped = mutt_rfc1524_expand_command (a, mutt_b2s (newfile), type, command);
@@ -1002,10 +1018,8 @@ int mutt_print_attachment (FILE *fp, BODY *a)
     rc = 1;
 
   mailcap_cleanup:
-    if (fp)
+    if (unlink_newfile)
       mutt_unlink (mutt_b2s (newfile));
-    else if (unlink_newfile)
-      unlink(mutt_b2s (newfile));
 
     rfc1524_free_entry (&entry);
     goto out;
@@ -1027,7 +1041,7 @@ int mutt_print_attachment (FILE *fp, BODY *a)
     mutt_buffer_mktemp (newfile);
     if (mutt_decode_save_attachment (fp, a, mutt_b2s (newfile), MUTT_PRINTING, 0) == 0)
     {
-
+      unlink_newfile = 1;
       dprint (2, (debugfile, "successfully decoded %s type attachment to %s\n",
 		  type, mutt_b2s (newfile)));
 
@@ -1060,7 +1074,8 @@ int mutt_print_attachment (FILE *fp, BODY *a)
   decode_cleanup:
     safe_fclose (&ifp);
     safe_fclose (&fpout);
-    mutt_unlink (mutt_b2s (newfile));
+    if (unlink_newfile)
+      mutt_unlink (mutt_b2s (newfile));
   }
   else
   {

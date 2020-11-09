@@ -626,6 +626,7 @@ static void calculate_depth (const char *path, const char *lastpath,
 static void draw_sidebar (int num_rows, int num_cols, int div_width)
 {
   int entryidx;
+  int entry_color;
   SBENTRY *entry;
   BUFFY *b;
   int maildir_is_prefix;
@@ -650,24 +651,30 @@ static void draw_sidebar (int num_rows, int num_cols, int div_width)
       continue;
     b = entry->buffy;
 
+    if ((b->msg_unread > 0) || (b->new))
+      entry_color = MT_COLOR_NEW;
+    else if (b->msg_flagged > 0)
+      entry_color = MT_COLOR_FLAGGED;
+    else if ((ColorDefs[MT_COLOR_SB_SPOOLFILE] != 0) &&
+             (mutt_strcmp (mutt_b2s (b->pathbuf), Spoolfile) == 0))
+      entry_color = MT_COLOR_SB_SPOOLFILE;
+    else
+      entry_color = MT_COLOR_NORMAL;
+
     if (entryidx == OpnIndex)
     {
       if ((ColorDefs[MT_COLOR_SB_INDICATOR] != 0))
-        SETCOLOR(MT_COLOR_SB_INDICATOR);
+	mutt_attrset_cursor (ColorDefs[entry_color],
+		ColorDefs[MT_COLOR_SB_INDICATOR]);
       else
-        SETCOLOR(MT_COLOR_INDICATOR);
+	mutt_attrset_cursor (ColorDefs[entry_color],
+		ColorDefs[MT_COLOR_INDICATOR]);
     }
     else if (entryidx == HilIndex)
-      SETCOLOR(MT_COLOR_HIGHLIGHT);
-    else if ((b->msg_unread > 0) || (b->new))
-      SETCOLOR(MT_COLOR_NEW);
-    else if (b->msg_flagged > 0)
-      SETCOLOR(MT_COLOR_FLAGGED);
-    else if ((ColorDefs[MT_COLOR_SB_SPOOLFILE] != 0) &&
-             (mutt_strcmp (mutt_b2s (b->pathbuf), Spoolfile) == 0))
-      SETCOLOR(MT_COLOR_SB_SPOOLFILE);
+      mutt_attrset_cursor (ColorDefs[entry_color],
+	      ColorDefs[MT_COLOR_HIGHLIGHT]);
     else
-      SETCOLOR(MT_COLOR_NORMAL);
+      SETCOLOR(entry_color);
 
     mutt_window_move (MuttSidebarWindow, row, 0);
     if (Context && Context->realpath && !b->nopoll &&
@@ -705,8 +712,17 @@ static void draw_sidebar (int num_rows, int num_cols, int div_width)
         sidebar_folder_name = mutt_b2s (b->pathbuf) + (maildirlen + 1);
         maildir_is_prefix = 1;
       }
+      /* mutt_expand_path() now expands relative paths too.
+       * To try not to change the sidebar in case it has those, use
+       * pretty_mailbox to translate back to relative paths */
       else
-        sidebar_folder_name = mutt_b2s (b->pathbuf);
+      {
+        mutt_buffer_strcpy (pretty_folder_name, mutt_b2s (b->pathbuf));
+        mutt_buffer_pretty_mailbox (pretty_folder_name);
+        sidebar_folder_name = mutt_b2s (pretty_folder_name);
+        if ((*sidebar_folder_name == '=') || (*sidebar_folder_name == '~'))
+          sidebar_folder_name = mutt_b2s (b->pathbuf);
+      }
     }
 
     if (SidebarDelimChars)

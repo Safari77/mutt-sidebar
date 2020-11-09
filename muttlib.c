@@ -408,6 +408,103 @@ int mutt_matches_ignore (const char *s, LIST *t)
   return 0;
 }
 
+static void buffer_normalize_fullpath (BUFFER *dest, const char *src)
+{
+  enum { init, dot, dotdot, standard } state = init;
+
+  mutt_buffer_clear (dest);
+  if (!src)
+    return;
+
+  /* Disabling this for the 2.0 release.
+   * See Gitlab #290 - '..' can not be simplified in this manner.
+   * Furthermore, it looks like mutt_pretty_mailbox() calls realpath()
+   * if there are any '..' strings in the path, and does its own '.'
+   * normalization much more succinctly than this.  I'll remove this
+   * code after the release.
+   */
+  mutt_buffer_strcpy (dest, src);
+  return;
+
+  if (*src != '/')
+  {
+    mutt_buffer_strcpy (dest, src);
+    return;
+  }
+
+  while (*src)
+  {
+    if (*src == '.')
+    {
+      switch (state)
+      {
+        case init:
+          state = dot;
+          break;
+        case dot:
+          state = dotdot;
+          break;
+        default:
+          state = standard;
+          break;
+      }
+    }
+    else if (*src == '/')
+    {
+      switch (state)
+      {
+        case dot:
+          dest->dptr -= 2;
+          break;
+        case dotdot:
+          dest->dptr -= 3;
+          if (dest->dptr != dest->data)
+          {
+            dest->dptr--;
+            while (*dest->dptr != '/')
+              dest->dptr--;
+          }
+          break;
+        default:
+          break;
+      }
+      state = init;
+    }
+    else
+    {
+      state = standard;
+    }
+
+    mutt_buffer_addch (dest, *src);
+    src++;
+  }
+
+  /* Deal with a trailing /. or /.. */
+  switch (state)
+  {
+    case dot:
+      dest->dptr -= 2;
+      if (dest->dptr == dest->data)
+        dest->dptr++;
+      *dest->dptr = '\0';
+      break;
+    case dotdot:
+      dest->dptr -= 3;
+      if (dest->dptr != dest->data)
+      {
+        dest->dptr--;
+        while (*dest->dptr != '/')
+          dest->dptr--;
+      }
+      if (dest->dptr == dest->data)
+        dest->dptr++;
+      *dest->dptr = '\0';
+      break;
+    default:
+      break;
+  }
+}
+
 /* Splits src into parts delimited by delimiter.
  * Invokes mapfunc on each part and joins the result back into src.
  * Note this function currently does not preserve trailing delimiters.
@@ -461,32 +558,23 @@ void mutt_buffer_expand_multi_path (BUFFER *src, const char *delimiter)
   delimited_buffer_map_join (src, delimiter, mutt_buffer_expand_path);
 }
 
-char *mutt_expand_path (char *s, size_t slen)
+void mutt_buffer_expand_multi_path_norel (BUFFER *src, const char *delimiter)
 {
-  return _mutt_expand_path (s, slen, 0);
-}
-
-char *_mutt_expand_path (char *s, size_t slen, int rx)
-{
-  BUFFER *s_buf;
-
-  s_buf = mutt_buffer_pool_get ();
-
-  mutt_buffer_addstr (s_buf, NONULL (s));
-  _mutt_buffer_expand_path (s_buf, rx);
-  strfcpy (s, mutt_b2s (s_buf), slen);
-
-  mutt_buffer_pool_release (&s_buf);
-
-  return s;
+  delimited_buffer_map_join (src, delimiter, mutt_buffer_expand_path_norel);
 }
 
 void mutt_buffer_expand_path (BUFFER *src)
 {
-  _mutt_buffer_expand_path (src, 0);
+  _mutt_buffer_expand_path (src, 0, 1);
 }
 
-void _mutt_buffer_expand_path (BUFFER *src, int rx)
+/* Does expansion without relative path expansion */
+void mutt_buffer_expand_path_norel (BUFFER *src)
+{
+  _mutt_buffer_expand_path (src, 0, 0);
+}
+
+void _mutt_buffer_expand_path (BUFFER *src, int rx, int expand_relative)
 {
   BUFFER *p, *q, *tmp;
   const char *s, *tail = "";
@@ -653,14 +741,29 @@ void _mutt_buffer_expand_path (BUFFER *src, int rx)
 
   mutt_buffer_pool_release (&p);
   mutt_buffer_pool_release (&q);
-  mutt_buffer_pool_release (&tmp);
 
 #ifdef USE_IMAP
   /* Rewrite IMAP path in canonical form - aids in string comparisons of
    * folders. May possibly fail, in which case s should be the same. */
   if (mx_is_imap (mutt_b2s (src)))
     imap_expand_path (src);
+  else
 #endif
+    if (expand_relative &&
+        (url_check_scheme (mutt_b2s (src)) == U_UNKNOWN) &&
+        mutt_buffer_len (src) &&
+        *mutt_b2s (src) != '/')
+    {
+      if (mutt_getcwd (tmp))
+      {
+        if (mutt_buffer_len (tmp) > 1)
+          mutt_buffer_addch (tmp, '/');
+        mutt_buffer_addstr (tmp, mutt_b2s (src));
+        buffer_normalize_fullpath (src, mutt_b2s (tmp));
+      }
+    }
+
+  mutt_buffer_pool_release (&tmp);
 }
 
 /* Extract the real name from /etc/passwd's GECOS field.
@@ -992,9 +1095,9 @@ uint64_t mutt_rand64(void)
 void _mutt_buffer_mktemp (BUFFER *buf, const char *prefix, const char *suffix,
                           const char *src, int line)
 {
-  mutt_buffer_printf (buf, "%s/%s-%s-%d-%d-%ld%ld%s%s",
+  mutt_buffer_printf (buf, "%s/%s-%s-%d-%d-%" PRIu64 "%s%s",
                       NONULL (Tempdir), NONULL (prefix), NONULL (Hostname),
-                      (int) getuid (), (int) getpid (), random (), random (),
+                      (int) getuid (), (int) getpid (), mutt_rand64(),
                       suffix ? "." : "", NONULL (suffix));
   dprint (3, (debugfile, "%s:%d: mutt_mktemp returns \"%s\".\n", src, line, mutt_b2s (buf)));
   if (unlink (mutt_b2s (buf)) && errno != ENOENT)
@@ -1124,11 +1227,44 @@ void mutt_pretty_mailbox (char *s, size_t buflen)
     *s++ = '=';
     memmove (s, s + len, mutt_strlen (s + len) + 1);
   }
-  else if (mutt_strncmp (s, Homedir, (len = mutt_strlen (Homedir))) == 0 &&
-	   s[len] == '/')
+  else
   {
-    *s++ = '~';
-    memmove (s, s + len - 1, mutt_strlen (s + len - 1) + 1);
+    BUFFER *cwd = mutt_buffer_pool_get ();
+    BUFFER *home = mutt_buffer_pool_get ();
+    int under_cwd = 0, under_home = 0, cwd_under_home = 0;
+    size_t cwd_len, home_len;
+
+    mutt_getcwd (cwd);
+    if (mutt_buffer_len (cwd) > 1)
+      mutt_buffer_addch (cwd, '/');
+    cwd_len = mutt_buffer_len (cwd);
+
+    mutt_buffer_strcpy (home, NONULL (Homedir));
+    if (mutt_buffer_len (home) > 1)
+      mutt_buffer_addch (home, '/');
+    home_len = mutt_buffer_len (home);
+
+    if (cwd_len &&
+        mutt_strncmp (s, mutt_b2s (cwd), cwd_len) == 0)
+      under_cwd = 1;
+
+    if (home_len &&
+        mutt_strncmp (s, mutt_b2s (home), home_len) == 0)
+      under_home = 1;
+
+    if (under_cwd && under_home && (home_len < cwd_len))
+      cwd_under_home = 1;
+
+    if (under_cwd && (!under_home || cwd_under_home))
+      memmove (s, s + cwd_len, mutt_strlen (s + cwd_len) + 1);
+    else if (under_home && (home_len > 1))
+    {
+      *s++ = '~';
+      memmove (s, s + home_len - 2, mutt_strlen (s + home_len - 2) + 1);
+    }
+
+    mutt_buffer_pool_release (&cwd);
+    mutt_buffer_pool_release (&home);
   }
 }
 
@@ -1210,52 +1346,6 @@ void mutt_buffer_sanitize_filename (BUFFER *d, const char *f, short slash)
       mutt_buffer_addch (d, '_');
     else
       mutt_buffer_addch (d, *f);
-  }
-}
-
-static int is_ansi (const char *buf)
-{
-  while (*buf && (isdigit(*buf) || *buf == ';'))
-    buf++;
-  return (*buf == 'm');
-}
-
-/* Removes ANSI and backspace formatting.
- *
- * This logic is pulled from the pager fill_buffer() function, for use
- * in stripping reply-quoted autoview output of ansi sequences.
- */
-void mutt_buffer_strip_formatting (BUFFER *dest, const char *src)
-{
-  const char *s = src;
-
-  mutt_buffer_clear (dest);
-
-  if (!s)
-    return;
-
-  while (*s)
-  {
-    if (*s == '\010' && (s > src))
-    {
-      if (*(s+1) == '_')	/* underline */
-        s += 2;
-      else if (*(s+1) && mutt_buffer_len (dest))	/* bold or overstrike */
-      {
-        dest->dptr--;
-        mutt_buffer_addch (dest, *(s+1));
-        s += 2;
-      }
-      else			/* ^H */
-        mutt_buffer_addch (dest, *s++);
-    }
-    else if (*s == '\033' && *(s+1) == '[' && is_ansi (s + 2))
-    {
-      while (*s++ != 'm')	/* skip ANSI sequence */
-        ;
-    }
-    else
-      mutt_buffer_addch (dest, *s++);
   }
 }
 
@@ -1640,7 +1730,7 @@ void mutt_FormatString (char *dest,		/* output buffer */
         dprint(3, (debugfile, "fmtpipe +++: %s\n", srcbuf->dptr));
         if (word->data)
           *word->data = '\0';
-        mutt_extract_token(word, srcbuf, 0);
+        mutt_extract_token(word, srcbuf, MUTT_TOKEN_NOLISP);
         dprint(3, (debugfile, "fmtpipe %2d: %s\n", i++, word->data));
         mutt_buffer_addch(command, '\'');
         mutt_FormatString(buf, sizeof(buf), 0, cols, word->data, callback, data,
@@ -2198,6 +2288,7 @@ time_t mutt_decrease_mtime (const char *f, struct stat *st)
   struct utimbuf utim;
   struct stat _st;
   time_t mtime;
+  int rc;
 
   if (!st)
   {
@@ -2211,7 +2302,12 @@ time_t mutt_decrease_mtime (const char *f, struct stat *st)
     mtime -= 1;
     utim.actime = mtime;
     utim.modtime = mtime;
-    utime (f, &utim);
+    do
+      rc = utime (f, &utim);
+    while (rc == -1 && errno == EINTR);
+
+    if (rc == -1)
+      return -1;
   }
 
   return mtime;

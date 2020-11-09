@@ -269,46 +269,57 @@ resolve_color (struct line_t *lineInfo, int n, int cnt, int flags, int special,
     }
   }
 
-  /* handle "special" bold & underlined characters */
-  if (special || a->attr)
-  {
+  /* handle ansi and "special" bold & underlined characters */
 #ifdef HAVE_COLOR
-    if ((a->attr & ANSI_COLOR))
-    {
-      if (a->pair == -1)
-	a->pair = mutt_alloc_color (a->fg, a->bg);
-      color = a->pair;
-      if (a->attr & ANSI_BOLD)
-        color |= A_BOLD;
-    }
-    else
+  if ((a->attr & ANSI_COLOR) && !search)
+  {
+    /* Note: we don't free ansi colors.  This used to be done in
+     * grok_ansi() but a color-pair in use on the screen can not be
+     * reallocated via init_pair() to another color. There are at
+     * most 64 ansi colors, so just let them accumulate.
+     * However, don't refcount since they aren't tracked.
+     */
+    if (a->pair == -1)
+      a->pair = mutt_alloc_color (a->fg, a->bg, 0);
+    color = a->pair;
+  }
+  else
 #endif
-      if ((special & A_BOLD) || (a->attr & ANSI_BOLD))
+    if (special)
+    {
+      if ((special & A_BOLD) && ColorDefs[MT_COLOR_BOLD] && !search)
       {
-        if (ColorDefs[MT_COLOR_BOLD] && !search)
-          color = ColorDefs[MT_COLOR_BOLD];
-        else
-          color ^= A_BOLD;
+        color = ColorDefs[MT_COLOR_BOLD];
+        if (special & A_UNDERLINE)
+          color |= A_UNDERLINE;
       }
-    if ((special & A_UNDERLINE) || (a->attr & ANSI_UNDERLINE))
-    {
-      if (ColorDefs[MT_COLOR_UNDERLINE] && !search)
-	color = ColorDefs[MT_COLOR_UNDERLINE];
+      else if ((special & A_UNDERLINE) && ColorDefs[MT_COLOR_UNDERLINE] && !search)
+      {
+        color = ColorDefs[MT_COLOR_UNDERLINE];
+        if (special & A_BOLD)
+          color |= A_BOLD;
+      }
       else
-	color ^= A_UNDERLINE;
+      {
+        if (special & A_BOLD)
+          color |= A_BOLD;
+        if (special & A_UNDERLINE)
+          color |= A_UNDERLINE;
+      }
     }
-    else if (a->attr & ANSI_REVERSE)
-    {
-      color ^= A_REVERSE;
-    }
-    else if (a->attr & ANSI_BLINK)
-    {
-      color ^= A_BLINK;
-    }
-    else if (a->attr == ANSI_OFF)
-    {
+
+  if (a->attr)
+  {
+    if (a->attr & ANSI_BOLD)
+      color |= A_BOLD;
+    if (a->attr & ANSI_UNDERLINE)
+      color |= A_UNDERLINE;
+    if (a->attr & ANSI_REVERSE)
+      color |= A_REVERSE;
+    if (a->attr & ANSI_BLINK)
+      color |= A_BLINK;
+    if (a->attr == ANSI_OFF)
       a->attr = 0;
-    }
   }
 
   if (color != last_color)
@@ -952,7 +963,7 @@ resolve_types (char *buf, char *raw, struct line_t *lineInfo, int n, int last,
   }
 }
 
-static int is_ansi (unsigned char *buf)
+static int is_ansi (const char *buf)
 {
   while (*buf && (isdigit(*buf) || *buf == ';'))
     buf++;
@@ -988,10 +999,6 @@ static int grok_ansi(unsigned char *buf, int pos, ansi_attr *a)
   {
     if (pos == x)
     {
-#ifdef HAVE_COLOR
-      if (a->pair != -1)
-	mutt_free_color (a->fg, a->bg);
-#endif
       a->attr = ANSI_OFF;
       a->pair = -1;
     }
@@ -1019,20 +1026,12 @@ static int grok_ansi(unsigned char *buf, int pos, ansi_attr *a)
       }
       else if (buf[pos] == '0' && (pos+1 == x || buf[pos+1] == ';'))
       {
-#ifdef HAVE_COLOR
-	if (a->pair != -1)
-	  mutt_free_color(a->fg,a->bg);
-#endif
 	a->attr = ANSI_OFF;
 	a->pair = -1;
 	pos += 2;
       }
       else if (buf[pos] == '3' && isdigit(buf[pos+1]))
       {
-#ifdef HAVE_COLOR
-	if (a->pair != -1)
-	  mutt_free_color(a->fg,a->bg);
-#endif
 	a->pair = -1;
 	a->attr |= ANSI_COLOR;
 	a->fg = buf[pos+1] - '0';
@@ -1040,10 +1039,6 @@ static int grok_ansi(unsigned char *buf, int pos, ansi_attr *a)
       }
       else if (buf[pos] == '4' && isdigit(buf[pos+1]))
       {
-#ifdef HAVE_COLOR
-	if (a->pair != -1)
-	  mutt_free_color(a->fg,a->bg);
-#endif
 	a->pair = -1;
 	a->attr |= ANSI_COLOR;
 	a->bg = buf[pos+1] - '0';
@@ -1060,64 +1055,85 @@ static int grok_ansi(unsigned char *buf, int pos, ansi_attr *a)
   return pos;
 }
 
+/* Removes ANSI and backspace formatting, and optionally markers.
+ *
+ * This is separated out so that it can be used both by the pager
+ * and the autoview handler.
+ */
+void mutt_buffer_strip_formatting (BUFFER *dest, const char *src, int strip_markers)
+{
+  const char *s = src;
+
+  mutt_buffer_clear (dest);
+
+  if (!s)
+    return;
+
+  while (*s)
+  {
+    if (*s == '\010' && (s > src))
+    {
+      if (*(s+1) == '_')	/* underline */
+        s += 2;
+      else if (*(s+1) && mutt_buffer_len (dest))	/* bold or overstrike */
+      {
+        dest->dptr--;
+        mutt_buffer_addch (dest, *(s+1));
+        s += 2;
+      }
+      else			/* ^H */
+        mutt_buffer_addch (dest, *s++);
+    }
+    else if (*s == '\033' && *(s+1) == '[' && is_ansi (s + 2))
+    {
+      while (*s++ != 'm')	/* skip ANSI sequence */
+        ;
+    }
+    else if (strip_markers &&
+             *s == '\033' && *(s+1) == ']' &&
+             ((check_attachment_marker (s) == 0) ||
+              (check_protected_header_marker (s) == 0)))
+    {
+      dprint (2, (debugfile, "mutt_buffer_strip_formatting: Seen attachment marker.\n"));
+      while (*s++ != '\a')	/* skip pseudo-ANSI sequence */
+        ;
+    }
+    else
+      mutt_buffer_addch (dest, *s++);
+  }
+}
+
 static int
 fill_buffer (FILE *f, LOFF_T *last_pos, LOFF_T offset, unsigned char **buf,
 	     unsigned char **fmt, size_t *blen, int *buf_ready)
 {
-  unsigned char *p, *q;
   static int b_read;
-  int l;
+  BUFFER stripped;
 
   if (*buf_ready == 0)
   {
     if (offset != *last_pos)
       fseeko (f, offset, 0);
-    if ((*buf = (unsigned char *) mutt_read_line ((char *) *buf, blen, f, &l, MUTT_EOL)) == NULL)
+
+    if ((*buf = (unsigned char *) mutt_read_line ((char *) *buf, blen, f,
+                                                  NULL, MUTT_EOL)) == NULL) 
     {
-      fmt[0] = 0;
+      *fmt = NULL;
       return (-1);
     }
+
     *last_pos = ftello (f);
     b_read = (int) (*last_pos - offset);
     *buf_ready = 1;
 
-    safe_realloc (fmt, *blen);
-
-    /* copy "buf" to "fmt", but without bold and underline controls */
-    p = *buf;
-    q = *fmt;
-    while (*p)
-    {
-      if (*p == '\010' && (p > *buf) && (q > *fmt))
-      {
-	if (*(p+1) == '_')	/* underline */
-	  p += 2;
-	else if (*(p+1) && q > *fmt)	/* bold or overstrike */
-	{
-	  *(q-1) = *(p+1);
-	  p += 2;
-	}
-	else			/* ^H */
-	  *q++ = *p++;
-      }
-      else if (*p == '\033' && *(p+1) == '[' && is_ansi (p + 2))
-      {
-	while (*p++ != 'm')	/* skip ANSI sequence */
-	  ;
-      }
-      else if (*p == '\033' && *(p+1) == ']' &&
-               ((check_attachment_marker ((char *) p) == 0) ||
-                (check_protected_header_marker ((char *) p) == 0)))
-      {
-	dprint (2, (debugfile, "fill_buffer: Seen attachment marker.\n"));
-	while (*p++ != '\a')	/* skip pseudo-ANSI sequence */
-	  ;
-      }
-      else
-	*q++ = *p++;
-    }
-    *q = 0;
+    mutt_buffer_init (&stripped);
+    mutt_buffer_increase_size (&stripped, *blen);
+    mutt_buffer_strip_formatting (&stripped, (const char *) *buf, 1);
+    /* This should be a noop, because *fmt should be NULL */
+    FREE (fmt);   /* __FREE_CHECKED__ */
+    *fmt = (unsigned char *) stripped.data;
   }
+
   return b_read;
 }
 
@@ -1145,7 +1161,7 @@ static int format_line (struct line_t **lineInfo, int n, unsigned char *buf,
   {
     /* Handle ANSI sequences */
     while (cnt-ch >= 2 && buf[ch] == '\033' && buf[ch+1] == '[' &&
-	   is_ansi (buf+ch+2))
+	   is_ansi ((char *) buf+ch+2))
       ch = grok_ansi (buf, ch+2, pa) + 1;
 
     while (cnt-ch >= 2 && buf[ch] == '\033' && buf[ch+1] == ']' &&
@@ -1518,8 +1534,12 @@ display_line (FILE *f, LOFF_T *last_pos, struct line_t **lineInfo, int n,
 #endif
 
   /* end the last color pattern (needed by S-Lang) */
-  if (special || (col != pager_window->cols && (flags & (MUTT_SHOWCOLOR | MUTT_SEARCH))))
+  if (special ||
+      a.attr ||
+      (col != pager_window->cols && (flags & (MUTT_SHOWCOLOR | MUTT_SEARCH))))
+  {
     resolve_color (*lineInfo, n, vch, flags, 0, &a);
+  }
 
   /*
    * Fill the blank space at the end of the line with the prevailing color.
@@ -1545,7 +1565,7 @@ display_line (FILE *f, LOFF_T *last_pos, struct line_t **lineInfo, int n,
    * clrtoeol, otherwise the color for this line will not be
    * filled to the right margin.
    */
-  if (flags & MUTT_SHOWCOLOR)
+  if (special || a.attr || flags & MUTT_SHOWCOLOR)
     NORMAL_COLOR;
 
   /* build a return code */

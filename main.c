@@ -589,10 +589,8 @@ static void start_curses (void)
     puts _("Error initializing terminal.");
     exit (1);
   }
-#if 1 /* USE_SLANG_CURSES  - commenting out suggested in #455. */
   /* slang requires the signal handlers to be set after initializing */
   mutt_signal_init ();
-#endif
   ci_start_color ();
   keypad (stdscr, TRUE);
   cbreak ();
@@ -1246,7 +1244,7 @@ int main (int argc, char **argv, char **environ)
           mutt_env_to_intl (msg->env, NULL, NULL);
         }
 
-        mutt_write_rfc822_header (fout, msg->env, msg->content,
+        mutt_write_rfc822_header (fout, msg->env, msg->content, NULL,
                                   MUTT_WRITE_HEADER_POSTPONE, 0,
                                   option (OPTCRYPTPROTHDRSREAD) &&
                                   mutt_should_hide_protected_subject (msg));
@@ -1370,6 +1368,7 @@ cleanup_and_exit:
   mutt_browser_cleanup ();
   mutt_commands_cleanup ();
   crypt_cleanup ();
+  mutt_signal_cleanup ();
   mutt_free_opts ();
   mutt_free_windows ();
   mutt_buffer_pool_free ();

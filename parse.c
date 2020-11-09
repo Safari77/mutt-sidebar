@@ -104,13 +104,13 @@ char *mutt_read_rfc822_line (FILE *f, char *line, size_t *linelen)
   /* not reached */
 }
 
-static LIST *mutt_parse_references (char *s, int in_reply_to)
+LIST *mutt_parse_references (char *s, int allow_nb)
 {
   LIST *t, *lst = NULL;
   char *m;
   const char *sp;
 
-  m = mutt_extract_message_id (s, &sp);
+  m = mutt_extract_message_id (s, &sp, allow_nb);
   while (m)
   {
     t = safe_malloc (sizeof (LIST));
@@ -118,7 +118,7 @@ static LIST *mutt_parse_references (char *s, int in_reply_to)
     t->next = lst;
     lst = t;
 
-    m = mutt_extract_message_id (NULL, &sp);
+    m = mutt_extract_message_id (NULL, &sp, allow_nb);
   }
 
   return lst;
@@ -1050,62 +1050,81 @@ time_t mutt_parse_date (const char *s, HEADER *h)
 
 /* extract the first substring that looks like a message-id.
  * call back with NULL for more (like strtok).
+ *
+ * allow_nb ("allow nonbracketed"), if set, extracts tokens without
+ * angle brackets.  This is a fallback to try and get something from
+ * illegal message-id headers.  The token returned will be surrounded
+ * by angle brackets.
  */
-char *mutt_extract_message_id (const char *s, const char **saveptr)
+char *mutt_extract_message_id (const char *s, const char **saveptr, int allow_nb)
 {
-  const char *o, *onull, *p;
-  char *ret = NULL;
+  BUFFER *message_id = NULL;
+  char *retval;
+  int in_brackets = 0;
+  size_t tmp;
 
-  if (s)
-    p = s;
-  else if (saveptr)
-    p = *saveptr;
-  else
+  if (!s && saveptr)
+    s = *saveptr;
+  if (!s || !*s)
     return NULL;
 
-  for (s = NULL, o = NULL, onull = NULL;
-       (p = strpbrk (p, "<> \t;")) != NULL; ++p)
+  message_id = mutt_buffer_pool_get ();
+
+  while (s && *s)
   {
-    if (*p == '<')
+    if (*s == '<')
     {
-      s = p;
-      o = onull = NULL;
+      in_brackets = 1;
+      mutt_buffer_clear (message_id);
+      mutt_buffer_addch (message_id, '<');
+    }
+    else if (*s == '>')
+    {
+      if (in_brackets)
+      {
+        mutt_buffer_addch (message_id, '>');
+        s++;
+        goto success;
+      }
+      mutt_buffer_clear (message_id);
+    }
+    else if (*s == '(')
+    {
+      tmp = 0;
+      s = rfc822_parse_comment (s + 1, NULL, &tmp, 0);
       continue;
     }
-
-    if (!s)
-      continue;
-
-    if (*p == '>')
+    else if (*s == ' ' || *s == '\t')
     {
-      size_t olen = onull - o, slen = p - s + 1;
-      ret = safe_malloc (olen + slen + 1);
-      if (o)
-	memcpy (ret, o, olen);
-      memcpy (ret + olen, s, slen);
-      ret[olen + slen] = '\0';
-      if (saveptr)
-	*saveptr = p + 1; /* next call starts after '>' */
-      return ret;
+      if (!in_brackets && allow_nb && mutt_buffer_len (message_id))
+        break;
     }
-
-    /* some idiotic clients break their message-ids between lines */
-    if (s == p)
-      /* step past another whitespace */
-      s = p + 1;
-    else if (o)
-      /* more than two lines, give up */
-      s = o = onull = NULL;
     else
     {
-      /* remember the first line, start looking for the second */
-      o = s;
-      onull = p;
-      s = p + 1;
+      if (in_brackets || allow_nb)
+      {
+        if (allow_nb && !mutt_buffer_len (message_id))
+          mutt_buffer_addch (message_id, '<');
+        mutt_buffer_addch (message_id, *s);
+      }
     }
+
+    s++;
   }
 
-  return NULL;
+  if (!in_brackets && allow_nb && mutt_buffer_len (message_id))
+    mutt_buffer_addch (message_id, '>');
+  else
+    mutt_buffer_clear (message_id);
+
+success:
+  if (saveptr)
+    *saveptr = s;
+
+  retval = safe_strdup (mutt_b2s (message_id));
+  mutt_buffer_pool_release (&message_id);
+
+  return retval;
 }
 
 void mutt_parse_mime_message (CONTEXT *ctx, HEADER *cur)
@@ -1291,7 +1310,7 @@ int mutt_parse_rfc822_line (ENVELOPE *e, HEADER *hdr, char *line, char *p, short
       if (!ascii_strcasecmp (line+1, "n-reply-to"))
       {
         mutt_free_list (&e->in_reply_to);
-        e->in_reply_to = mutt_parse_references (p, 1);
+        e->in_reply_to = mutt_parse_references (p, 0);
         matched = 1;
       }
       break;
@@ -1351,7 +1370,9 @@ int mutt_parse_rfc822_line (ENVELOPE *e, HEADER *hdr, char *line, char *p, short
       {
         /* We add a new "Message-ID:" when building a message */
         FREE (&e->message_id);
-        e->message_id = mutt_extract_message_id (p, NULL);
+        e->message_id = mutt_extract_message_id (p, NULL, 0);
+        if (!e->message_id)
+          e->message_id = mutt_extract_message_id (p, NULL, 1);
         matched = 1;
       }
       else if (!ascii_strncasecmp (line + 1, "ail-", 4))

@@ -31,6 +31,7 @@
 #include "mapping.h"
 #include "mx.h"
 #include "mutt_crypt.h"
+#include "rfc3676.h"
 
 #include <ctype.h>
 #include <stdlib.h>
@@ -419,6 +420,60 @@ static void prepend_curdir (BUFFER *dst)
   mutt_buffer_pool_release (&tmp);
 }
 
+/* This is a proxy between the mutt_save_attachment_list() calls and
+ * mutt_save_attachment().  It (currently) exists solely to unstuff
+ * format=flowed text attachments.
+ *
+ * Direct modification of mutt_save_attachment() wasn't easily possible
+ * because:
+ * 1) other callers of mutt_save_attachment() should not have unstuffing
+ *    performed, such as replying/forwarding attachments.
+ * 2) the attachment saving can append to a file, making the
+ *    unstuffing inside difficult with current functions.
+ * 3) we can't unstuff before-hand because decoding hasn't occurred.
+ *
+ * So, I apologize for this horrific proxy, but it was the most
+ * straightforward method.
+ */
+static int save_attachment_flowed_helper (FILE *fp, BODY *m, const char *path,
+                                          int flags, HEADER *hdr)
+{
+  int rc = -1;
+
+  if (mutt_rfc3676_is_format_flowed (m))
+  {
+    BUFFER *tempfile;
+    BODY fakebody;
+
+    tempfile = mutt_buffer_pool_get ();
+    mutt_buffer_mktemp (tempfile);
+
+    /* Pass flags=0 to force safe_fopen("w") */
+    rc = mutt_save_attachment (fp, m, mutt_b2s (tempfile), 0, hdr);
+    if (rc)
+      goto cleanup;
+
+    mutt_rfc3676_space_unstuff_attachment (m, mutt_b2s (tempfile));
+
+    /* Now "really" save it.  Send mode does this without touching anything,
+     * so force send-mode. */
+    memset (&fakebody, 0, sizeof (BODY));
+    fakebody.filename = tempfile->data;
+    rc = mutt_save_attachment (NULL, &fakebody, path, flags, hdr);
+
+    mutt_unlink (mutt_b2s (tempfile));
+
+  cleanup:
+    mutt_buffer_pool_release (&tempfile);
+  }
+  else
+  {
+    rc = mutt_save_attachment (fp, m, path, flags, hdr);
+  }
+
+  return rc;
+}
+
 static int mutt_query_save_attachment (FILE *fp, BODY *body, HEADER *hdr, char **directory)
 {
   char *prompt;
@@ -491,8 +546,8 @@ static int mutt_query_save_attachment (FILE *fp, BODY *body, HEADER *hdr, char *
     }
 
     mutt_message _("Saving...");
-    if (mutt_save_attachment (fp, body, mutt_b2s (tfile), append,
-                              (hdr || !is_message) ? hdr : body->hdr) == 0)
+    if (save_attachment_flowed_helper (fp, body, mutt_b2s (tfile), append,
+                                       (hdr || !is_message) ? hdr : body->hdr) == 0)
     {
       mutt_message _("Attachment saved.");
       rc = 0;
@@ -513,14 +568,56 @@ cleanup:
 
 void mutt_save_attachment_list (ATTACH_CONTEXT *actx, FILE *fp, int tag, BODY *top, HEADER *hdr, MUTTMENU *menu)
 {
-  BUFFER *buf = NULL, *tfile = NULL;
+  BUFFER *buf = NULL, *tfile = NULL, *orig_cwd = NULL;
   char *directory = NULL;
-  int i, rc = 1;
+  int i, rc = 1, restore_cwd = 0;
   int last = menu ? menu->current : -1;
   FILE *fpout;
 
   buf = mutt_buffer_pool_get ();
   tfile = mutt_buffer_pool_get ();
+
+  if (AttachSaveDir)
+  {
+    orig_cwd = mutt_buffer_pool_get ();
+    mutt_getcwd (orig_cwd);
+
+    if (chdir (AttachSaveDir) == 0)
+      restore_cwd = 1;
+    else
+    {
+      struct stat sb;
+      char msg[STRING];
+
+      if (stat (AttachSaveDir, &sb) == -1 && errno == ENOENT)
+      {
+        snprintf (msg, sizeof (msg), _("%s does not exist. Create it?"),
+                  AttachSaveDir);
+        if (mutt_yesorno (msg, MUTT_YES) == MUTT_YES)
+        {
+          if (mutt_mkdir (AttachSaveDir, 0700) != 0)
+          {
+            mutt_error ( _("Can't create %s: %s."), AttachSaveDir, strerror (errno));
+            mutt_sleep (1);
+          }
+          else if (chdir (AttachSaveDir) == 0)
+            restore_cwd = 1;
+        }
+      }
+    }
+
+    if (!restore_cwd)
+    {
+      /* L10N:
+         Printed if the value of $attach_save_dir can not be chdir'ed to
+         before saving.  This could be a permission issue, or if the value
+         doesn't point to a directory, or the value didn't exist but
+         couldn't be created.
+      */
+      mutt_error (_("Unable to save attachments to %s.  Using cwd"), AttachSaveDir);
+      mutt_sleep (1);
+    }
+  }
 
   for (i = 0; !tag || i < actx->idxlen; i++)
   {
@@ -548,7 +645,7 @@ void mutt_save_attachment_list (ATTACH_CONTEXT *actx, FILE *fp, int tag, BODY *t
 	  if (mutt_check_overwrite (top->filename, mutt_b2s (buf), tfile,
 				    &append, NULL))
 	    goto cleanup;
-	  rc = mutt_save_attachment (fp, top, mutt_b2s (tfile), append, hdr);
+	  rc = save_attachment_flowed_helper (fp, top, mutt_b2s (tfile), append, hdr);
 	  if (rc == 0 &&
               AttachSep &&
               (fpout = fopen (mutt_b2s (tfile), "a")) != NULL)
@@ -559,7 +656,8 @@ void mutt_save_attachment_list (ATTACH_CONTEXT *actx, FILE *fp, int tag, BODY *t
 	}
 	else
 	{
-	  rc = mutt_save_attachment (fp, top, mutt_b2s (tfile), MUTT_SAVE_APPEND, hdr);
+	  rc = save_attachment_flowed_helper (fp, top, mutt_b2s (tfile),
+                                              MUTT_SAVE_APPEND, hdr);
 	  if (rc == 0 &&
               AttachSep &&
               (fpout = fopen (mutt_b2s (tfile), "a")) != NULL)
@@ -602,8 +700,14 @@ void mutt_save_attachment_list (ATTACH_CONTEXT *actx, FILE *fp, int tag, BODY *t
     mutt_message _("Attachment saved.");
 
 cleanup:
+  /* if restore_cwd is set, the orig_cwd buffer is non-null.  However,
+   * the getcwd() could have failed, so check it has a value. */
+  if (restore_cwd && mutt_buffer_len (orig_cwd))
+    chdir (mutt_b2s (orig_cwd));
+
   mutt_buffer_pool_release (&buf);
   mutt_buffer_pool_release (&tfile);
+  mutt_buffer_pool_release (&orig_cwd);
 }
 
 static void
@@ -650,27 +754,85 @@ cleanup:
 
 static void pipe_attachment (FILE *fp, BODY *b, STATE *state)
 {
-  FILE *ifp;
+  FILE *unstuff_fp = NULL, *ifp = NULL;
+  int is_flowed = 0, unlink_unstuff = 0;
+  BUFFER *unstuff_tempfile = NULL;
+
+  if (mutt_rfc3676_is_format_flowed (b))
+  {
+    is_flowed = 1;
+    unstuff_tempfile = mutt_buffer_pool_get ();
+    mutt_buffer_mktemp (unstuff_tempfile);
+  }
 
   if (fp)
   {
     state->fpin = fp;
-    mutt_decode_attachment (b, state);
-    if (AttachSep)
-      state_puts (AttachSep, state);
+
+    if (is_flowed)
+    {
+      FILE *filter_fp;
+
+      unstuff_fp = safe_fopen (mutt_b2s (unstuff_tempfile), "w");
+      if (unstuff_fp == NULL)
+      {
+        mutt_perror ("safe_fopen");
+        goto bail;
+      }
+      unlink_unstuff = 1;
+
+      filter_fp = state->fpout;
+      state->fpout = unstuff_fp;
+      mutt_decode_attachment (b, state);
+      safe_fclose (&unstuff_fp);
+      state->fpout = filter_fp;
+
+      unstuff_fp = safe_fopen (mutt_b2s (unstuff_tempfile), "r");
+      if (unstuff_fp == NULL)
+      {
+        mutt_perror ("safe_fopen");
+        goto bail;
+      }
+      mutt_copy_stream (unstuff_fp, filter_fp);
+      safe_fclose (&unstuff_fp);
+    }
+    else
+      mutt_decode_attachment (b, state);
   }
   else
   {
-    if ((ifp = fopen (b->filename, "r")) == NULL)
+    const char *infile;
+
+    if (is_flowed)
+    {
+      if (mutt_save_attachment (fp, b, mutt_b2s (unstuff_tempfile), 0, NULL) == -1)
+        goto bail;
+      unlink_unstuff = 1;
+      mutt_rfc3676_space_unstuff_attachment (b, mutt_b2s (unstuff_tempfile));
+      infile = mutt_b2s (unstuff_tempfile);
+    }
+    else
+      infile = b->filename;
+
+    if ((ifp = fopen (infile, "r")) == NULL)
     {
       mutt_perror ("fopen");
-      return;
+      goto bail;
     }
     mutt_copy_stream (ifp, state->fpout);
     safe_fclose (&ifp);
-    if (AttachSep)
-      state_puts (AttachSep, state);
   }
+
+  if (AttachSep)
+    state_puts (AttachSep, state);
+
+bail:
+  safe_fclose (&unstuff_fp);
+  safe_fclose (&ifp);
+
+  if (unlink_unstuff)
+    mutt_unlink (mutt_b2s (unstuff_tempfile));
+  mutt_buffer_pool_release (&unstuff_tempfile);
 }
 
 static void
@@ -720,7 +882,8 @@ void mutt_pipe_attachment_list (ATTACH_CONTEXT *actx, FILE *fp, int tag, BODY *t
   if (!mutt_buffer_len (buf))
     goto cleanup;
 
-  mutt_buffer_expand_path (buf);
+  /* norel because buf is a command */
+  mutt_buffer_expand_path_norel (buf);
 
   if (!filter && !option (OPTATTACHSPLIT))
   {

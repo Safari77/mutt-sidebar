@@ -139,6 +139,8 @@ if test x$with_sqlite3 != xno; then
 
   AC_CHECK_LIB(sqlite3, sqlite3_open, [],
     AC_MSG_ERROR([Unable to find sqlite3 library]))
+  AC_CHECK_FUNC(sqlite3_prepare_v3, [],
+    AC_MSG_ERROR([sqlite3 version 3.20 or greater is required]))
 
   LIBS="$saved_LIBS"
   MUTTLIBS="$MUTTLIBS -lsqlite3"
@@ -813,7 +815,7 @@ AC_ARG_WITH(ssl, AS_HELP_STRING([--with-ssl@<:@=PFX@:>@],[Enable TLS support usi
               AC_MSG_ERROR([Unable to find SSL library]), [$crypto_libs])
 
             LIBS="$LIBS $crypto_libs"
-            AC_CHECK_FUNCS(RAND_status RAND_egd)
+            AC_CHECK_FUNCS(RAND_egd)
             AC_CHECK_DECLS([SSL_set_mode, SSL_MODE_AUTO_RETRY],,
               AC_MSG_ERROR([Unable to find decent SSL header]), [[#include <openssl/ssl.h>]])
 
