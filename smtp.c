@@ -489,7 +489,7 @@ static int smtp_open (CONNECTION* conn)
   }
 #endif
 
-  if (conn->account.flags & MUTT_ACCT_USER)
+  if (!SslClientCert && (conn->account.flags & MUTT_ACCT_USER))
   {
     if (!mutt_bit_isset (Capabilities, AUTH))
     {
