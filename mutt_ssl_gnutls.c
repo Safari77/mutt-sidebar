@@ -244,55 +244,6 @@ int mutt_ssl_starttls (CONNECTION* conn)
   return 0;
 }
 
-/* Note: this function grabs the CN out of the client
- * cert but appears to do nothing with it.  It does contain a call
- * to mutt_account_getuser().
- */
-static void tls_get_client_cert (CONNECTION* conn)
-{
-  tlssockdata *data = conn->sockdata;
-  const gnutls_datum_t* crtdata;
-  gnutls_x509_crt_t clientcrt;
-  char* cn = NULL;
-  size_t cnlen = 0;
-  int rc;
-
-  /* get our cert CN if we have one */
-  if (!(crtdata = gnutls_certificate_get_ours (data->state)))
-    return;
-
-  if (gnutls_x509_crt_init (&clientcrt) < 0)
-  {
-    dprint (1, (debugfile, "Failed to init gnutls crt\n"));
-    return;
-  }
-  if (gnutls_x509_crt_import (clientcrt, crtdata, GNUTLS_X509_FMT_DER) < 0)
-  {
-    dprint (1, (debugfile, "Failed to import gnutls client crt\n"));
-    goto err;
-  }
-
-  /* get length of CN, then grab it. */
-  rc = gnutls_x509_crt_get_dn_by_oid (clientcrt, GNUTLS_OID_X520_COMMON_NAME,
-                                      0, 0, NULL, &cnlen);
-  if (((rc >= 0) || (rc == GNUTLS_E_SHORT_MEMORY_BUFFER)) &&
-      cnlen > 0)
-  {
-    cn = safe_calloc (1, cnlen);
-    if (gnutls_x509_crt_get_dn_by_oid (clientcrt, GNUTLS_OID_X520_COMMON_NAME,
-                                       0, 0, cn, &cnlen) < 0)
-      goto err;
-    dprint (2, (debugfile, "client certificate CN: %s\n", cn));
-
-    /* if we are using a client cert, SASL may expect an external auth name */
-    mutt_account_getuser (&conn->account);
-  }
-
-err:
-  FREE (&cn);
-  gnutls_x509_crt_deinit (clientcrt);
-}
-
 #if HAVE_GNUTLS_PRIORITY_SET_DIRECT
 static int tls_set_priority (tlssockdata *data)
 {
@@ -493,8 +444,6 @@ static int tls_negotiate (CONNECTION * conn)
   /* set Security Strength Factor (SSF) for SASL */
   /* NB: gnutls_cipher_get_key_size() returns key length in bytes */
   conn->ssf = gnutls_cipher_get_key_size (gnutls_cipher_get (data->state)) * 8;
-
-  tls_get_client_cert (conn);
 
   if (!option (OPTNOCURSES))
   {

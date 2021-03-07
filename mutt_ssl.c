@@ -1409,22 +1409,23 @@ static void ssl_get_client_cert(sslsockdata *ssldata, CONNECTION *conn)
     SSL_CTX_use_PrivateKey_file(ssldata->ctx, SslClientCert, SSL_FILETYPE_PEM);
 
     /* if we are using a client cert, SASL may expect an external auth name */
-    mutt_account_getuser (&conn->account);
+    /* mutt_account_getuser (&conn->account); */
   }
 }
 
 static int ssl_passwd_cb(char *buf, int size, int rwflag, void *userdata)
 {
-  ACCOUNT *account = (ACCOUNT*)userdata;
+  ACCOUNT *account;
+  char prompt[SHORT_STRING];
 
-  if (mutt_account_getuser (account))
+  if (!buf || size <= 0 || !userdata)
     return 0;
 
-  dprint (2, (debugfile, "ssl_passwd_cb: getting password for %s@%s:%u\n",
-	      account->user, account->host, account->port));
+  account = (ACCOUNT *) userdata;
 
-  if (mutt_account_getpass (account))
-    return 0;
-
-  return snprintf(buf, size, "%s", account->pass);
+  snprintf (prompt, sizeof (prompt), _("Password for %s client cert: "),
+            account->host);
+  buf[0] = '\0';
+  mutt_get_password (prompt, buf, size);
+  return strlen (buf);
 }
