@@ -164,6 +164,7 @@ WHERE char *SslCiphers;
 WHERE short SslDHPrimeBits;
 WHERE char *SslCACertFile;
 #endif
+WHERE char *SslVerifyHostOverride;
 #endif
 WHERE mbchar_table *StChars;
 WHERE char *Status;

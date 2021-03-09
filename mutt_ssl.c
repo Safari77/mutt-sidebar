@@ -579,7 +579,10 @@ static int ssl_socket_open (CONNECTION * conn)
 static int ssl_negotiate (CONNECTION *conn, sslsockdata* ssldata)
 {
   int err;
-  const char* errmsg;
+  const char *errmsg;
+  char *hostname;
+
+  hostname = SslVerifyHostOverride ? SslVerifyHostOverride : conn->account.host;
 
   if ((HostExDataIndex = SSL_get_ex_new_index (0, "host", NULL, NULL, NULL)) == -1)
   {
@@ -587,7 +590,7 @@ static int ssl_negotiate (CONNECTION *conn, sslsockdata* ssldata)
     return -1;
   }
 
-  if (! SSL_set_ex_data (ssldata->ssl, HostExDataIndex, conn->account.host))
+  if (! SSL_set_ex_data (ssldata->ssl, HostExDataIndex, hostname))
   {
     dprint (1, (debugfile, "failed to save hostname in SSL structure\n"));
     return -1;
@@ -608,7 +611,7 @@ static int ssl_negotiate (CONNECTION *conn, sslsockdata* ssldata)
   SSL_set_verify (ssldata->ssl, SSL_VERIFY_PEER, ssl_verify_callback);
   SSL_set_mode (ssldata->ssl, SSL_MODE_AUTO_RETRY);
 
-  if (!SSL_set_tlsext_host_name (ssldata->ssl, conn->account.host))
+  if (!SSL_set_tlsext_host_name (ssldata->ssl, hostname))
   {
     /* L10N: This is a warning when trying to set the host name for
      * TLS Server Name Indication (SNI).  This allows the server to present
@@ -618,18 +621,6 @@ static int ssl_negotiate (CONNECTION *conn, sslsockdata* ssldata)
   }
 
   ERR_clear_error ();
-
-#if OPENSSL_VERSION_NUMBER >= 0x0090806fL && !defined(OPENSSL_NO_TLSEXT)
-  /* TLS Virtual-hosting requires that the server present the correct
-   * certificate; to do this, the ServerNameIndication TLS extension is used.
-   * If TLS is negotiated, and OpenSSL is recent enough that it might have
-   * support, and support was enabled when OpenSSL was built, mutt supports
-   * sending the hostname we think we're connecting to, so a server can send
-   * back the correct certificate.
-   * This has been tested over SMTP against Exim 4.80.
-   * Not yet found an IMAP server which supports this. */
-  SSL_set_tlsext_host_name (ssldata->ssl, conn->account.host);
-#endif
 
   if ((err = SSL_connect (ssldata->ssl)) != 1)
   {
@@ -1408,24 +1399,45 @@ static void ssl_get_client_cert(sslsockdata *ssldata, CONNECTION *conn)
     SSL_CTX_use_certificate_file(ssldata->ctx, SslClientCert, SSL_FILETYPE_PEM);
     SSL_CTX_use_PrivateKey_file(ssldata->ctx, SslClientCert, SSL_FILETYPE_PEM);
 
+#if 0
+    /* This interferes with SMTP client-cert authentication that doesn't
+     * use AUTH EXTERNAL. (see gitlab #336)
+     *
+     * The mutt_sasl.c code sets up callbacks to get the login or
+     * user, and it looks like the Cyrus SASL external code calls
+     * those.
+     *
+     * Brendan doesn't recall if this really was necessary at one time, so
+     * I'm disabling it.
+     */
+
     /* if we are using a client cert, SASL may expect an external auth name */
-    /* mutt_account_getuser (&conn->account); */
+    mutt_account_getuser (&conn->account);
+#endif
   }
+}
+
+static void client_cert_prompt (char *prompt, size_t prompt_size, ACCOUNT *account)
+{
+  /* L10N:
+     When using a $ssl_client_cert, OpenSSL may prompt for the password
+     to decrypt the cert.  %s is the hostname.
+  */
+  snprintf (prompt, prompt_size, _("Password for %s client cert: "),
+            account->host);
 }
 
 static int ssl_passwd_cb(char *buf, int size, int rwflag, void *userdata)
 {
   ACCOUNT *account;
-  char prompt[SHORT_STRING];
 
   if (!buf || size <= 0 || !userdata)
     return 0;
 
   account = (ACCOUNT *) userdata;
 
-  snprintf (prompt, sizeof (prompt), _("Password for %s client cert: "),
-            account->host);
-  buf[0] = '\0';
-  mutt_get_password (prompt, buf, size);
-  return strlen (buf);
+  if (_mutt_account_getpass (account, client_cert_prompt))
+    return 0;
+
+  return snprintf(buf, size, "%s", account->pass);
 }

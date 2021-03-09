@@ -490,11 +490,7 @@ static int smtp_open (CONNECTION* conn)
 #endif
 
   if (mutt_bit_isset (Capabilities, AUTH))
-  {
-    if (mutt_account_getuser (&conn->account))
-      return -1;
     return smtp_auth (conn);
-  }
 
   return 0;
 }
