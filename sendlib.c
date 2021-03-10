@@ -514,7 +514,7 @@ void mutt_generate_boundary (PARAMETER **parm)
 {
   char rs[MUTT_RANDTAG_LEN + 1];
 
-  mutt_rand_base32(rs, sizeof(rs) - 1);
+  mutt_randbuf_base32(rs, sizeof(rs) - 1);
   rs[MUTT_RANDTAG_LEN] = 0;
   mutt_set_parameter ("boundary", rs, parm);
 }
@@ -2417,7 +2417,7 @@ char *mutt_gen_msgid (void)
   struct tm *tm;
   unsigned char rndid[MUTT_RANDTAG_LEN + 1];
 
-  mutt_rand_base32(rndid, sizeof(rndid) - 1);
+  mutt_randbuf_base32(rndid, sizeof(rndid) - 1);
   rndid[MUTT_RANDTAG_LEN] = 0;
   tm = gmtime (&now);
 

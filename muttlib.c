@@ -1066,7 +1066,7 @@ void mutt_randbuf(void *out, size_t len)
 
 static const unsigned char base32[] = "abcdefghijklmnopqrstuvwxyz234567";
 
-void mutt_rand_base32(void *out, size_t len)
+void mutt_randbuf_base32(void *out, size_t len)
 {
   size_t pos;
   uint8_t *p = out;

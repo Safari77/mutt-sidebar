@@ -409,7 +409,7 @@ void mutt_sleep (short);
 int mutt_save_confirm (const char  *, struct stat *);
 void mutt_randbuf(void *out, size_t len);
 #define MUTT_RANDTAG_LEN (16)
-void mutt_rand_base32(void *out, size_t len);
+void mutt_randbuf_base32(void *out, size_t len);
 uint32_t mutt_rand32(void);
 uint64_t mutt_rand64(void);
 
