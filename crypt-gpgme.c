@@ -1613,7 +1613,8 @@ static void show_one_sig_validity (gpgme_ctx_t ctx, int idx, STATE *s)
 	break;
       case GPGME_VALIDITY_FULL:
       case GPGME_VALIDITY_ULTIMATE:
-	txt = NULL;
+	//txt = NULL;
+	txt = _("Trusted key\n");
 	break;
       }
   if (txt)
@@ -1670,11 +1671,6 @@ static void print_smime_keyinfo (const char* msg, gpgme_signature_t sig,
      "Jan 1 1970" is not the created date. */
   if (sig->timestamp)
   {
-    msgwid = mutt_strwidth (msg) - mutt_strwidth (_("created: ")) + 1;
-    if (msgwid < 0)
-      msgwid = 0;
-    for (i = 0; i < msgwid; i++)
-      state_puts(" ", s);
     state_puts (_("created: "), s);
     print_time (sig->timestamp, s);
     state_puts ("\n", s);
@@ -1759,6 +1755,7 @@ static int show_one_sig_status (gpgme_ctx_t ctx, int idx, STATE *s)
 	if (show_sig_summary (sum, ctx, key, idx, s, sig))
 	  anywarn = 1;
 	show_one_sig_validity (ctx, idx, s);
+	show_fingerprint (key,s);
       }
       else if ((sum & GPGME_SIGSUM_RED))
       {
