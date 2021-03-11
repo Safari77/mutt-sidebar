@@ -19,6 +19,8 @@
 #ifndef _COPY_H_
 #define _COPY_H_
 
+#include "mutt.h"
+
 /* flags to _mutt_copy_message */
 #define MUTT_CM_NOHEADER        1       /* don't copy the message header */
 #define MUTT_CM_PREFIX          (1<<1)  /* quote the message */
