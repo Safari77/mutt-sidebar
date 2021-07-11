@@ -1,4 +1,5 @@
 Added hostname_mid settting.
+message_id_format feature (from upstream) has been deleted.
 
 1.13: please configure
   set ssl_ca_certificates_file="/etc/ssl/certs/ca-bundle.crt"
