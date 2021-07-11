@@ -558,6 +558,7 @@ restore_envelope(ENVELOPE * e, const unsigned char *d, int *off, int convert)
   restore_address(&e->mail_followup_to, d, off, convert);
 
   restore_char(&e->list_post, d, off, convert);
+
   if (option (OPTAUTOSUBSCRIBE))
     mutt_auto_subscribe (e->list_post);
 
@@ -716,7 +717,8 @@ mutt_hcache_dump(header_cache_t *h, HEADER * header, int *off,
   nh.limited = 0;
   nh.num_hidden = 0;
   nh.recipient = 0;
-  nh.pair = 0;
+  nh.color.pair = 0;
+  nh.color.attrs = 0;
   nh.attach_valid = 0;
   nh.path = NULL;
   nh.tree = NULL;

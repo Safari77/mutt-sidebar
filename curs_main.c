@@ -269,15 +269,15 @@ void index_make_entry (char *s, size_t l, MUTTMENU *menu, int num)
   _mutt_make_string (s, l, NONULL (HdrFmt), Context, h, flag);
 }
 
-int index_color (int index_no)
+COLOR_ATTR index_color (int index_no)
 {
   HEADER *h = Context->hdrs[Context->v2r[index_no]];
 
-  if (h && h->pair)
-    return h->pair;
+  if (h && (h->color.pair || h->color.attrs))
+    return h->color;
 
   mutt_set_header_color (Context, h);
-  return h->pair;
+  return h->color;
 }
 
 static int ci_next_undeleted (int msgno)
@@ -931,7 +931,7 @@ int mutt_index_menu (void)
 	  break;
         }
 
-	if (mutt_atoi (buf, &i) < 0)
+	if (mutt_atoi (buf, &i, 0) < 0)
 	{
 	  mutt_error _("Argument must be a message number.");
 	  break;
@@ -1702,34 +1702,47 @@ int mutt_index_menu (void)
       case OP_SAVE:
       case OP_DECODE_COPY:
       case OP_DECODE_SAVE:
+      {
+        int rc;
+
 	CHECK_MSGCOUNT;
         CHECK_VISIBLE;
-        if (mutt_save_message (tag ? NULL : CURHDR,
-			       (op == OP_DECRYPT_SAVE) ||
-			       (op == OP_SAVE) || (op == OP_DECODE_SAVE),
-			       (op == OP_DECODE_SAVE) || (op == OP_DECODE_COPY),
-			       (op == OP_DECRYPT_SAVE) || (op == OP_DECRYPT_COPY) ||
-			       0) == 0 &&
-            (op == OP_SAVE || op == OP_DECODE_SAVE || op == OP_DECRYPT_SAVE)
-          )
-	{
-          menu->redraw |= REDRAW_STATUS;
+        rc = mutt_save_message (tag ? NULL : CURHDR,
+                                (op == OP_DECRYPT_SAVE) ||
+                                (op == OP_SAVE) || (op == OP_DECODE_SAVE),
+                                (op == OP_DECODE_SAVE) || (op == OP_DECODE_COPY),
+                                (op == OP_DECRYPT_SAVE) || (op == OP_DECRYPT_COPY) ||
+                                0);
+        /* These update status and delete flags, so require a redraw. */
+        if (op == OP_SAVE || op == OP_DECODE_SAVE || op == OP_DECRYPT_SAVE)
+        {
+          /* tagged operation could abort in the middle.  need to make sure
+           * affected messages are still redrawn */
 	  if (tag)
+          {
+            menu->redraw |= REDRAW_STATUS;
 	    menu->redraw |= REDRAW_INDEX;
-	  else if (option (OPTRESOLVE))
-	  {
-	    if ((menu->current = ci_next_undeleted (menu->current)) == -1)
-	    {
-	      menu->current = menu->oldcurrent;
-	      menu->redraw |= REDRAW_CURRENT;
-	    }
-	    else
-	      menu->redraw |= REDRAW_MOTION_RESYNCH;
-	  }
-	  else
-	    menu->redraw |= REDRAW_CURRENT;
-	}
-	break;
+          }
+
+          if (rc == 0 && !tag)
+          {
+            menu->redraw |= REDRAW_STATUS;
+            if (option (OPTRESOLVE))
+            {
+              if ((menu->current = ci_next_undeleted (menu->current)) == -1)
+              {
+                menu->current = menu->oldcurrent;
+                menu->redraw |= REDRAW_CURRENT;
+              }
+              else
+                menu->redraw |= REDRAW_MOTION_RESYNCH;
+            }
+            else
+              menu->redraw |= REDRAW_CURRENT;
+          }
+        }
+ 	break;
+      }
 
       case OP_MAIN_NEXT_NEW:
       case OP_MAIN_NEXT_UNREAD:
@@ -2283,7 +2296,8 @@ int mutt_index_menu (void)
       case OP_MAIL:
 
 	CHECK_ATTACH;
-        mutt_send_message (SENDBACKGROUNDEDIT, NULL, NULL, Context, NULL);
+        mutt_send_message (SENDBACKGROUNDEDIT | SENDCHECKPOSTPONED, NULL, NULL,
+                           Context, NULL);
 	menu->redraw = REDRAW_FULL;
 	break;
 
@@ -2475,6 +2489,12 @@ int mutt_index_menu (void)
 	break;
       }
 
+      case OP_LIST_ACTION:
+
+        mutt_list_menu (Context, CURHDR);
+        menu->redraw = REDRAW_FULL;
+        break;
+
       case OP_SHELL_ESCAPE:
 
 	mutt_shell_escape ();
@@ -2637,7 +2657,7 @@ int mutt_index_menu (void)
 
 void mutt_set_header_color (CONTEXT *ctx, HEADER *curhdr)
 {
-  COLOR_LINE *color;
+  COLOR_LINE *color_line;
   pattern_cache_t cache;
 
   if (!curhdr)
@@ -2645,12 +2665,12 @@ void mutt_set_header_color (CONTEXT *ctx, HEADER *curhdr)
 
   memset (&cache, 0, sizeof (cache));
 
-  for (color = ColorIndexList; color; color = color->next)
-    if (mutt_pattern_exec (color->color_pattern, MUTT_MATCH_FULL_ADDRESS, ctx, curhdr,
-                           &cache))
+  for (color_line = ColorIndexList; color_line; color_line = color_line->next)
+    if (mutt_pattern_exec (color_line->color_pattern, MUTT_MATCH_FULL_ADDRESS,
+                           ctx, curhdr, &cache))
     {
-      curhdr->pair = color->pair;
+      curhdr->color = color_line->color;
       return;
     }
-  curhdr->pair = ColorDefs[MT_COLOR_NORMAL];
+  curhdr->color = ColorDefs[MT_COLOR_NORMAL];
 }

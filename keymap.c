@@ -45,6 +45,7 @@ const struct mapping_t Menus[] = {
   { "browser",	MENU_FOLDER },
   { "compose",	MENU_COMPOSE },
   { "editor",	MENU_EDITOR },
+  { "list",	MENU_LIST },
   { "index",	MENU_MAIN },
   { "pager",	MENU_PAGER },
   { "postpone",	MENU_POST },
@@ -744,6 +745,7 @@ void km_init (void)
   create_bindings (OpAttach, MENU_ATTACH);
   create_bindings (OpBrowser, MENU_FOLDER);
   create_bindings (OpCompose, MENU_COMPOSE);
+  create_bindings (OpList, MENU_LIST);
   create_bindings (OpMain, MENU_MAIN);
   create_bindings (OpPager, MENU_PAGER);
   create_bindings (OpPost, MENU_POST);
@@ -934,6 +936,7 @@ static char *parse_keymap (int *menu, BUFFER *s, int maxmenus, int *nummenus, BU
   char *p, *q;
 
   mutt_buffer_init (&buf);
+  mutt_buffer_increase_size (&buf, STRING);
 
   /* menu name */
   mutt_extract_token (&buf, s, 0);
@@ -1015,6 +1018,8 @@ const struct binding_t *km_get_table (int menu)
       return OpEditor;
     case MENU_QUERY:
       return OpQuery;
+    case MENU_LIST:
+      return OpList;
 
     case MENU_PGP:
       return (WithCrypto & APPLICATION_PGP)? OpPgp:NULL;

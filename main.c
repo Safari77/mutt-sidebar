@@ -149,7 +149,8 @@ options:\n\
   -c <address>\tspecify a carbon-copy (CC) address\n\
   -D\t\tprint the value of all variables to stdout");
 #if DEBUG
-  puts _("  -d <level>\tlog debugging output to ~/.muttdebug0");
+  puts _("  -d <level>\tlog debugging output to ~/.muttdebug0\n\
+\t\t0 => no debugging; <0 => do not rotate .muttdebug files");
 #endif
   puts _(
 "  -E\t\tedit the draft (-H) or include (-i) file\n\
@@ -742,11 +743,7 @@ int main (int argc, char **argv, char **environ)
 
         case 'd':
 #ifdef DEBUG
-          if (mutt_atoi (optarg, &debuglevel) < 0 || debuglevel <= 0)
-          {
-            fprintf (stderr, _("Error: value '%s' is invalid for -d.\n"), optarg);
-            return 1;
-          }
+          mutt_atoi (optarg, &debuglevel, 0);
           printf (_("Debugging at level %d.\n"), debuglevel);
 #else
           printf ("%s", _("DEBUG was not defined during compilation.  Ignored.\n"));
@@ -960,8 +957,8 @@ int main (int argc, char **argv, char **environ)
       mutt_flushinp ();
     mutt_send_message (SENDPOSTPONED, NULL, NULL, NULL, NULL);
   }
-  else if (subject || msg || sendflags || draftFile || includeFile || attach ||
-	   optind < argc)
+  else if (subject || msg || (sendflags & SENDMAILX) || draftFile ||
+           includeFile || attach || optind < argc)
   {
     FILE *fin = NULL;
     FILE *fout = NULL;
@@ -1126,7 +1123,21 @@ int main (int argc, char **argv, char **environ)
         }
         context_hdr->content->length = st.st_size;
 
-        mutt_prepare_template (fin, NULL, msg, context_hdr, 0);
+        if (mutt_prepare_template (fin, NULL, msg, context_hdr, 0) < 0)
+        {
+          if (!option (OPTNOCURSES))
+          {
+            mutt_endwin (NULL);
+            set_option (OPTNOCURSES);
+          }
+          /* L10N:
+             Error when using -H command line argument, but reading the draft
+             file fails for some reason.
+          */
+          fputs (_("Cannot parse draft file\n"), stderr);
+          goto cleanup_and_exit;
+        }
+
 
         /* Scan for mutt header to set OPTRESUMEDRAFTFILES */
         for (last_uhp = &msg->env->userhdrs, uh = *last_uhp;
@@ -1268,6 +1279,14 @@ int main (int argc, char **argv, char **environ)
 
     if (rv)
       goto cleanup_and_exit;
+  }
+  /* This guards against invoking `mutt < /dev/null` and accidentally
+   * sending an email due to a my_hdr or other setting.
+   */
+  else if (sendflags & SENDBATCH)
+  {
+    fputs (_("No recipients specified.\n"), stderr);
+    goto cleanup_and_exit;
   }
   else
   {

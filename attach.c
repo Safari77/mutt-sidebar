@@ -369,15 +369,17 @@ int mutt_view_attachment (FILE *fp, BODY *a, int flag, HEADER *hdr,
   command = mutt_buffer_pool_get ();
 
   use_mailcap = (flag == MUTT_MAILCAP ||
-                 (flag == MUTT_REGULAR && mutt_needs_mailcap (a)));
+                 (flag == MUTT_REGULAR && mutt_needs_mailcap (a)) ||
+                 flag == MUTT_VIEW_PAGER);
   snprintf (type, sizeof (type), "%s/%s", TYPE (a), a->subtype);
 
   if (use_mailcap)
   {
     entry = rfc1524_new_entry ();
-    if (!rfc1524_mailcap_lookup (a, type, sizeof(type), entry, 0))
+    if (!rfc1524_mailcap_lookup (a, type, sizeof(type), entry,
+                                 flag == MUTT_VIEW_PAGER ? MUTT_AUTOVIEW : 0))
     {
-      if (flag == MUTT_REGULAR)
+      if (flag == MUTT_REGULAR || flag == MUTT_VIEW_PAGER)
       {
 	/* fallback to view as text */
 	rfc1524_free_entry (&entry);
@@ -402,7 +404,9 @@ int mutt_view_attachment (FILE *fp, BODY *a, int flag, HEADER *hdr,
     fname = safe_strdup (a->filename);
     /* In send mode (!fp), we allow slashes because those are part of
      * the tempfile.  The path will be removed in expand_filename */
-    mutt_sanitize_filename (fname, fp ? 1 : 0);
+    mutt_sanitize_filename (fname,
+                            (fp ? 0 : MUTT_SANITIZE_ALLOW_SLASH) |
+                            MUTT_SANITIZE_ALLOW_8BIT);
     mutt_rfc1524_expand_filename (entry->nametemplate, fname,
                                   tempfile);
     FREE (&fname);
@@ -969,13 +973,22 @@ int mutt_print_attachment (FILE *fp, BODY *a)
   {
     rfc1524_entry *entry = NULL;
     int piped = 0;
+    char *sanitized_fname = NULL;
 
     dprint (2, (debugfile, "Using mailcap...\n"));
 
     entry = rfc1524_new_entry ();
     rfc1524_mailcap_lookup (a, type, sizeof(type), entry, MUTT_PRINT);
-    mutt_rfc1524_expand_filename (entry->nametemplate, a->filename,
+
+    sanitized_fname = safe_strdup (a->filename);
+    /* In send mode (!fp), we allow slashes because those are part of
+     * the tempfile.  The path will be removed in expand_filename */
+    mutt_sanitize_filename (sanitized_fname,
+                            (fp ? 0 : MUTT_SANITIZE_ALLOW_SLASH) |
+                            MUTT_SANITIZE_ALLOW_8BIT);
+    mutt_rfc1524_expand_filename (entry->nametemplate, sanitized_fname,
                                   newfile);
+    FREE (&sanitized_fname);
 
     if (mutt_save_attachment (fp, a, mutt_b2s (newfile), 0, NULL) == -1)
       goto mailcap_cleanup;

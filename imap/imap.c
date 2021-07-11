@@ -497,7 +497,7 @@ int imap_open_connection (IMAP_DATA* idata)
         rc = MUTT_YES;
       else if ((rc = query_quadoption (OPT_SSLSTARTTLS,
                                        _("Secure connection with TLS?"))) == -1)
-	goto err_close_conn;
+	goto bail;
       if (rc == MUTT_YES)
       {
 	if ((rc = imap_exec (idata, "STARTTLS", IMAP_CMD_FAIL_OK)) == -1)
@@ -508,7 +508,7 @@ int imap_open_connection (IMAP_DATA* idata)
 	  {
 	    mutt_error (_("Could not negotiate TLS connection"));
 	    mutt_sleep (1);
-	    goto err_close_conn;
+	    goto bail;
 	  }
 	  else
 	  {
@@ -524,7 +524,7 @@ int imap_open_connection (IMAP_DATA* idata)
     {
       mutt_error _("Encrypted connection unavailable");
       mutt_sleep (1);
-      goto err_close_conn;
+      goto bail;
     }
 #endif
   }
@@ -542,7 +542,7 @@ int imap_open_connection (IMAP_DATA* idata)
     {
       mutt_error _("Encrypted connection unavailable");
       mutt_sleep (1);
-      goto err_close_conn;
+      goto bail;
     }
 #endif
 
@@ -559,9 +559,6 @@ int imap_open_connection (IMAP_DATA* idata)
 
   return 0;
 
-#if defined(USE_SSL)
-err_close_conn:
-#endif
 bail:
   imap_close_connection (idata);
   FREE (&idata->capstr);
@@ -903,7 +900,7 @@ static int imap_open_mailbox (CONTEXT* ctx)
       dprint (3, (debugfile, "Getting mailbox UIDVALIDITY\n"));
       pc += 3;
       pc = imap_next_word (pc);
-      if (mutt_atoui (pc, &idata->uid_validity) < 0)
+      if (mutt_atoui (pc, &idata->uid_validity, MUTT_ATOI_ALLOW_TRAILING) < 0)
         goto fail;
       status->uidvalidity = idata->uid_validity;
     }
@@ -912,7 +909,7 @@ static int imap_open_mailbox (CONTEXT* ctx)
       dprint (3, (debugfile, "Getting mailbox UIDNEXT\n"));
       pc += 3;
       pc = imap_next_word (pc);
-      if (mutt_atoui (pc, &idata->uidnext) < 0)
+      if (mutt_atoui (pc, &idata->uidnext, MUTT_ATOI_ALLOW_TRAILING) < 0)
         goto fail;
       status->uidnext = idata->uidnext;
     }
@@ -921,7 +918,7 @@ static int imap_open_mailbox (CONTEXT* ctx)
       dprint (3, (debugfile, "Getting mailbox HIGHESTMODSEQ\n"));
       pc += 3;
       pc = imap_next_word (pc);
-      if (mutt_atoull (pc, &idata->modseq) < 0)
+      if (mutt_atoull (pc, &idata->modseq, MUTT_ATOI_ALLOW_TRAILING) < 0)
         goto fail;
       status->modseq = idata->modseq;
     }
@@ -2313,7 +2310,7 @@ int imap_subscribe (char *path, int subscribe)
   if (option (OPTIMAPCHECKSUBSCRIBED))
   {
     if (subscribe)
-      mutt_buffy_add (path, NULL, -1);
+      mutt_buffy_add (path, NULL, -1, -1);
     else
       mutt_buffy_remove (path);
   }

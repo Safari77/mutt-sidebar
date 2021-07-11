@@ -81,7 +81,7 @@ void mutt_adv_mktemp (BUFFER *buf)
   {
     prefix = mutt_buffer_pool_get ();
     mutt_buffer_strcpy (prefix, buf->data);
-    mutt_sanitize_filename (prefix->data, 1);
+    mutt_sanitize_filename (prefix->data, MUTT_SANITIZE_ALLOW_8BIT);
     mutt_buffer_printf (buf, "%s/%s", NONULL (Tempdir), mutt_b2s (prefix));
     if (lstat (mutt_b2s (buf), &sb) == -1 && errno == ENOENT)
       goto out;
@@ -408,102 +408,6 @@ int mutt_matches_ignore (const char *s, LIST *t)
   return 0;
 }
 
-static void buffer_normalize_fullpath (BUFFER *dest, const char *src)
-{
-  enum { init, dot, dotdot, standard } state = init;
-
-  mutt_buffer_clear (dest);
-  if (!src)
-    return;
-
-  /* Disabling this for the 2.0 release.
-   * See Gitlab #290 - '..' can not be simplified in this manner.
-   * Furthermore, it looks like mutt_pretty_mailbox() calls realpath()
-   * if there are any '..' strings in the path, and does its own '.'
-   * normalization much more succinctly than this.  I'll remove this
-   * code after the release.
-   */
-  mutt_buffer_strcpy (dest, src);
-  return;
-
-  if (*src != '/')
-  {
-    mutt_buffer_strcpy (dest, src);
-    return;
-  }
-
-  while (*src)
-  {
-    if (*src == '.')
-    {
-      switch (state)
-      {
-        case init:
-          state = dot;
-          break;
-        case dot:
-          state = dotdot;
-          break;
-        default:
-          state = standard;
-          break;
-      }
-    }
-    else if (*src == '/')
-    {
-      switch (state)
-      {
-        case dot:
-          dest->dptr -= 2;
-          break;
-        case dotdot:
-          dest->dptr -= 3;
-          if (dest->dptr != dest->data)
-          {
-            dest->dptr--;
-            while (*dest->dptr != '/')
-              dest->dptr--;
-          }
-          break;
-        default:
-          break;
-      }
-      state = init;
-    }
-    else
-    {
-      state = standard;
-    }
-
-    mutt_buffer_addch (dest, *src);
-    src++;
-  }
-
-  /* Deal with a trailing /. or /.. */
-  switch (state)
-  {
-    case dot:
-      dest->dptr -= 2;
-      if (dest->dptr == dest->data)
-        dest->dptr++;
-      *dest->dptr = '\0';
-      break;
-    case dotdot:
-      dest->dptr -= 3;
-      if (dest->dptr != dest->data)
-      {
-        dest->dptr--;
-        while (*dest->dptr != '/')
-          dest->dptr--;
-      }
-      if (dest->dptr == dest->data)
-        dest->dptr++;
-      *dest->dptr = '\0';
-      break;
-    default:
-      break;
-  }
-}
 
 /* Splits src into parts delimited by delimiter.
  * Invokes mapfunc on each part and joins the result back into src.
@@ -756,10 +660,11 @@ void _mutt_buffer_expand_path (BUFFER *src, int rx, int expand_relative)
     {
       if (mutt_getcwd (tmp))
       {
+        /* Note, mutt_pretty_mailbox() does '..' and '.' handling. */
         if (mutt_buffer_len (tmp) > 1)
           mutt_buffer_addch (tmp, '/');
         mutt_buffer_addstr (tmp, mutt_b2s (src));
-        buffer_normalize_fullpath (src, mutt_b2s (tmp));
+        mutt_buffer_strcpy (src, mutt_b2s (tmp));
       }
     }
 
@@ -948,6 +853,7 @@ void mutt_free_envelope (ENVELOPE **p)
   rfc822_free_address (&(*p)->mail_followup_to);
 
   FREE (&(*p)->list_post);
+
   FREE (&(*p)->subject);
   /* real_subj is just an offset to subject and shouldn't be freed */
   FREE (&(*p)->disp_subj);
@@ -1331,21 +1237,28 @@ void _mutt_buffer_quote_filename (BUFFER *d, const char *f, int add_outer)
     mutt_buffer_addch (d, '\'');
 }
 
-static const char safe_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+@{}._-:%/";
+static const char safe_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+@{}._-:%";
 
-void mutt_buffer_sanitize_filename (BUFFER *d, const char *f, short slash)
+void mutt_buffer_sanitize_filename (BUFFER *d, const char *f, int flags)
 {
+  int allow_slash, allow_8bit;
+
   mutt_buffer_clear (d);
 
   if (!f)
     return;
 
+  allow_slash = flags & MUTT_SANITIZE_ALLOW_SLASH;
+  allow_8bit = flags & MUTT_SANITIZE_ALLOW_8BIT;
+
   for (; *f; f++)
   {
-    if ((slash && *f == '/') || !strchr (safe_chars, *f))
-      mutt_buffer_addch (d, '_');
-    else
+    if ((allow_slash && *f == '/')  ||
+        (allow_8bit && (*f & 0x80)) ||
+        strchr (safe_chars, *f))
       mutt_buffer_addch (d, *f);
+    else
+      mutt_buffer_addch (d, '_');
   }
 }
 
@@ -1717,7 +1630,7 @@ void mutt_FormatString (char *dest,		/* output buffer */
       srcbuf = mutt_buffer_from (srccopy);
       /* note: we are resetting dptr and *reading* from the buffer, so we don't
        * want to use mutt_buffer_clear(). */
-      srcbuf->dptr = srcbuf->data;
+      mutt_buffer_rewind (srcbuf);
       word = mutt_buffer_new ();
       command = mutt_buffer_new ();
 
@@ -2556,6 +2469,28 @@ void mutt_encode_path (BUFFER *dest, const char *src)
   /* `src' may be NULL, such as when called from the pop3 driver. */
   mutt_buffer_strcpy (dest, (rc == 0) ? NONULL(p) : NONULL(src));
   FREE (&p);
+}
+
+/* returns: 0 - successful conversion
+ *         -1 - error: invalid input
+ *         -2 - error: out of range
+ */
+int mutt_atolofft (const char *str, LOFF_T *dst, int flags)
+{
+  int rc;
+  long long res;
+  LOFF_T tmp;
+  LOFF_T *t = dst ? dst : &tmp;
+
+  *t = 0;
+
+  if ((rc = mutt_atoll (str, &res, flags)) < 0)
+    return rc;
+  if ((LOFF_T) res != res)
+    return -2;
+
+  *t = (LOFF_T) res;
+  return rc;
 }
 
 

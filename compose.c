@@ -1699,6 +1699,7 @@ int mutt_compose_menu (SEND_CONTEXT *sctx)
       case OP_COMPOSE_VIEW_ALT:
       case OP_COMPOSE_VIEW_ALT_TEXT:
       case OP_COMPOSE_VIEW_ALT_MAILCAP:
+      case OP_COMPOSE_VIEW_ALT_PAGER:
       {
         BODY *alternative;
 
@@ -1718,6 +1719,9 @@ int mutt_compose_menu (SEND_CONTEXT *sctx)
 	  case OP_COMPOSE_VIEW_ALT_MAILCAP:
 	    op = MUTT_MAILCAP;
 	    break;
+	  case OP_COMPOSE_VIEW_ALT_PAGER:
+	    op = MUTT_VIEW_PAGER;
+	    break;
 	  default:
 	    op = MUTT_REGULAR;
 	    break;
@@ -1726,6 +1730,24 @@ int mutt_compose_menu (SEND_CONTEXT *sctx)
         mutt_free_body (&alternative);
         break;
       }
+
+      case OP_ATTACH_VIEW_MAILCAP:
+	mutt_view_attachment (NULL, CURATTACH->content, MUTT_MAILCAP,
+			      NULL, actx);
+	menu->redraw = REDRAW_FULL;
+	break;
+
+      case OP_ATTACH_VIEW_TEXT:
+	mutt_view_attachment (NULL, CURATTACH->content, MUTT_AS_TEXT,
+			      NULL, actx);
+	menu->redraw = REDRAW_FULL;
+	break;
+
+      case OP_ATTACH_VIEW_PAGER:
+	mutt_view_attachment (NULL, CURATTACH->content, MUTT_VIEW_PAGER,
+			      NULL, actx);
+	menu->redraw = REDRAW_FULL;
+	break;
 
       case OP_VIEW_ATTACH:
       case OP_DISPLAY_HEADERS:

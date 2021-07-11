@@ -753,7 +753,8 @@ static BODY *_parse_multipart (FILE *fp, const char *boundary, LOFF_T end_off,
 #ifdef SUN_ATTACHMENT
         if (mutt_get_parameter ("content-lines", new->parameter))
         {
-	  mutt_atoi (mutt_get_parameter ("content-lines", new->parameter), &lines);
+	  mutt_atoi (mutt_get_parameter ("content-lines", new->parameter),
+                     &lines, 0);
 	  for ( ; lines; lines-- )
             if (ftello (fp) >= end_off || fgets (buffer, LONG_STRING, fp) == NULL)
               break;
@@ -941,7 +942,7 @@ time_t mutt_parse_date (const char *s, HEADER *h)
     switch (count)
     {
       case 0: /* day of the month */
-	if (mutt_atoi (t, &tm.tm_mday) < 0 || tm.tm_mday < 0)
+	if (mutt_atoi (t, &tm.tm_mday, 0) < 0 || tm.tm_mday < 0)
 	  return (-1);
 	if (tm.tm_mday > 31)
 	  return (-1);
@@ -954,7 +955,7 @@ time_t mutt_parse_date (const char *s, HEADER *h)
 	break;
 
       case 2: /* year */
-	if (mutt_atoi (t, &tm.tm_year) < 0 || tm.tm_year < 0)
+	if (mutt_atoi (t, &tm.tm_year, 0) < 0 || tm.tm_year < 0)
 	  return (-1);
         if (tm.tm_year < 50)
 	  tm.tm_year += 100;
@@ -1127,6 +1128,29 @@ success:
   return retval;
 }
 
+int mutt_parse_list_header (char **dst, char *p)
+{
+  char *beg, *end;
+
+  for (beg = strchr (p, '<'); beg; beg = strchr (end, ','))
+  {
+    if ((*beg == ',') && !(beg = strchr (beg, '<')))
+      break;
+    ++beg;
+    if (!(end = strchr (beg, '>')))
+      break;
+
+    /* Take the first mailto URL */
+    if (url_check_scheme (beg) == U_MAILTO)
+    {
+      FREE (dst);  /* __FREE_CHECKED__ */
+      *dst = mutt_substrdup (beg, end);
+      break;
+    }
+  }
+  return 1;
+}
+
 void mutt_parse_mime_message (CONTEXT *ctx, HEADER *cur)
 {
   MESSAGE *msg;
@@ -1140,7 +1164,7 @@ void mutt_parse_mime_message (CONTEXT *ctx, HEADER *cur)
     if (cur->content->parts)
       break; /* The message was parsed earlier. */
 
-    if ((msg = mx_open_message (ctx, cur->msgno)))
+    if ((msg = mx_open_message (ctx, cur->msgno, 0)))
     {
       mutt_parse_part (msg->fp, cur->content);
 
@@ -1259,7 +1283,7 @@ int mutt_parse_rfc822_line (ENVELOPE *e, HEADER *hdr, char *line, char *p, short
         {
           if (hdr)
           {
-            if ((hdr->content->length = atol (p)) < 0)
+            if (mutt_atolofft (p, &hdr->content->length, 0) < 0)
               hdr->content->length = -1;
           }
           matched = 1;
@@ -1324,7 +1348,7 @@ int mutt_parse_rfc822_line (ENVELOPE *e, HEADER *hdr, char *line, char *p, short
            * HACK - mutt has, for a very short time, produced negative
            * Lines header values.  Ignore them.
            */
-          if (mutt_atoi (p, &hdr->lines) < 0 || hdr->lines < 0)
+          if (mutt_atoi (p, &hdr->lines, 0) < 0 || hdr->lines < 0)
             hdr->lines = 0;
         }
 
@@ -1332,30 +1356,9 @@ int mutt_parse_rfc822_line (ENVELOPE *e, HEADER *hdr, char *line, char *p, short
       }
       else if (!ascii_strcasecmp (line + 1, "ist-Post"))
       {
-        /* RFC 2369.  FIXME: We should ignore whitespace, but don't. */
-        if (strncmp (p, "NO", 2))
-        {
-          char *beg, *end;
-          for (beg = strchr (p, '<'); beg; beg = strchr (end, ','))
-          {
-            if ((*beg == ',') && !(beg = strchr (beg, '<')))
-              break;
-            ++beg;
-            if (!(end = strchr (beg, '>')))
-              break;
-
-            /* Take the first mailto URL */
-            if (url_check_scheme (beg) == U_MAILTO)
-            {
-              FREE (&e->list_post);
-              e->list_post = mutt_substrdup (beg, end);
-              if (option (OPTAUTOSUBSCRIBE))
-                mutt_auto_subscribe (e->list_post);
-              break;
-            }
-          }
-        }
-        matched = 1;
+        matched = mutt_parse_list_header (&e->list_post, p);
+        if (matched && option (OPTAUTOSUBSCRIBE))
+          mutt_auto_subscribe (e->list_post);
       }
       break;
 

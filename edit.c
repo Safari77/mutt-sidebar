@@ -63,7 +63,7 @@ static char* EditorHelp2 = N_("\
 
 static char **
 be_snarf_data (FILE *f, char **buf, int *bufmax, int *buflen, LOFF_T offset,
-	       int bytes, int prefix)
+	       LOFF_T bytes, int prefix)
 {
   char tmp[HUGE_STRING];
   char *p = tmp;
@@ -150,12 +150,13 @@ static char **
 be_include_messages (char *msg, char **buf, int *bufmax, int *buflen,
 		     int pfx, int inc_hdrs)
 {
-  int offset, bytes, n;
+  LOFF_T offset, bytes;
+  int n;
   char tmp[LONG_STRING];
 
   while ((msg = strtok (msg, " ,")) != NULL)
   {
-    if (mutt_atoi (msg, &n) == 0 && n > 0 && n <= Context->msgcount)
+    if (mutt_atoi (msg, &n, 0) == 0 && n > 0 && n <= Context->msgcount)
     {
       n--;
 

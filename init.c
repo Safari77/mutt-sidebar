@@ -294,7 +294,7 @@ int mutt_extract_token (BUFFER *dest, BUFFER *tok, int flags)
         mutt_buffer_fix_dptr (&expn);
         mutt_buffer_addstr (&expn, tok->dptr);
         mutt_buffer_strcpy (tok, expn.data);
-	tok->dptr = tok->data;
+        mutt_buffer_rewind (tok);
       }
 
       FREE (&expn.data);
@@ -799,9 +799,8 @@ static int parse_unalternates (BUFFER *buf, BUFFER *s, union pointer_long_t udat
 static int parse_replace_list (BUFFER *buf, BUFFER *s, union pointer_long_t udata, BUFFER *err)
 {
   REPLACE_LIST **list = (REPLACE_LIST **)udata.p;
-  BUFFER templ;
-
-  memset(&templ, 0, sizeof(templ));
+  BUFFER *templ = NULL;
+  int rc = -1;
 
   /* First token is a regexp. */
   if (!MoreArgs(s))
@@ -817,16 +816,17 @@ static int parse_replace_list (BUFFER *buf, BUFFER *s, union pointer_long_t udat
     strfcpy(err->data, _("not enough arguments"), err->dsize);
     return -1;
   }
-  mutt_extract_token(&templ, s, 0);
 
-  if (add_to_replace_list(list, buf->data, templ.data, err) != 0)
-  {
-    FREE(&templ.data);
-    return -1;
-  }
-  FREE(&templ.data);
+  templ = mutt_buffer_pool_get ();
+  mutt_extract_token(templ, s, 0);
+  if (add_to_replace_list(list, buf->data, mutt_b2s (templ), err) != 0)
+    goto cleanup;
 
-  return 0;
+  rc = 0;
+
+cleanup:
+  mutt_buffer_pool_release (&templ);
+  return rc;
 }
 
 static int parse_unreplace_list (BUFFER *buf, BUFFER *s, union pointer_long_t udata, BUFFER *err)
@@ -889,10 +889,7 @@ static int parse_unsubjectrx_list (BUFFER *buf, BUFFER *s, union pointer_long_t 
 
 static int parse_spam_list (BUFFER *buf, BUFFER *s, union pointer_long_t udata, BUFFER *err)
 {
-  BUFFER templ;
   long data = udata.l;
-
-  mutt_buffer_init (&templ);
 
   /* Insist on at least one parameter */
   if (!MoreArgs(s))
@@ -913,15 +910,18 @@ static int parse_spam_list (BUFFER *buf, BUFFER *s, union pointer_long_t udata, 
     /* If there's a second parameter, it's a template for the spam tag. */
     if (MoreArgs(s))
     {
-      mutt_extract_token (&templ, s, 0);
+      BUFFER *templ = NULL;
+
+      templ = mutt_buffer_pool_get ();
+      mutt_extract_token (templ, s, 0);
 
       /* Add to the spam list. */
-      if (add_to_replace_list (&SpamList, buf->data, templ.data, err) != 0)
+      if (add_to_replace_list (&SpamList, buf->data, mutt_b2s (templ), err) != 0)
       {
-        FREE(&templ.data);
+        mutt_buffer_pool_release (&templ);
         return -1;
       }
-      FREE(&templ.data);
+      mutt_buffer_pool_release (&templ);
     }
 
     /* If not, try to remove from the nospam list. */
@@ -1716,29 +1716,28 @@ parse_unmy_hdr (BUFFER *buf, BUFFER *s, union pointer_long_t udata, BUFFER *err)
   return 0;
 }
 
-static int parse_my_hdr (BUFFER *buf, BUFFER *s, union pointer_long_t udata, BUFFER *err)
+static int update_my_hdr (const char *my_hdr)
 {
   LIST *tmp;
   size_t keylen;
-  char *p;
+  const char *p;
 
-  mutt_extract_token (buf, s, MUTT_TOKEN_SPACE | MUTT_TOKEN_QUOTE);
-  if ((p = strpbrk (buf->data, ": \t")) == NULL || *p != ':')
-  {
-    strfcpy (err->data, _("invalid header field"), err->dsize);
-    return (-1);
-  }
-  keylen = p - buf->data + 1;
+  if (!my_hdr)
+    return -1;
+
+  if ((p = strpbrk (my_hdr, ": \t")) == NULL || *p != ':')
+    return -1;
+  keylen = p - my_hdr + 1;
 
   if (UserHeader)
   {
     for (tmp = UserHeader; ; tmp = tmp->next)
     {
       /* see if there is already a field by this name */
-      if (ascii_strncasecmp (buf->data, tmp->data, keylen) == 0)
+      if (ascii_strncasecmp (my_hdr, tmp->data, keylen) == 0)
       {
 	/* replace the old value */
-	mutt_str_replace (&tmp->data, mutt_b2s (buf));
+	mutt_str_replace (&tmp->data, my_hdr);
 	return 0;
       }
       if (!tmp->next)
@@ -1752,7 +1751,20 @@ static int parse_my_hdr (BUFFER *buf, BUFFER *s, union pointer_long_t udata, BUF
     tmp = mutt_new_list ();
     UserHeader = tmp;
   }
-  tmp->data = safe_strdup (mutt_b2s (buf));
+  tmp->data = safe_strdup (my_hdr);
+
+  return 0;
+}
+
+static int parse_my_hdr (BUFFER *buf, BUFFER *s, union pointer_long_t udata, BUFFER *err)
+{
+  mutt_extract_token (buf, s, MUTT_TOKEN_SPACE | MUTT_TOKEN_QUOTE);
+  if (update_my_hdr (mutt_b2s (buf)))
+  {
+    strfcpy (err->data, _("invalid header field"), err->dsize);
+    return -1;
+  }
+
   return 0;
 }
 
@@ -2609,9 +2621,8 @@ static int parse_set (BUFFER *tmp, BUFFER *s, union pointer_long_t udata, BUFFER
       s->dptr++;
 
       mutt_extract_token (tmp, s, 0);
-      rc = mutt_atos (tmp->data, (short *) &val);
-
-      if (rc < 0 || !*tmp->data)
+      rc = mutt_atos (tmp->data, (short *) &val, 0);
+      if (rc < 0)
       {
 	snprintf (err->data, err->dsize, _("%s: invalid value (%s)"), tmp->data,
 		  rc == -1 ? _("format error") : _("number overflow"));
@@ -2673,9 +2684,8 @@ static int parse_set (BUFFER *tmp, BUFFER *s, union pointer_long_t udata, BUFFER
       s->dptr++;
 
       mutt_extract_token (tmp, s, 0);
-      rc = mutt_atol (tmp->data, (long *) &val);
-
-      if (rc < 0 || !*tmp->data)
+      rc = mutt_atol (tmp->data, (long *) &val, 0);
+      if (rc < 0)
       {
 	snprintf (err->data, err->dsize, _("%s: invalid value (%s)"), tmp->data,
 		  rc == -1 ? _("format error") : _("number overflow"));
@@ -3016,7 +3026,7 @@ int mutt_parse_rc_buffer (BUFFER *line, BUFFER *token, BUFFER *err)
   mutt_buffer_clear (err);
 
   /* Read from the beginning of line->data */
-  line->dptr = line->data;
+  mutt_buffer_rewind (line);
 
   SKIPWS (line->dptr);
   while (*line->dptr)
@@ -3515,7 +3525,7 @@ int mutt_getvaluebyname (const char *name, const struct mapping_t *map)
 }
 
 #ifdef DEBUG
-static void start_debug (void)
+static void start_debug (int rotate)
 {
   int i;
   BUFFER *buf, *buf2;
@@ -3524,13 +3534,23 @@ static void start_debug (void)
   buf2 = mutt_buffer_pool_get ();
 
   /* rotate the old debug logs */
-  for (i=3; i>=0; i--)
+  if (rotate)
   {
-    mutt_buffer_printf (buf, "%s/.muttdebug%d", NONULL(Homedir), i);
-    mutt_buffer_printf (buf2, "%s/.muttdebug%d", NONULL(Homedir), i+1);
-    rename (mutt_b2s (buf), mutt_b2s (buf2));
+    for (i=3; i>=0; i--)
+    {
+      mutt_buffer_printf (buf, "%s/.muttdebug%d", NONULL(Homedir), i);
+      mutt_buffer_printf (buf2, "%s/.muttdebug%d", NONULL(Homedir), i+1);
+      rename (mutt_b2s (buf), mutt_b2s (buf2));
+    }
+    debugfile = safe_fopen(mutt_b2s (buf), "w");
   }
-  if ((debugfile = safe_fopen(mutt_b2s (buf), "w")) != NULL)
+  else
+  {
+    mutt_buffer_printf (buf, "%s/.muttdebug0", NONULL(Homedir));
+    debugfile = safe_fopen(mutt_b2s (buf), "a");
+  }
+
+  if (debugfile != NULL)
   {
     setbuf (debugfile, NULL); /* don't buffer the debugging output! */
     dprint(1,(debugfile,"Mutt/%s (%s) debugging at level %d\n",
@@ -3670,7 +3690,12 @@ void mutt_init (int skip_sys_rc, LIST *commands)
 #ifdef DEBUG
   /* Start up debugging mode if requested */
   if (debuglevel > 0)
-    start_debug ();
+    start_debug (1);
+  if (debuglevel < 0)
+  {
+    debuglevel = -debuglevel;
+    start_debug (0);
+  }
 #endif
 
 
@@ -3740,15 +3765,8 @@ void mutt_init (int skip_sys_rc, LIST *commands)
 
   if ((p = getenv ("REPLYTO")) != NULL)
   {
-    BUFFER *token;
-    union pointer_long_t udata = {.l=0};
-
     mutt_buffer_printf (buffer, "Reply-To: %s", p);
-    buffer->dptr = buffer->data;
-
-    token = mutt_buffer_pool_get ();
-    parse_my_hdr (token, buffer, udata, &err);
-    mutt_buffer_pool_release (&token);
+    update_my_hdr (mutt_b2s (buffer));
   }
 
   if ((p = getenv ("EMAIL")) != NULL)
@@ -3795,6 +3813,13 @@ void mutt_init (int skip_sys_rc, LIST *commands)
    */
   add_to_list(&MailtoAllow, "body");
   add_to_list(&MailtoAllow, "subject");
+
+  /* Allow a few other commonly used headers for mailing list
+   * software, and platforms such as Sourcehut.
+   */
+  add_to_list(&MailtoAllow, "cc");
+  add_to_list(&MailtoAllow, "in-reply-to");
+  add_to_list(&MailtoAllow, "references");
 
   if (!Muttrc)
   {
@@ -3878,6 +3903,7 @@ void mutt_init (int skip_sys_rc, LIST *commands)
    */
   if (!Fqdn)
   {
+    dprint (1, (debugfile, "Setting $hostname\n"));
 #ifdef DOMAIN
     domain = safe_strdup (DOMAIN);
 #endif /* DOMAIN */
@@ -3904,6 +3930,7 @@ void mutt_init (int skip_sys_rc, LIST *commands)
        * network.
        */
       Fqdn = safe_strdup(utsname.nodename);
+    dprint (1, (debugfile, "$hostname set to \"%s\"\n", NONULL (Fqdn)));
   }
 
 

@@ -380,7 +380,7 @@ int mbox_parse_mailbox (CONTEXT *ctx)
 	   */
 	  if (curhdr->lines == 0)
 	  {
-	    int cl = curhdr->content->length;
+	    LOFF_T cl = curhdr->content->length;
 
 	    /* count the number of lines in this message */
 	    if (fseeko (ctx->fp, loc, SEEK_SET) != 0)
@@ -506,7 +506,7 @@ static int mbox_close_mailbox (CONTEXT *ctx)
   return 0;
 }
 
-static int mbox_open_message (CONTEXT *ctx,  MESSAGE *msg, int msgno)
+static int mbox_open_message (CONTEXT *ctx,  MESSAGE *msg, int msgno, int headers)
 {
   msg->fp = ctx->fp;
 

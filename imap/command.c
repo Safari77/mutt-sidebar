@@ -495,7 +495,7 @@ static void cmd_handle_fatal (IMAP_DATA* idata)
     {
       idata->status = IMAP_FATAL;
       /* L10N:
-         When a fatal error occurs with the IMAP connnection for
+         When a fatal error occurs with the IMAP connection for
          the currently open mailbox, we print this message, and
          will try to reconnect and merge current changes back during
          mx_check_mailbox()
@@ -545,7 +545,8 @@ static int cmd_handle_untagged (IMAP_DATA* idata)
       dprint (2, (debugfile, "Handling EXISTS\n"));
 
       /* new mail arrived */
-      mutt_atoui (pn, &count);
+      if (mutt_atoui (pn, &count, MUTT_ATOI_ALLOW_TRAILING) < 0)
+        return 0;
 
       if (count < idata->max_msn)
       {
@@ -675,7 +676,7 @@ static void cmd_parse_expunge (IMAP_DATA* idata, const char* s)
 
   dprint (2, (debugfile, "Handling EXPUNGE\n"));
 
-  if (mutt_atoui (s, &exp_msn) < 0 ||
+  if (mutt_atoui (s, &exp_msn, MUTT_ATOI_ALLOW_TRAILING) < 0 ||
       exp_msn < 1 || exp_msn > idata->max_msn)
     return;
 
@@ -808,7 +809,7 @@ static void cmd_parse_fetch (IMAP_DATA* idata, char* s)
 
   dprint (3, (debugfile, "Handling FETCH\n"));
 
-  if (mutt_atoui (s, &msn) < 0)
+  if (mutt_atoui (s, &msn, MUTT_ATOI_ALLOW_TRAILING) < 0)
   {
     dprint (3, (debugfile, "cmd_parse_fetch: Skipping FETCH response - illegal MSN\n"));
     return;
@@ -877,7 +878,7 @@ static void cmd_parse_fetch (IMAP_DATA* idata, char* s)
     {
       s += 3;
       SKIPWS (s);
-      if (mutt_atoui (s, &uid) < 0)
+      if (mutt_atoui (s, &uid, MUTT_ATOI_ALLOW_TRAILING) < 0)
       {
         dprint (1, (debugfile, "cmd_parse_fetch: Illegal UID.  Skipping update.\n"));
         return;
@@ -1061,7 +1062,7 @@ static void cmd_parse_lsub (IMAP_DATA* idata, char* s)
   mailbox = mutt_buffer_pool_get ();
   url_ciss_tobuffer (&url, mailbox, 0);
 
-  mutt_buffy_add (mutt_b2s (mailbox), NULL, -1);
+  mutt_buffy_add (mutt_b2s (mailbox), NULL, -1, -1);
   mutt_buffer_pool_release (&mailbox);
 }
 
@@ -1140,7 +1141,7 @@ static void cmd_parse_search (IMAP_DATA* idata, const char* s)
 
   while ((s = imap_next_word ((char*)s)) && *s != '\0')
   {
-    if (mutt_atoui (s, &uid) < 0)
+    if (mutt_atoui (s, &uid, MUTT_ATOI_ALLOW_TRAILING) < 0)
       continue;
     h = (HEADER *)int_hash_find (idata->uid_hash, uid);
     if (h)

@@ -1303,17 +1303,28 @@ BODY *mutt_make_message_attach (CONTEXT *ctx, HEADER *hdr, int attach_msg)
   FILE *fp;
   int cmflags, chflags;
   int pgp = WithCrypto? hdr->security : 0;
+  int copy_rc, try_decode = 0, try_decrypt = 0;
+
+  /* If we are attaching a message, ignore OPTMIMEFORWDECODE */
+  if (!attach_msg && option (OPTMIMEFORWDECODE))
+    try_decode = 1;
+  else if (WithCrypto &&
+           (hdr->security & ENCRYPT) &&
+           /* L10N: Prompt for $forward_decrypt when attaching or forwarding
+              a message */
+           (query_quadoption (OPT_FORWDECRYPT, _("Decrypt message attachment?")) == MUTT_YES))
+    try_decrypt = 1;
 
   if (WithCrypto)
   {
-    if ((option(OPTMIMEFORWDECODE) || option(OPTFORWDECRYPT)) &&
-        (hdr->security & ENCRYPT))
+    if ((hdr->security & ENCRYPT) && (try_decode || try_decrypt))
     {
       if (!crypt_valid_passphrase(hdr->security))
         return (NULL);
     }
   }
 
+retry:
   buffer = mutt_buffer_pool_get ();
   mutt_buffer_mktemp (buffer);
   if ((fp = safe_fopen (mutt_b2s (buffer), "w+")) == NULL)
@@ -1338,8 +1349,7 @@ BODY *mutt_make_message_attach (CONTEXT *ctx, HEADER *hdr, int attach_msg)
   chflags = CH_XMIT;
   cmflags = 0;
 
-  /* If we are attaching a message, ignore OPTMIMEFORWDECODE */
-  if (!attach_msg && option (OPTMIMEFORWDECODE))
+  if (try_decode)
   {
     chflags |= CH_MIME | CH_TXTPLAIN;
     cmflags = MUTT_CM_DECODE | MUTT_CM_CHARCONV;
@@ -1348,8 +1358,7 @@ BODY *mutt_make_message_attach (CONTEXT *ctx, HEADER *hdr, int attach_msg)
     if ((WithCrypto & APPLICATION_SMIME))
       pgp &= ~SMIMEENCRYPT;
   }
-  else if (WithCrypto
-           && option (OPTFORWDECRYPT) && (hdr->security & ENCRYPT))
+  else if (try_decrypt)
   {
     if ((WithCrypto & APPLICATION_PGP)
         && mutt_is_multipart_encrypted (hdr->content))
@@ -1374,7 +1383,39 @@ BODY *mutt_make_message_attach (CONTEXT *ctx, HEADER *hdr, int attach_msg)
     }
   }
 
-  mutt_copy_message (fp, ctx, hdr, cmflags, chflags);
+  copy_rc = mutt_copy_message (fp, ctx, hdr, cmflags, chflags);
+  if ((copy_rc != 0) && (try_decode || try_decrypt))
+  {
+    mutt_clear_error ();
+    if ((try_decode &&
+         /* L10N: Prompt when forwarding a message with
+            $mime_forward_decode set, and there was a problem decoding
+            the message.  If they answer yes the message will be
+            forwarded without decoding.
+         */
+         (mutt_yesorno (_("There was a problem decoding the message for attachment.  Try again with decoding turned off?"), MUTT_YES) == MUTT_YES))
+        ||
+        (try_decrypt &&
+         /* L10N: Prompt when attaching or forwarding a message with
+            $forward_decrypt set, and there was a problem decrypting
+            the message.  If they answer yes the message will be attached
+            without decrypting it.
+         */
+         (mutt_yesorno (_("There was a problem decrypting the message for attachment.  Try again with decryption turned off?"), MUTT_YES) == MUTT_YES)))
+    {
+      safe_fclose (&fp);
+      mutt_free_body (&body);
+      try_decode = 0;
+      try_decrypt = 0;
+      goto retry;
+    }
+  }
+  if (copy_rc < 0)
+  {
+    safe_fclose (&fp);
+    mutt_free_body (&body);
+    return NULL;
+  }
 
   fflush(fp);
   rewind(fp);
@@ -1718,8 +1759,18 @@ BODY *mutt_remove_multipart_alternative (BODY *b)
 void mutt_make_date (BUFFER *s)
 {
   time_t t = time (NULL);
-  struct tm *l = localtime (&t);
-  time_t tz = mutt_local_tz (t);
+  struct tm *l;
+  time_t tz = 0;
+
+  if (option (OPTLOCALDATEHEADER))
+  {
+    l = localtime (&t);
+    tz = mutt_local_tz (t);
+  }
+  else
+  {
+    l = gmtime (&t);
+  }
 
   tz /= 60;
 
@@ -1733,7 +1784,7 @@ void mutt_make_date (BUFFER *s)
    recipient lists without needing a huge temporary buffer in memory */
 void mutt_write_address_list (ADDRESS *adr, FILE *fp, int linelen, int display)
 {
-  ADDRESS *tmp;
+  ADDRESS *tmp, *prev;
   char buf[LONG_STRING];
   int count = 0;
   int len;
@@ -1752,7 +1803,7 @@ void mutt_write_address_list (ADDRESS *adr, FILE *fp, int linelen, int display)
     }
     else
     {
-      if (count && adr->mailbox)
+      if (count && !prev->group && adr->mailbox)
       {
 	fputc (' ', fp);
 	linelen++;
@@ -1766,6 +1817,7 @@ void mutt_write_address_list (ADDRESS *adr, FILE *fp, int linelen, int display)
       linelen++;
       fputc (',', fp);
     }
+    prev = adr;
     adr = adr->next;
     count++;
   }
@@ -2170,7 +2222,7 @@ out:
  * mode == MUTT_WRITE_HEADER_NORMAL    => normal mode.  write full header + MIME headers
  * mode == MUTT_WRITE_HEADER_FCC       => fcc mode, like normal mode but for Bcc header
  * mode == MUTT_WRITE_HEADER_POSTPONE  => write just the envelope info
- * mode == MUTT_WRITE_HEADER_MIME      => for writing protected headers
+ * mode == MUTT_WRITE_HEADER_MIME      => for writing protected headers and autocrypt
  *
  * privacy != 0 => will omit any headers which may identify the user.
  *               Output generated is suitable for being sent through
@@ -2190,7 +2242,7 @@ int mutt_write_rfc822_header (FILE *fp, ENVELOPE *env, BODY *attach, char *date,
   int has_agent = 0; /* user defined user-agent header field exists */
 
   if ((mode == MUTT_WRITE_HEADER_NORMAL || mode == MUTT_WRITE_HEADER_FCC ||
-       mode == MUTT_WRITE_HEADER_POSTPONE || mode == MUTT_WRITE_HEADER_MIME) &&
+       mode == MUTT_WRITE_HEADER_POSTPONE) &&
       !privacy)
   {
     if (date)
@@ -2203,6 +2255,14 @@ int mutt_write_rfc822_header (FILE *fp, ENVELOPE *env, BODY *attach, char *date,
       mutt_buffer_pool_release (&datebuf);
     }
   }
+
+  /* The MIME header date is only set for protected headers, and
+   * should only be written for that case.  That is: don't generate
+   * and print a new date with Autocrypt if protected header writing
+   * is turned off.
+   */
+  if ((mode == MUTT_WRITE_HEADER_MIME) && !privacy && date)
+    fprintf (fp, "Date: %s\n", date);
 
   /* OPTUSEFROM is not consulted here so that we can still write a From:
    * field if the user sets it with the `my_hdr' command
@@ -2833,7 +2893,7 @@ static int _mutt_bounce_message (FILE *fp, HEADER *h, ADDRESS *to, const char *r
   }
 
   /* If we failed to open a message, return with error */
-  if (!fp && (msg = mx_open_message (Context, h->msgno)) == NULL)
+  if (!fp && (msg = mx_open_message (Context, h->msgno, 0)) == NULL)
     return -1;
 
   if (!fp) fp = msg->fp;

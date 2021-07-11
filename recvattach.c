@@ -1331,7 +1331,7 @@ void mutt_view_attachments (HEADER *hdr)
 
   mutt_message_hook (Context, hdr, MUTT_MESSAGEHOOK);
 
-  if ((msg = mx_open_message (Context, hdr->msgno)) == NULL)
+  if ((msg = mx_open_message (Context, hdr->msgno, 0)) == NULL)
     return;
 
   menu = mutt_new_menu (MENU_ATTACH);
@@ -1360,6 +1360,12 @@ void mutt_view_attachments (HEADER *hdr)
 
       case OP_ATTACH_VIEW_TEXT:
 	mutt_view_attachment (CURATTACH->fp, CURATTACH->content, MUTT_AS_TEXT,
+			      hdr, actx);
+	menu->redraw = REDRAW_FULL;
+	break;
+
+      case OP_ATTACH_VIEW_PAGER:
+	mutt_view_attachment (CURATTACH->fp, CURATTACH->content, MUTT_VIEW_PAGER,
 			      hdr, actx);
 	menu->redraw = REDRAW_FULL;
 	break;

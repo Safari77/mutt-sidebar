@@ -126,7 +126,8 @@ const struct binding_t OpMain[] = { /* map: index */
   { "previous-undeleted",	OP_MAIN_PREV_UNDELETED,		"k" },
   { "limit",			OP_MAIN_LIMIT,			"l" },
   { "link-threads",		OP_MAIN_LINK_THREADS,		"&" },
-  { "list-reply",		OP_LIST_REPLY,			"L" },
+  { "list-action",	OP_LIST_ACTION, "\033L" },
+  { "list-reply",	OP_LIST_REPLY, "L" },
   { "mail",			OP_MAIL,			"m" },
   { "toggle-new",		OP_TOGGLE_NEW,			"N" },
   { "toggle-write",		OP_TOGGLE_WRITE,		"%" },
@@ -233,7 +234,8 @@ const struct binding_t OpPager[] = { /* map: pager */
   { "previous-undeleted",OP_MAIN_PREV_UNDELETED,	"k" },
   { "previous-entry",	OP_PREV_ENTRY,			"K" },
   { "link-threads",	OP_MAIN_LINK_THREADS,		"&" },
-  { "list-reply",	OP_LIST_REPLY,			"L" },
+  { "list-action",	OP_LIST_ACTION, "\033L" },
+  { "list-reply",	OP_LIST_REPLY, "L" },
   { "redraw-screen",	OP_REDRAW,			"\014" },
   { "mail",		OP_MAIL,			"m" },
   { "mark-as-new",	OP_TOGGLE_NEW,			"N" },
@@ -255,6 +257,7 @@ const struct binding_t OpPager[] = { /* map: pager */
   { "read-subthread",	OP_MAIN_READ_SUBTHREAD,		"\033r" },
   { "resend-message",	OP_RESEND,			"\033e" },
   { "save-message",	OP_SAVE,			"s" },
+  { "skip-headers",	OP_PAGER_SKIP_HEADERS,		"H" },
   { "skip-quoted",	OP_PAGER_SKIP_QUOTED,		"S" },
   { "decode-save",	OP_DECODE_SAVE,			"\033s" },
   { "tag-message",	OP_TAG,				"t" },
@@ -334,11 +337,12 @@ const struct binding_t OpAttach[] = { /* map: attachment */
   { "save-entry",	OP_SAVE,			"s" },
   { "pipe-entry",	OP_PIPE,			"|" },
   { "view-mailcap",	OP_ATTACH_VIEW_MAILCAP,		"m" },
+  { "view-pager",	OP_ATTACH_VIEW_PAGER,		NULL },
   { "reply",		OP_REPLY,			"r" },
   { "resend-message",	OP_RESEND,			"\033e" },
   { "group-chat-reply",	OP_GROUP_CHAT_REPLY,		NULL },
   { "group-reply",	OP_GROUP_REPLY,			"g" },
-  { "list-reply",	OP_LIST_REPLY,			"L" },
+  { "list-reply",	OP_LIST_REPLY, "L" },
   { "forward-message",	OP_FORWARD_MESSAGE,		"f" },
   { "view-text",	OP_ATTACH_VIEW_TEXT,		"T" },
   { "view-attach",	OP_VIEW_ATTACH,			MUTT_ENTER_S },
@@ -390,9 +394,13 @@ const struct binding_t OpCompose[] = { /* map: compose */
   { "toggle-recode",    OP_COMPOSE_TOGGLE_RECODE,	NULL },
   { "update-encoding",	OP_COMPOSE_UPDATE_ENCODING,	"U" },
   { "view-attach",	OP_VIEW_ATTACH,			MUTT_ENTER_S },
+  { "view-mailcap",	OP_ATTACH_VIEW_MAILCAP,		NULL },
+  { "view-pager",	OP_ATTACH_VIEW_PAGER,		NULL },
+  { "view-text",	OP_ATTACH_VIEW_TEXT,		NULL },
   { "view-alt",		OP_COMPOSE_VIEW_ALT,		"v" },
   { "view-alt-text",    OP_COMPOSE_VIEW_ALT_TEXT,       "\033v" },
   { "view-alt-mailcap", OP_COMPOSE_VIEW_ALT_MAILCAP,    "V" },
+  { "view-alt-pager",   OP_COMPOSE_VIEW_ALT_PAGER,      NULL },
   { "send-message",	OP_COMPOSE_SEND_MESSAGE,	"y" },
   { "pipe-entry",	OP_PIPE,			"|" },
   { "move-down",	OP_COMPOSE_MOVE_DOWN,		NULL },
@@ -493,6 +501,17 @@ const struct binding_t OpPgp[] = { /* map: pgp */
   { NULL,		0,				NULL }
 };
 
+
+
+const struct binding_t OpList[] = { /* map: list */
+  { "list-archive",	OP_LIST_ARCHIVE, "a" },
+  { "list-help",	OP_LIST_HELP, "h" },
+  { "list-owner",	OP_LIST_OWNER, "o" },
+  { "list-post",	OP_LIST_POST, "p" },
+  { "list-subscribe",	OP_LIST_SUBSCRIBE, "s" },
+  { "list-unsubscribe",	OP_LIST_UNSUBSCRIBE, "u" },
+  { NULL,		0,		NULL }
+};
 
 
 /* When using the GPGME based backend we have some useful functions

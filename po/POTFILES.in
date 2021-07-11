@@ -45,9 +45,11 @@ init.c
 init.h
 keymap.c
 lib.c
+listmenu.c
 main.c
 mbox.c
 menu.c
+messageid.c
 mh.c
 mutt_lisp.c
 mutt_sasl.c
@@ -83,3 +85,9 @@ smtp.c
 sort.c
 status.c
 thread.c
+OPS
+OPS.CRYPT
+OPS.MIX
+OPS.PGP
+OPS.SIDEBAR
+OPS.SMIME

@@ -88,6 +88,87 @@ struct option_t
 #define ISPELL "ispell"
 #endif
 
+/* Sort Maps:
+ * Value-to-name lookup uses the first match.  They are sorted by value
+ * to make the duplicate values more obvious. */
+
+/*+sort+*/
+const struct mapping_t SortMethods[] = {  /* DT_SORT */
+  { "date",		SORT_DATE },
+  { "date-sent",	SORT_DATE },
+  { "from",		SORT_FROM },
+  { "label",		SORT_LABEL },
+  { "mailbox-order",	SORT_ORDER },
+  { "date-received",	SORT_RECEIVED },
+  { "score",		SORT_SCORE },
+  { "size",		SORT_SIZE },
+  { "spam",		SORT_SPAM },
+  { "subject",		SORT_SUBJECT },
+  { "threads",		SORT_THREADS },
+  { "to",		SORT_TO },
+  { NULL,               0 }
+};
+
+/* same as SortMethods, but with "threads" replaced by "date" */
+
+const struct mapping_t SortAuxMethods[] = {  /* DT_SORT_AUX */
+  { "date",		SORT_DATE },
+  { "date-sent",	SORT_DATE },
+  { "threads",		SORT_DATE },	/* note: sort_aux == threads
+					 * isn't possible.
+					 */
+  { "from",		SORT_FROM },
+  { "label",		SORT_LABEL },
+  { "mailbox-order",	SORT_ORDER },
+  { "date-received",	SORT_RECEIVED },
+  { "score",		SORT_SCORE },
+  { "size",		SORT_SIZE },
+  { "spam",		SORT_SPAM },
+  { "subject",		SORT_SUBJECT },
+  { "to",		SORT_TO },
+  { NULL,               0 }
+};
+
+const struct mapping_t SortBrowserMethods[] = {  /* DT_SORT_BROWSER */
+  { "count",	SORT_COUNT },
+  { "date",	SORT_DATE },
+  { "unsorted",	SORT_ORDER },
+  { "size",	SORT_SIZE },
+  { "alpha",	SORT_SUBJECT },
+  { "unread",	SORT_UNREAD },
+  { NULL,       0 }
+};
+
+const struct mapping_t SortAliasMethods[] = {  /* DT_SORT_ALIAS */
+  { "address",	SORT_ADDRESS },
+  { "alias",	SORT_ALIAS },
+  { "unsorted", SORT_ORDER },
+  { NULL,       0 }
+};
+
+const struct mapping_t SortKeyMethods[] = {  /* DT_SORT_KEYS */
+  { "address",	SORT_ADDRESS },
+  { "date",	SORT_DATE },
+  { "keyid",	SORT_KEYID },
+  { "trust",	SORT_TRUST },
+  { NULL,       0 }
+};
+
+const struct mapping_t SortSidebarMethods[] = {  /* DT_SORT_SIDEBAR */
+  { "count",		SORT_COUNT },
+  { "flagged",		SORT_FLAGGED },
+  { "unsorted",		SORT_ORDER },
+  { "mailbox-order",	SORT_ORDER },
+  { "path",		SORT_PATH },
+  { "alpha",		SORT_SUBJECT },
+  { "name",		SORT_SUBJECT },
+  { "unread",		SORT_UNREAD },
+  { "new",		SORT_UNREAD },  /* kept for compatibility */
+  { NULL,		0 }
+};
+/*-sort-*/
+
+
 struct option_t MuttVars[] = {
   /*++*/
   { "abort_noattach", DT_QUAD, R_NONE, {.l=OPT_ABORTNOATTACH}, {.l=MUTT_NO} },
@@ -1071,6 +1152,8 @@ struct option_t MuttVars[] = {
   ** .pp
   ** This variable controls whether or not attachments on outgoing messages
   ** are saved along with the main body of your message.
+  ** .pp
+  ** Note: $$fcc_before_send forces the default (set) behavior of this option.
   */
   { "fcc_before_send",	DT_BOOL, R_NONE, {.l=OPTFCCBEFORESEND}, {.l=0} },
   /*
@@ -1092,7 +1175,11 @@ struct option_t MuttVars[] = {
   ** When this variable is \fIset\fP, FCCs will be stored unencrypted and
   ** unsigned, even when the actual message is encrypted and/or
   ** signed.
+  ** .pp
+  ** Note: $$fcc_before_send forces the default (unset) behavior of this option.
   ** (PGP only)
+  ** .pp
+  ** See also $$pgp_self_encrypt, $$smime_self_encrypt.
   */
   { "fcc_delimiter", DT_STR, R_NONE, {.p=&FccDelimiter}, {.p=0} },
   /*
@@ -1225,14 +1312,17 @@ struct option_t MuttVars[] = {
   { "forw_decode",	DT_SYN,  R_NONE, {.p="forward_decode"}, {.p=0} },
   /*
   */
-  { "forward_decrypt",	DT_BOOL, R_NONE, {.l=OPTFORWDECRYPT}, {.l=1} },
+  { "forward_decrypt",	DT_QUAD, R_NONE, {.l=OPT_FORWDECRYPT}, {.l=MUTT_YES} },
   /*
   ** .pp
-  ** Controls the handling of encrypted messages when forwarding a message.
-  ** When \fIset\fP, the outer layer of encryption is stripped off.  This
-  ** variable is only used if $$mime_forward is \fIset\fP and
-  ** $$mime_forward_decode is \fIunset\fP.
-  ** (PGP only)
+  ** This quadoption controls the handling of encrypted messages when
+  ** forwarding or attaching a message.  When set to or answered
+  ** ``yes'', the outer layer of encryption is stripped off.
+  ** .pp
+  ** This variable is used if $$mime_forward is \fIset\fP and
+  ** $$mime_forward_decode is \fIunset\fP.  It is also used when
+  ** attaching a message via \fC<attach-message>\fP in the compose
+  ** menu.  (PGP only)
   */
   { "forw_decrypt",	DT_SYN,  R_NONE, {.p="forward_decrypt"}, {.p=0} },
   /*
@@ -1872,6 +1962,12 @@ struct option_t MuttVars[] = {
   ** If \fIset\fP, read messages marked as flagged will not be moved
   ** from your spool mailbox to your $$mbox mailbox, or as a result of
   ** a ``$mbox-hook'' command.
+  */
+  { "local_date_header", DT_BOOL, R_NONE, {.l=OPTLOCALDATEHEADER}, {.l=1} },
+  /*
+  ** .pp
+  ** If \fIset\fP, convert the date in the Date header of sent emails into local
+  ** (sender's) timezone.
   */
   { "mail_check",	DT_NUM,  R_NONE, {.p=&BuffyTimeout}, {.l=5} },
   /*
@@ -3963,7 +4059,7 @@ struct option_t MuttVars[] = {
   ** order, $$sort_aux is reversed again (which is not the right thing to do,
   ** but kept to not break any existing configuration setting).
   */
-  { "sort_browser",	DT_SORT|DT_SORT_BROWSER, R_NONE, {.p=&BrowserSort}, {.l=SORT_ALPHA} },
+  { "sort_browser",	DT_SORT|DT_SORT_BROWSER, R_NONE, {.p=&BrowserSort}, {.l=SORT_SUBJECT} },
   /*
   ** .pp
   ** Specifies how to sort entries in the file browser.  By default, the
@@ -3979,6 +4075,24 @@ struct option_t MuttVars[] = {
   ** .pp
   ** You may optionally use the ``reverse-'' prefix to specify reverse sorting
   ** order (example: ``\fCset sort_browser=reverse-date\fP'').
+  */
+  { "sort_browser_mailboxes", DT_SORT|DT_SORT_BROWSER, R_NONE, {.p=&BrowserSortMailboxes}, {.l=SORT_ORDER} },
+  /*
+  ** .pp
+  ** Specifies how to sort entries in the mailbox browser.  By default, the
+  ** entries are unsorted, displayed in the same order as listed
+  ** in the ``mailboxes'' command.  Valid values:
+  ** .il
+  ** .dd alpha (alphabetically)
+  ** .dd count
+  ** .dd date
+  ** .dd size
+  ** .dd unread
+  ** .dd unsorted
+  ** .ie
+  ** .pp
+  ** You may optionally use the ``reverse-'' prefix to specify reverse sorting
+  ** order (example: ``\fCset sort_browser_mailboxes=reverse-alpha\fP'').
   */
   { "sort_re",		DT_BOOL, R_INDEX|R_RESORT|R_RESORT_INIT, {.l=OPTSORTRE}, {.l=1} },
   /*
@@ -4127,6 +4241,14 @@ struct option_t MuttVars[] = {
   ** certificate whose host name does not match the host used in your folder
   ** URL. You should only unset this for particular known hosts, using
   ** the \fC$<account-hook>\fP function.
+  */
+  { "ssl_verify_host_override", DT_STR, R_NONE, {.p=&SslVerifyHostOverride}, {.p=0} },
+  /*
+  ** .pp
+  ** Defines an alternate host name to verify the server certificate against.
+  ** This should not be set unless you are sure what you are doing, but it
+  ** might be useful for connection to a .onion host without a properly
+  ** configured host name in the certificate.  See $$ssl_verify_host.
   */
   { "ssl_verify_host_override", DT_STR, R_NONE, {.p=&SslVerifyHostOverride}, {.p=0} },
   /*
@@ -4302,7 +4424,7 @@ struct option_t MuttVars[] = {
   { "thorough_search",	DT_BOOL, R_NONE, {.l=OPTTHOROUGHSRC}, {.l=1} },
   /*
   ** .pp
-  ** Affects the \fC~b\fP and \fC~h\fP search operations described in
+  ** Affects the \fC~b\fP, \fC~B\fP, and \fC~h\fP search operations described in
   ** section ``$patterns''.  If \fIset\fP, the headers and body/attachments of
   ** messages to be searched are decoded before searching. If \fIunset\fP,
   ** messages are searched as they appear in the folder.
@@ -4615,81 +4737,6 @@ struct option_t MuttVars[] = {
   */
   /*--*/
   { NULL, 0, 0, {.l=0}, {.l=0} }
-};
-
-const struct mapping_t SortMethods[] = {
-  { "date",		SORT_DATE },
-  { "date-sent",	SORT_DATE },
-  { "date-received",	SORT_RECEIVED },
-  { "mailbox-order",	SORT_ORDER },
-  { "subject",		SORT_SUBJECT },
-  { "from",		SORT_FROM },
-  { "size",		SORT_SIZE },
-  { "threads",		SORT_THREADS },
-  { "to",		SORT_TO },
-  { "score",		SORT_SCORE },
-  { "spam",		SORT_SPAM },
-  { "label",		SORT_LABEL },
-  { NULL,               0 }
-};
-
-/* same as SortMethods, but with "threads" replaced by "date" */
-
-const struct mapping_t SortAuxMethods[] = {
-  { "date",		SORT_DATE },
-  { "date-sent",	SORT_DATE },
-  { "date-received",	SORT_RECEIVED },
-  { "mailbox-order",	SORT_ORDER },
-  { "subject",		SORT_SUBJECT },
-  { "from",		SORT_FROM },
-  { "size",		SORT_SIZE },
-  { "threads",		SORT_DATE },	/* note: sort_aux == threads
-					 * isn't possible.
-					 */
-  { "to",		SORT_TO },
-  { "score",		SORT_SCORE },
-  { "spam",		SORT_SPAM },
-  { "label",		SORT_LABEL },
-  { NULL,               0 }
-};
-
-
-const struct mapping_t SortBrowserMethods[] = {
-  { "alpha",	SORT_SUBJECT },
-  { "count",	SORT_COUNT },
-  { "date",	SORT_DATE },
-  { "size",	SORT_SIZE },
-  { "unread",	SORT_UNREAD },
-  { "unsorted",	SORT_ORDER },
-  { NULL,       0 }
-};
-
-const struct mapping_t SortAliasMethods[] = {
-  { "alias",	SORT_ALIAS },
-  { "address",	SORT_ADDRESS },
-  { "unsorted", SORT_ORDER },
-  { NULL,       0 }
-};
-
-const struct mapping_t SortKeyMethods[] = {
-  { "address",	SORT_ADDRESS },
-  { "date",	SORT_DATE },
-  { "keyid",	SORT_KEYID },
-  { "trust",	SORT_TRUST },
-  { NULL,       0 }
-};
-
-const struct mapping_t SortSidebarMethods[] = {
-  { "alpha",		SORT_SUBJECT },
-  { "count",		SORT_COUNT },
-  { "flagged",		SORT_FLAGGED },
-  { "mailbox-order",	SORT_ORDER },
-  { "name",		SORT_SUBJECT },
-  { "new",		SORT_UNREAD },  /* kept for compatibility */
-  { "path",		SORT_PATH },
-  { "unread",		SORT_UNREAD },
-  { "unsorted",		SORT_ORDER },
-  { NULL,		0 }
 };
 
 

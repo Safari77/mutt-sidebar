@@ -58,7 +58,8 @@ void mutt_check_rescore (CONTEXT *ctx)
     for (i = 0; ctx && i < ctx->msgcount; i++)
     {
       mutt_score_message (ctx, ctx->hdrs[i], 1);
-      ctx->hdrs[i]->pair = 0;
+      ctx->hdrs[i]->color.pair = 0;
+      ctx->hdrs[i]->color.attrs = 0;
     }
   }
   unset_option (OPTNEEDRESCORE);
@@ -117,7 +118,7 @@ int mutt_parse_score (BUFFER *buf, BUFFER *s, union pointer_long_t udata, BUFFER
     ptr->exact = 1;
     pc++;
   }
-  if (mutt_atoi (pc, &ptr->val) < 0)
+  if (mutt_atoi (pc, &ptr->val, 0) < 0)
   {
     FREE (&pattern);
     strfcpy (err->data, _("Error: score: invalid number"), err->dsize);

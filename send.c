@@ -368,7 +368,7 @@ void mutt_forward_trailer (CONTEXT *ctx, HEADER *cur, FILE *fp)
 
 static int include_forward (CONTEXT *ctx, HEADER *cur, FILE *out)
 {
-  int chflags = CH_DECODE, cmflags = 0;
+  int chflags = CH_DECODE, cmflags = MUTT_CM_FORWARDING;
 
   mutt_parse_mime_message (ctx, cur);
   mutt_message_hook (ctx, cur, MUTT_MESSAGEHOOK);
@@ -413,7 +413,7 @@ static int inline_forward_attachments (CONTEXT *ctx, HEADER *cur,
   mutt_parse_mime_message (ctx, cur);
   mutt_message_hook (ctx, cur, MUTT_MESSAGEHOOK);
 
-  if ((msg = mx_open_message (ctx, cur->msgno)) == NULL)
+  if ((msg = mx_open_message (ctx, cur->msgno, 0)) == NULL)
     return -1;
 
   actx = safe_calloc (sizeof(ATTACH_CONTEXT), 1);
@@ -945,6 +945,11 @@ generate_body (FILE *tempfp,	/* stream for outgoing message */
       if (cur)
       {
 	tmp = mutt_make_message_attach (ctx, cur, 0);
+        if (!tmp)
+        {
+          mutt_error _("Could not include all requested messages!");
+          return -1;
+        }
 	if (last)
 	  last->next = tmp;
 	else
@@ -957,6 +962,11 @@ generate_body (FILE *tempfp,	/* stream for outgoing message */
 	  if (ctx->hdrs[ctx->v2r[i]]->tagged)
 	  {
 	    tmp = mutt_make_message_attach (ctx, ctx->hdrs[ctx->v2r[i]], 0);
+            if (!tmp)
+            {
+              mutt_error _("Could not include all requested messages!");
+              return -1;
+            }
 	    if (last)
 	    {
 	      last->next = tmp;
@@ -1052,29 +1062,24 @@ void mutt_set_followup_to (ENVELOPE *e)
   }
 }
 
-
 /* look through the recipients of the message we are replying to, and if
    we find an address that matches $alternates, we use that as the default
    from field */
-static ADDRESS *set_reverse_name (ENVELOPE *env)
+static ADDRESS *set_reverse_name (SEND_CONTEXT *sctx, CONTEXT *ctx)
 {
-  ADDRESS *tmp;
+  ADDRESS *tmp = NULL;
+  int i;
 
-  for (tmp = env->to; tmp; tmp = tmp->next)
+  if (sctx->cur)
+    tmp = mutt_find_user_in_envelope (sctx->cur->env);
+  else if (ctx && ctx->tagged)
   {
-    if (mutt_addr_is_user (tmp))
-      break;
+    for (i = 0; i < ctx->vcount; i++)
+      if (ctx->hdrs[ctx->v2r[i]]->tagged)
+        if ((tmp = mutt_find_user_in_envelope (ctx->hdrs[ctx->v2r[i]]->env)) != NULL)
+          break;
   }
-  if (!tmp)
-  {
-    for (tmp = env->cc; tmp; tmp = tmp->next)
-    {
-      if (mutt_addr_is_user (tmp))
-	break;
-    }
-  }
-  if (!tmp && mutt_addr_is_user (env->from))
-    tmp = env->from;
+
   if (tmp)
   {
     tmp = rfc822_cpy_adr_real (tmp);
@@ -1856,8 +1861,7 @@ static int send_message_setup (SEND_CONTEXT *sctx, const char *tempfile,
   BUFFER *tmpbuffer;
 
   /* Prompt only for the <mail> operation. */
-  if ((sctx->flags == SENDBACKGROUNDEDIT) &&
-      !sctx->msg &&
+  if ((sctx->flags & SENDCHECKPOSTPONED) &&
       quadoption (OPT_RECALL) != MUTT_NO &&
       mutt_num_postponed (1))
   {
@@ -1959,7 +1963,9 @@ static int send_message_setup (SEND_CONTEXT *sctx, const char *tempfile,
   }
 
   /* this is handled here so that the user can match ~f in send-hook */
-  if (sctx->cur && option (OPTREVNAME) && !(sctx->flags & (SENDPOSTPONED|SENDRESEND)))
+  if (option (OPTREVNAME) && ctx &&
+      !(sctx->flags & (SENDPOSTPONED|SENDRESEND)) &&
+      (sctx->flags & (SENDREPLY | SENDFORWARD | SENDTOSENDER)))
   {
     /* we shouldn't have to worry about freeing `sctx->msg->env->from' before
      * setting it here since this code will only execute when doing some
@@ -1973,7 +1979,7 @@ static int send_message_setup (SEND_CONTEXT *sctx, const char *tempfile,
      * have their aliases expanded.
      */
 
-    sctx->msg->env->from = set_reverse_name (sctx->cur->env);
+    sctx->msg->env->from = set_reverse_name (sctx, ctx);
   }
 
   if (! (sctx->flags & (SENDPOSTPONED|SENDRESEND)) &&

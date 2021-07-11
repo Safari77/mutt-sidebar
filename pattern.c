@@ -335,13 +335,23 @@ msg_search (CONTEXT *ctx, pattern_t* pat, int msgno)
   STATE s;
   struct stat st;
   FILE *fp = NULL;
-  long lng = 0;
+  LOFF_T lng = 0;
   int match = 0;
   HEADER *h = ctx->hdrs[msgno];
   char *buf;
   size_t blen;
 
-  if ((msg = mx_open_message (ctx, msgno)) != NULL)
+  /* The third parameter is whether to download only headers.
+   * When the user has $message_cachedir set, they likely expect to
+   * "take the hit" once and have it be cached than ~h to bypass the
+   * message cache completely, since this was the previous behavior.
+   */
+  if ((msg = mx_open_message (ctx, msgno,
+                              (pat->op == MUTT_HEADER
+#if defined(USE_IMAP) || defined(USE_POP)
+                               && !MessageCachedir
+#endif
+                                ))) != NULL)
   {
     if (option (OPTTHOROUGHSRC))
     {
@@ -385,7 +395,7 @@ msg_search (CONTEXT *ctx, pattern_t* pat, int msgno)
       fflush (fp);
       fseek (fp, 0, 0);
       fstat (fileno (fp), &st);
-      lng = (long) st.st_size;
+      lng = (LOFF_T) st.st_size;
     }
     else
     {
@@ -1881,7 +1891,7 @@ int mutt_pattern_func (int op, char *prompt)
   BUFFER *buf = NULL;
   char *simple = NULL;
   BUFFER err;
-  int i, rv = -1, padding;
+  int i, rv = -1, padding, interrupted = 0;
   progress_t progress;
 
   buf = mutt_buffer_pool_get ();
@@ -1926,6 +1936,12 @@ int mutt_pattern_func (int op, char *prompt)
 
     for (i = 0; i < Context->msgcount; i++)
     {
+      if (SigInt)
+      {
+        interrupted = 1;
+        SigInt = 0;
+        break;
+      }
       mutt_progress_update (&progress, i, -1);
       /* new limit pattern implicitly uncollapses all threads */
       Context->hdrs[i]->virtual = -1;
@@ -1949,6 +1965,12 @@ int mutt_pattern_func (int op, char *prompt)
   {
     for (i = 0; i < Context->vcount; i++)
     {
+      if (SigInt)
+      {
+        interrupted = 1;
+        SigInt = 0;
+        break;
+      }
       mutt_progress_update (&progress, i, -1);
       if (mutt_pattern_exec (pat, MUTT_MATCH_FULL_ADDRESS, Context, Context->hdrs[Context->v2r[i]], NULL))
       {
@@ -1997,6 +2019,9 @@ int mutt_pattern_func (int op, char *prompt)
       Context->limit_pattern = mutt_pattern_comp (buf->data, MUTT_FULL_MSG, &err);
     }
   }
+
+  if (interrupted)
+    mutt_error _("Search interrupted.");
 
   rv = 0;
 
