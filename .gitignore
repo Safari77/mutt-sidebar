@@ -53,6 +53,7 @@ install-sh
 keymap_defs.h
 Makefile
 /po/Makefile.in
+/po/stamp-po
 /doc/Makefile.in
 /imap/Makefile.in
 /m4/Makefile.in
