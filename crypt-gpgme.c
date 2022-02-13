@@ -2110,7 +2110,6 @@ int pgp_gpgme_decrypt_mime (FILE *fpin, FILE **fpout, BODY *b, BODY **cur)
   BODY *first_part = b;
   int is_signed = 0;
   int need_decode = 0;
-  int saved_type;
   LOFF_T saved_offset;
   size_t saved_length;
   FILE *decoded_fp = NULL;
@@ -2141,7 +2140,6 @@ int pgp_gpgme_decrypt_mime (FILE *fpin, FILE **fpout, BODY *b, BODY **cur)
 
   if (need_decode)
   {
-    saved_type = b->type;
     saved_offset = b->offset;
     saved_length = b->length;
 
@@ -2154,7 +2152,7 @@ int pgp_gpgme_decrypt_mime (FILE *fpin, FILE **fpout, BODY *b, BODY **cur)
     }
     unlink (mutt_b2s (tempfile));
 
-    fseeko (s.fpin, b->offset, 0);
+    fseeko (s.fpin, b->offset, SEEK_SET);
     s.fpout = decoded_fp;
 
     mutt_decode_attachment (b, &s);
@@ -2193,7 +2191,6 @@ bail:
 
   if (need_decode)
   {
-    b->type = saved_type;
     b->length = saved_length;
     b->offset = saved_offset;
     safe_fclose (&decoded_fp);
@@ -2213,7 +2210,6 @@ int smime_gpgme_decrypt_mime (FILE *fpin, FILE **fpout, BODY *b, BODY **cur)
   int is_signed;
   LOFF_T saved_b_offset;
   size_t saved_b_length;
-  int saved_b_type;
 
   if (!mutt_is_application_smime (b))
     return -1;
@@ -2228,12 +2224,11 @@ int smime_gpgme_decrypt_mime (FILE *fpin, FILE **fpout, BODY *b, BODY **cur)
      backend.  The backend allows for Base64 encoded data but it does
      not allow for QP which I have seen in some messages.  So better
      do it here. */
-  saved_b_type = b->type;
   saved_b_offset = b->offset;
   saved_b_length = b->length;
   memset (&s, 0, sizeof (s));
   s.fpin = fpin;
-  fseeko (s.fpin, b->offset, 0);
+  fseeko (s.fpin, b->offset, SEEK_SET);
   mutt_buffer_mktemp (tempfile);
   if (!(tmpfp = safe_fopen (mutt_b2s (tempfile), "w+")))
     {
@@ -2263,7 +2258,6 @@ int smime_gpgme_decrypt_mime (FILE *fpin, FILE **fpout, BODY *b, BODY **cur)
   *cur = decrypt_part (b, &s, *fpout, 1, &is_signed);
   if (*cur)
     (*cur)->goodsig = is_signed > 0;
-  b->type = saved_b_type;
   b->length = saved_b_length;
   b->offset = saved_b_offset;
   safe_fclose (&tmpfp);
@@ -2282,12 +2276,11 @@ int smime_gpgme_decrypt_mime (FILE *fpin, FILE **fpout, BODY *b, BODY **cur)
       BODY *bb = *cur;
       BODY *tmp_b;
 
-      saved_b_type = bb->type;
       saved_b_offset = bb->offset;
       saved_b_length = bb->length;
       memset (&s, 0, sizeof (s));
       s.fpin = *fpout;
-      fseeko (s.fpin, bb->offset, 0);
+      fseeko (s.fpin, bb->offset, SEEK_SET);
       mutt_buffer_mktemp (tempfile);
       if (!(tmpfp = safe_fopen (mutt_b2s (tempfile), "w+")))
         {
@@ -2318,7 +2311,6 @@ int smime_gpgme_decrypt_mime (FILE *fpin, FILE **fpout, BODY *b, BODY **cur)
       tmp_b = decrypt_part (bb, &s, *fpout, 1, &is_signed);
       if (tmp_b)
         tmp_b->goodsig = is_signed > 0;
-      bb->type = saved_b_type;
       bb->length = saved_b_length;
       bb->offset = saved_b_offset;
       safe_fclose (&tmpfp);
@@ -2772,7 +2764,7 @@ int pgp_gpgme_application_handler (BODY *m, STATE *s)
   if (!mutt_get_body_charset (body_charset, sizeof (body_charset), m))
     strfcpy (body_charset, "iso-8859-1", sizeof body_charset);
 
-  fseeko (s->fpin, m->offset, 0);
+  fseeko (s->fpin, m->offset, SEEK_SET);
   last_pos = m->offset;
 
   for (bytes = m->length; bytes > 0;)
@@ -2843,7 +2835,7 @@ int pgp_gpgme_application_handler (BODY *m, STATE *s)
           /* Copy PGP material to an data container */
 	  armored_data = file_to_data_object (s->fpin, block_begin,
                                               block_end - block_begin);
-          fseeko (s->fpin, block_end, 0);
+          fseeko (s->fpin, block_end, SEEK_SET);
 
           /* Invoke PGP if needed */
           if (pgp_keyblock)
@@ -4716,7 +4708,7 @@ static crypt_key_t *crypt_getkeybyaddr (ADDRESS * a, short abilities,
   *forced_valid = 0;
 
   if (a && a->mailbox)
-    hints = crypt_add_string_to_hints (hints, a->mailbox);
+    hints = mutt_add_list (hints, a->mailbox);
   if (a && a->personal)
     hints = crypt_add_string_to_hints (hints, a->personal);
 
@@ -4991,7 +4983,7 @@ static char *find_keys (ADDRESS *adrlist, unsigned int app, int oppenc_mode)
               {
                 snprintf (buf, sizeof (buf), _("Use keyID = \"%s\" for %s?"),
                           crypt_hook_val, p->mailbox);
-                r = mutt_yesorno (buf, MUTT_YES);
+                r = mutt_query_boolean (OPTCRYPTCONFIRMHOOK, buf, MUTT_YES);
               }
             if (r == MUTT_YES)
               {

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2000 Michael R. Elkins <me@mutt.org>
+ * Copyright (C) 2021 Kevin J. McCarthy <kevin@8t8.us>
  *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
@@ -16,20 +16,17 @@
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-#ifndef MAPPING_H
-#define MAPPING_H
+#ifndef _MUTT_SASL_GNU_H_
+#define _MUTT_SASL_GNU_H_ 1
 
-struct mapping_t
-{
-  const char *name;
-  int value;
-};
+#include <gsasl.h>
 
-const char *mutt_getnamebyvalue (int, const struct mapping_t *);
-char *mutt_compile_help (char *, size_t, int, const struct mapping_t *);
+#include "mutt_socket.h"
 
-const struct mapping_t *mutt_get_mapentry_by_name (const char *,
-                                                   const struct mapping_t *);
-int mutt_getvaluebyname (const char *, const struct mapping_t *);
+void mutt_gsasl_done (void);
+const char *mutt_gsasl_get_mech (const char *requested_mech,
+                                 const char *server_mechlist);
+int mutt_gsasl_client_new (CONNECTION *, const char *, Gsasl_session **);
+void mutt_gsasl_client_finish (Gsasl_session **sctx);
 
-#endif
+#endif /* _MUTT_SASL_GNU_H_ */

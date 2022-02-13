@@ -29,11 +29,15 @@
 #ifdef USE_SSL
 # include "mutt_ssl.h"
 #endif
-#ifdef USE_SASL
+#ifdef USE_SASL_CYRUS
 #include "mutt_sasl.h"
 
 #include <sasl/sasl.h>
 #include <sasl/saslutil.h>
+#endif
+#ifdef USE_SASL_GNU
+#include "mutt_sasl_gnu.h"
+#include <gsasl.h>
 #endif
 
 #include <netdb.h>
@@ -68,8 +72,11 @@ enum {
 
 static int smtp_auth (CONNECTION* conn);
 static int smtp_auth_oauth (CONNECTION* conn, int xoauth2);
-#ifdef USE_SASL
+#ifdef USE_SASL_CYRUS
 static int smtp_auth_sasl (CONNECTION* conn, const char* mechanisms);
+#endif
+#ifdef USE_SASL_GNU
+static int smtp_auth_gsasl (CONNECTION* conn, const char* method);
 #endif
 
 static int smtp_fill_account (ACCOUNT* account);
@@ -79,7 +86,12 @@ static int Esmtp = 0;
 static char* AuthMechs = NULL;
 static unsigned char Capabilities[(CAPMAX + 7)/ 8];
 
-static int smtp_code (char *buf, size_t len, int *n)
+/* Note: the 'len' parameter is actually the number of bytes, as
+ * returned by mutt_socket_readln().  If all callers are converted to
+ * mutt_socket_buffer_readln() we can pass in the actual len, or
+ * perhaps the buffer itself.
+ */
+static int smtp_code (const char *buf, size_t len, int *n)
 {
   char code[4];
 
@@ -146,6 +158,36 @@ smtp_get_resp (CONNECTION * conn)
 
   mutt_error (_("SMTP session failed: %s"), buf);
   return -1;
+}
+
+static int
+smtp_get_auth_response (CONNECTION *conn, BUFFER *input_buf, int *smtp_rc,
+                        BUFFER *response_buf)
+{
+  const char *smtp_response;
+
+  mutt_buffer_clear (response_buf);
+  do
+  {
+    if (mutt_socket_buffer_readln (input_buf, conn) < 0)
+      return -1;
+    if (smtp_code (mutt_b2s (input_buf),
+                   mutt_buffer_len (input_buf) + 1, /* number of bytes */
+                   smtp_rc) < 0)
+      return -1;
+
+    if (*smtp_rc != smtp_ready)
+      break;
+
+    smtp_response = mutt_b2s (input_buf) + 3;
+    if (*smtp_response)
+    {
+      smtp_response++;
+      mutt_buffer_addstr (response_buf, smtp_response);
+    }
+  } while (mutt_b2s (input_buf)[3] == '-');
+
+  return 0;
 }
 
 static int
@@ -547,8 +589,10 @@ static int smtp_auth (CONNECTION* conn)
       }
       else
       {
-#ifdef USE_SASL
+#if defined(USE_SASL_CYRUS)
 	r = smtp_auth_sasl (conn, method);
+#elif defined(USE_SASL_GNU)
+	r = smtp_auth_gsasl (conn, method);
 #else
 	mutt_error (_("SMTP authentication method %s requires SASL"), method);
 	mutt_sleep (1);
@@ -568,8 +612,10 @@ static int smtp_auth (CONNECTION* conn)
   }
   else
   {
-#ifdef USE_SASL
-    r = smtp_auth_sasl (conn, AuthMechs);
+#if defined(USE_SASL_CYRUS)
+	r = smtp_auth_sasl (conn, AuthMechs);
+#elif defined(USE_SASL_GNU)
+	r = smtp_auth_gsasl (conn, NULL);
 #else
     mutt_error (_("SMTP authentication requires SASL"));
     mutt_sleep (1);
@@ -594,30 +640,30 @@ static int smtp_auth (CONNECTION* conn)
   return r == SMTP_AUTH_SUCCESS ? 0 : -1;
 }
 
-#ifdef USE_SASL
+#ifdef USE_SASL_CYRUS
 static int smtp_auth_sasl (CONNECTION* conn, const char* mechlist)
 {
   sasl_conn_t* saslconn;
   sasl_interact_t* interaction = NULL;
   const char* mech;
   const char* data = NULL;
-  unsigned int len;
-  char *buf = NULL, *smtp_response;
-  size_t bufsize = 0;
-  int rc, saslrc;
+  unsigned int data_len;
+  BUFFER *temp_buf = NULL, *output_buf = NULL, *smtp_response_buf = NULL;
+  int rc = SMTP_AUTH_FAIL, sasl_rc, smtp_rc;
 
   if (mutt_sasl_client_new (conn, &saslconn) < 0)
     return SMTP_AUTH_FAIL;
 
   do
   {
-    rc = sasl_client_start (saslconn, mechlist, &interaction, &data, &len, &mech);
-    if (rc == SASL_INTERACT)
+    sasl_rc = sasl_client_start (saslconn, mechlist, &interaction, &data,
+                                 &data_len, &mech);
+    if (sasl_rc == SASL_INTERACT)
       mutt_sasl_interact (interaction);
   }
-  while (rc == SASL_INTERACT);
+  while (sasl_rc == SASL_INTERACT);
 
-  if (rc != SASL_OK && rc != SASL_CONTINUE)
+  if (sasl_rc != SASL_OK && sasl_rc != SASL_CONTINUE)
   {
     dprint (2, (debugfile, "smtp_auth_sasl: %s unavailable\n", NONULL (mechlist)));
     sasl_dispose (&saslconn);
@@ -627,40 +673,31 @@ static int smtp_auth_sasl (CONNECTION* conn, const char* mechlist)
   if (!option(OPTNOCURSES))
     mutt_message (_("Authenticating (%s)..."), mech);
 
-  bufsize = ((len * 2) > LONG_STRING) ? (len * 2) : LONG_STRING;
-  buf = safe_malloc (bufsize);
+  temp_buf = mutt_buffer_pool_get ();
+  output_buf = mutt_buffer_pool_get ();
+  smtp_response_buf = mutt_buffer_pool_get ();
 
-  snprintf (buf, bufsize, "AUTH %s", mech);
-  if (len)
+  mutt_buffer_printf (output_buf, "AUTH %s", mech);
+  if (data_len)
   {
-    safe_strcat (buf, bufsize, " ");
-    if (sasl_encode64 (data, len, buf + mutt_strlen (buf),
-                       bufsize - mutt_strlen (buf), &len) != SASL_OK)
-    {
-      dprint (1, (debugfile, "smtp_auth_sasl: error base64-encoding client response.\n"));
-      goto fail;
-    }
+    mutt_buffer_addch (output_buf, ' ');
+    mutt_buffer_to_base64 (temp_buf, (const unsigned char *)data, data_len);
+    mutt_buffer_addstr (output_buf, mutt_b2s (temp_buf));
   }
-  safe_strcat (buf, bufsize, "\r\n");
+  mutt_buffer_addstr (output_buf, "\r\n");
 
   do
   {
-    if (mutt_socket_write (conn, buf) < 0)
-      goto fail;
-    if ((rc = mutt_socket_readln (buf, bufsize, conn)) < 0)
-      goto fail;
-    if (smtp_code (buf, rc, &rc) < 0)
+    if (mutt_socket_write (conn, mutt_b2s (output_buf)) < 0)
       goto fail;
 
-    if (rc != smtp_ready)
+    if (smtp_get_auth_response (conn, temp_buf, &smtp_rc, smtp_response_buf) < 0)
+      goto fail;
+
+    if (smtp_rc != smtp_ready)
       break;
 
-    /* TODO: why aren't we handling multiline replies */
-    smtp_response = buf + 3;
-    if (*smtp_response)
-      smtp_response++;
-
-    if (sasl_decode64 (smtp_response, strlen (smtp_response), buf, bufsize - 1, &len) != SASL_OK)
+    if (mutt_buffer_from_base64 (temp_buf, mutt_b2s (smtp_response_buf)) < 0)
     {
       dprint (1, (debugfile, "smtp_auth_sasl: error base64-decoding server response.\n"));
       goto fail;
@@ -668,41 +705,123 @@ static int smtp_auth_sasl (CONNECTION* conn, const char* mechlist)
 
     do
     {
-      saslrc = sasl_client_step (saslconn, buf, len, &interaction, &data, &len);
-      if (saslrc == SASL_INTERACT)
+      sasl_rc = sasl_client_step (saslconn, mutt_b2s (temp_buf),
+                                 mutt_buffer_len (temp_buf),
+                                 &interaction, &data, &data_len);
+      if (sasl_rc == SASL_INTERACT)
         mutt_sasl_interact (interaction);
     }
-    while (saslrc == SASL_INTERACT);
+    while (sasl_rc == SASL_INTERACT);
 
-    if (len)
-    {
-      if ((len * 2) > bufsize)
-      {
-        bufsize = len * 2;
-        safe_realloc (&buf, bufsize);
-      }
-      if (sasl_encode64 (data, len, buf, bufsize, &len) != SASL_OK)
-      {
-        dprint (1, (debugfile, "smtp_auth_sasl: error base64-encoding client response.\n"));
-        goto fail;
-      }
-    }
-    strfcpy (buf + len, "\r\n", bufsize - len);
-  } while (rc == smtp_ready && saslrc != SASL_FAIL);
+    if (data_len)
+      mutt_buffer_to_base64 (output_buf, (const unsigned char *)data, data_len);
+    else
+      mutt_buffer_clear (output_buf);
+    mutt_buffer_addstr (output_buf, "\r\n");
+  }
+  while (sasl_rc != SASL_FAIL);
 
-  if (smtp_success (rc))
+  if (smtp_success (smtp_rc))
   {
     mutt_sasl_setup_conn (conn, saslconn);
-    FREE (&buf);
-    return SMTP_AUTH_SUCCESS;
+    rc = SMTP_AUTH_SUCCESS;
+  }
+  else
+  {
+    if (smtp_rc == smtp_ready)
+      mutt_socket_write (conn, "*\r\n");
+    sasl_dispose (&saslconn);
   }
 
 fail:
-  sasl_dispose (&saslconn);
-  FREE (&buf);
-  return SMTP_AUTH_FAIL;
+  mutt_buffer_pool_release (&temp_buf);
+  mutt_buffer_pool_release (&output_buf);
+  mutt_buffer_pool_release (&smtp_response_buf);
+  return rc;
 }
-#endif /* USE_SASL */
+#endif /* USE_SASL_CYRUS */
+
+#ifdef USE_SASL_GNU
+static int smtp_auth_gsasl (CONNECTION *conn, const char *method)
+{
+  Gsasl_session *gsasl_session = NULL;
+  const char *chosen_mech;
+  BUFFER *input_buf = NULL, *output_buf = NULL, *smtp_response_buf = NULL;
+  char *gsasl_step_output = NULL;
+  int rc = SMTP_AUTH_FAIL, gsasl_rc = GSASL_OK, smtp_rc;
+
+  chosen_mech = mutt_gsasl_get_mech (method, AuthMechs);
+  if (!chosen_mech)
+  {
+    dprint (2, (debugfile, "mutt_gsasl_get_mech() returned no usable mech\n"));
+    return SMTP_AUTH_UNAVAIL;
+  }
+
+  dprint (2, (debugfile, "smtp_auth_gsasl: using mech %s\n", chosen_mech));
+
+  if (mutt_gsasl_client_new (conn, chosen_mech, &gsasl_session) < 0)
+  {
+    dprint (1, (debugfile,
+                "smtp_auth_gsasl: Error allocating GSASL connection.\n"));
+    return SMTP_AUTH_UNAVAIL;
+  }
+
+  if (!option(OPTNOCURSES))
+    mutt_message (_("Authenticating (%s)..."), chosen_mech);
+
+  input_buf = mutt_buffer_pool_get ();
+  output_buf = mutt_buffer_pool_get ();
+  smtp_response_buf = mutt_buffer_pool_get ();
+  mutt_buffer_printf (output_buf, "AUTH %s\r\n", chosen_mech);
+
+  do
+  {
+    if (mutt_socket_write (conn, mutt_b2s (output_buf)) < 0)
+      goto fail;
+
+    if (smtp_get_auth_response (conn, input_buf, &smtp_rc, smtp_response_buf) < 0)
+      goto fail;
+
+    if (smtp_rc != smtp_ready)
+      break;
+
+    gsasl_rc = gsasl_step64 (gsasl_session, mutt_b2s (smtp_response_buf),
+                             &gsasl_step_output);
+    if (gsasl_rc == GSASL_NEEDS_MORE || gsasl_rc == GSASL_OK)
+    {
+      mutt_buffer_strcpy (output_buf, gsasl_step_output);
+      mutt_buffer_addstr (output_buf, "\r\n");
+      gsasl_free (gsasl_step_output);
+    }
+    else
+    {
+      dprint (1, (debugfile, "gsasl_step64() failed (%d): %s\n", gsasl_rc,
+                  gsasl_strerror (gsasl_rc)));
+    }
+  }
+  while (gsasl_rc == GSASL_NEEDS_MORE || gsasl_rc == GSASL_OK);
+
+  if (smtp_rc == smtp_ready)
+  {
+    mutt_socket_write (conn, "*\r\n");
+    goto fail;
+  }
+
+  if (smtp_success (smtp_rc) && (gsasl_rc == GSASL_OK))
+    rc = SMTP_AUTH_SUCCESS;
+
+fail:
+  mutt_buffer_pool_release (&input_buf);
+  mutt_buffer_pool_release (&output_buf);
+  mutt_buffer_pool_release (&smtp_response_buf);
+  mutt_gsasl_client_finish (&gsasl_session);
+
+  if (rc == SMTP_AUTH_FAIL)
+    dprint (2, (debugfile, "smtp_auth_gsasl: %s failed\n", chosen_mech));
+
+  return rc;
+}
+#endif
 
 
 /* smtp_auth_oauth: AUTH=OAUTHBEARER support. See RFC 7628 */

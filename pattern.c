@@ -217,6 +217,14 @@ Flags[] =
   { 'S', MUTT_SUPERSEDED, 0, 0,
     /* L10N:
        Pattern Completion Menu description for ~S
+
+       An email header, Supersedes: or Supercedes:, can specify a
+       message-id.  The intent is to say, "the original message with
+       this message-id should be considered incorrect or out of date,
+       and this email should be the actual email."
+
+       The ~S pattern will select those "out of date/incorrect" emails
+       referenced by another email's Supersedes header.
     */
     N_("superseded messages") },
   { 't', MUTT_TO, 0, EAT_REGEXP,
@@ -387,13 +395,13 @@ msg_search (CONTEXT *ctx, pattern_t* pat, int msgno)
 	  goto cleanup;
 	}
 
-	fseeko (msg->fp, h->offset, 0);
+	fseeko (msg->fp, h->offset, SEEK_SET);
 	mutt_body_handler (h->content, &s);
       }
 
       fp = s.fpout;
       fflush (fp);
-      fseek (fp, 0, 0);
+      fseek (fp, 0, SEEK_SET);
       fstat (fileno (fp), &st);
       lng = (LOFF_T) st.st_size;
     }
@@ -403,13 +411,13 @@ msg_search (CONTEXT *ctx, pattern_t* pat, int msgno)
       fp = msg->fp;
       if (pat->op != MUTT_BODY)
       {
-	fseeko (fp, h->offset, 0);
+	fseeko (fp, h->offset, SEEK_SET);
 	lng = h->content->offset - h->offset;
       }
       if (pat->op != MUTT_HEADER)
       {
 	if (pat->op == MUTT_BODY)
-	  fseeko (fp, h->content->offset, 0);
+	  fseeko (fp, h->content->offset, SEEK_SET);
 	lng += h->content->length;
       }
     }
@@ -474,7 +482,7 @@ static int msg_search_sendmode (HEADER *h, pattern_t *pat)
                               MUTT_WRITE_HEADER_POSTPONE,
                               0, 0);
     fflush (fp);
-    fseek (fp, 0, 0);
+    fseek (fp, 0, SEEK_SET);
 
     while ((buf = mutt_read_line (buf, &blen, fp, NULL, 0)) != NULL)
     {
@@ -1170,9 +1178,9 @@ pattern_t *mutt_pattern_comp (/* const */ char *s, int flags, BUFFER *err)
   ps.dptr = s;
   ps.dsize = mutt_strlen (s);
 
+  SKIPWS (ps.dptr);
   while (*ps.dptr)
   {
-    SKIPWS (ps.dptr);
     switch (*ps.dptr)
     {
       case '^':
@@ -1266,7 +1274,6 @@ pattern_t *mutt_pattern_comp (/* const */ char *s, int flags, BUFFER *err)
 	  FREE (&buf);
 	  tmp->child = tmp2;
 	  ps.dptr = p + 1; /* restore location */
-          SKIPWS (ps.dptr);
 	  break;
 	}
         if (implicit && or)
@@ -1375,13 +1382,13 @@ pattern_t *mutt_pattern_comp (/* const */ char *s, int flags, BUFFER *err)
 	alladdr = 0;
 	isalias = 0;
 	ps.dptr = p + 1; /* restore location */
-        SKIPWS (ps.dptr);
 	break;
       default:
 	snprintf (err->data, err->dsize, _("error in pattern at: %s"), ps.dptr);
 	mutt_pattern_free (&curlist);
 	return NULL;
     }
+    SKIPWS (ps.dptr);
   }
   if (!curlist)
   {

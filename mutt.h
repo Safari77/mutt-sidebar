@@ -315,6 +315,7 @@ enum
 {
   OPT_ABORT,
   OPT_ABORTNOATTACH,
+  OPT_ATTACH_SAVE_CHARCONV,
   OPT_BOUNCE,
   OPT_COPY,
   OPT_DELETE,
@@ -374,10 +375,16 @@ enum
 #define MUTT_SEL_BUFFY  (1<<0)
 #define MUTT_SEL_MULTI  (1<<1)
 #define MUTT_SEL_FOLDER (1<<2)
+#define MUTT_SEL_DIRECTORY (1<<3)  /* Allow directories to be selected
+                                    * via <view-file> */
 
 /* flags for parse_spam_list */
 #define MUTT_SPAM          1
 #define MUTT_NOSPAM        2
+
+/* flags for _mutt_set_flag() */
+#define MUTT_SET_FLAG_UPDATE_CONTEXT  (1<<0)
+#define MUTT_SET_FLAG_UPDATE_COLOR    (1<<1)
 
 /* boolean vars */
 enum
@@ -408,6 +415,7 @@ enum
   OPTCHECKMBOXSIZE,
   OPTCHECKNEW,
   OPTCOLLAPSEUNREAD,
+  OPTCOMPOSECONFIRMDETACH,
   OPTCONFIRMAPPEND,
   OPTCONFIRMCREATE,
   OPTCOPYDECODEWEED,
@@ -953,6 +961,8 @@ struct mutt_thread
   unsigned int fake_thread : 1;
   unsigned int duplicate_thread : 1;
   unsigned int sort_children : 1;
+  unsigned int recalc_aux_key : 1;
+  unsigned int recalc_group_key : 1;
   unsigned int check_subject : 1;
   unsigned int visible : 1;
   unsigned int deep : 1;
@@ -963,7 +973,8 @@ struct mutt_thread
   THREAD *next;
   THREAD *prev;
   HEADER *message;
-  HEADER *sort_key;
+  HEADER *sort_group_key;  /* $sort_thread_groups - for thread roots */
+  HEADER *sort_aux_key;    /* $sort_aux - for messages below the root */
 };
 
 
@@ -1101,6 +1112,10 @@ typedef struct _context
   int new;			/* how many new messages? */
   int unread;			/* how many unread messages? */
   int deleted;			/* how many deleted messages */
+  int trashed;			/* how many marked as trashed on disk.
+                                 * This flag is used by the maildir_trash
+                                 * option.
+                                 */
   int flagged;			/* how many flagged messages */
   int msgnotreadyet;		/* which msg "new" in pager, -1 if none */
 

@@ -122,7 +122,7 @@ int mutt_copy_body (FILE *fp, BODY **tgt, BODY *src)
   }
 
   mutt_adv_mktemp (tmp);
-  if (mutt_save_attachment (fp, src, mutt_b2s (tmp), 0, NULL) == -1)
+  if (mutt_save_attachment (fp, src, mutt_b2s (tmp), 0, NULL, 0) == -1)
   {
     mutt_buffer_pool_release (&tmp);
     return -1;
@@ -671,6 +671,20 @@ void _mutt_buffer_expand_path (BUFFER *src, int rx, int expand_relative)
   mutt_buffer_pool_release (&tmp);
 }
 
+void mutt_buffer_remove_path_password (BUFFER *dest, const char *src)
+{
+  mutt_buffer_clear (dest);
+  if (!(src && *src))
+    return;
+
+#ifdef USE_IMAP
+  if (mx_is_imap (src))
+    imap_buffer_remove_path_password (dest, src);
+  else
+#endif
+    mutt_buffer_strcpy (dest, src);
+}
+
 /* Extract the real name from /etc/passwd's GECOS field.
  * When set, honor the regular expression in GecosMask,
  * otherwise assume that the GECOS field is a
@@ -795,7 +809,7 @@ int mutt_needs_mailcap (BODY *m)
   return 1;
 }
 
-int mutt_is_text_part (BODY *b)
+int mutt_is_text_part (const BODY *b)
 {
   int t = b->type;
   char *s = b->subtype;
@@ -1482,32 +1496,25 @@ const char *mutt_getcwd (BUFFER *cwd)
   return retval;
 }
 
-/* Note this function uses a fixed size buffer of LONG_STRING and so
- * should only be used for visual modifications, such as disp_subj. */
-char *mutt_apply_replace (char *dbuf, size_t dlen, char *sbuf, REPLACE_LIST *rlist)
+char *mutt_apply_replace (char *d, size_t dlen, char *s, REPLACE_LIST *rlist)
 {
   REPLACE_LIST *l;
   static regmatch_t *pmatch = NULL;
   static int nmatch = 0;
-  static char twinbuf[2][LONG_STRING];
-  int switcher = 0;
+  BUFFER *srcbuf, *destbuf;
   char *p;
-  int i, n;
-  size_t cpysize, tlen;
-  char *src, *dst;
+  unsigned int n;
 
-  if (dbuf && dlen)
-    dbuf[0] = '\0';
+  if (d && dlen)
+    d[0] = '\0';
 
-  if (sbuf == NULL || *sbuf == '\0' || (dbuf && !dlen))
-    return dbuf;
+  if (s == NULL || *s == '\0' || (d && !dlen))
+    return d;
 
-  twinbuf[0][0] = '\0';
-  twinbuf[1][0] = '\0';
-  src = twinbuf[switcher];
-  dst = src;
+  srcbuf = mutt_buffer_pool_get ();
+  destbuf = mutt_buffer_pool_get ();
 
-  strfcpy(src, sbuf, LONG_STRING);
+  mutt_buffer_strcpy (srcbuf, s);
 
   for (l = rlist; l; l = l->next)
   {
@@ -1518,18 +1525,15 @@ char *mutt_apply_replace (char *dbuf, size_t dlen, char *sbuf, REPLACE_LIST *rli
       nmatch = l->nmatch;
     }
 
-    if (regexec (l->rx->rx, src, l->nmatch, pmatch, 0) == 0)
+    if (regexec (l->rx->rx, mutt_b2s (srcbuf), l->nmatch, pmatch, 0) == 0)
     {
-      tlen = 0;
-      switcher ^= 1;
-      dst = twinbuf[switcher];
+      dprint (5, (debugfile, "mutt_apply_replace: %s matches %s\n",
+                  mutt_b2s (srcbuf), l->rx->pattern));
 
-      dprint (5, (debugfile, "mutt_apply_replace: %s matches %s\n", src, l->rx->pattern));
-
-      /* Copy into other twinbuf with substitutions */
+      mutt_buffer_clear (destbuf);
       if (l->template)
       {
-        for (p = l->template; *p && (tlen < LONG_STRING - 1); )
+        for (p = l->template; *p; )
         {
 	  if (*p == '%')
 	  {
@@ -1537,41 +1541,41 @@ char *mutt_apply_replace (char *dbuf, size_t dlen, char *sbuf, REPLACE_LIST *rli
 	    if (*p == 'L')
 	    {
 	      p++;
-              cpysize = MIN (pmatch[0].rm_so, LONG_STRING - tlen - 1);
-	      strncpy(&dst[tlen], src, cpysize);
-	      tlen += cpysize;
+              mutt_buffer_addstr_n (destbuf, mutt_b2s (srcbuf), pmatch[0].rm_so);
 	    }
 	    else if (*p == 'R')
 	    {
 	      p++;
-              cpysize = MIN (strlen (src) - pmatch[0].rm_eo, LONG_STRING - tlen - 1);
-	      strncpy(&dst[tlen], &src[pmatch[0].rm_eo], cpysize);
-	      tlen += cpysize;
+              mutt_buffer_addstr (destbuf, srcbuf->data + pmatch[0].rm_eo);
 	    }
 	    else
 	    {
-	      n = strtoul(p, &p, 10);               /* get subst number */
+	      if (!mutt_atoui (p, &n, MUTT_ATOI_ALLOW_TRAILING) && (n < l->nmatch))
+                mutt_buffer_addstr_n (destbuf, srcbuf->data + pmatch[n].rm_so,
+                                      pmatch[n].rm_eo - pmatch[n].rm_so);
 	      while (isdigit((unsigned char)*p))    /* skip subst token */
                 ++p;
-	      for (i = pmatch[n].rm_so; (i < pmatch[n].rm_eo) && (tlen < LONG_STRING-1); i++)
-	        dst[tlen++] = src[i];
 	    }
 	  }
 	  else
-	    dst[tlen++] = *p++;
+            mutt_buffer_addch (destbuf, *p++);
         }
       }
-      dst[tlen] = '\0';
-      dprint (5, (debugfile, "mutt_apply_replace: subst %s\n", dst));
+
+      mutt_buffer_strcpy (srcbuf, mutt_b2s (destbuf));
+      dprint (5, (debugfile, "mutt_apply_replace: subst %s\n", mutt_b2s (destbuf)));
     }
-    src = dst;
   }
 
-  if (dbuf)
-    strfcpy(dbuf, dst, dlen);
+  if (d)
+    strfcpy (d, mutt_b2s (srcbuf), dlen);
   else
-    dbuf = safe_strdup(dst);
-  return dbuf;
+    d = safe_strdup (mutt_b2s (srcbuf));
+
+  mutt_buffer_pool_release (&srcbuf);
+  mutt_buffer_pool_release (&destbuf);
+
+  return d;
 }
 
 
@@ -2054,8 +2058,9 @@ int mutt_save_confirm (const char *s, struct stat *st)
     if (option (OPTCONFIRMAPPEND))
     {
       tmp = mutt_buffer_pool_get ();
-      mutt_buffer_printf (tmp, _("Append messages to %s?"), s);
-      if ((rc = mutt_yesorno (mutt_b2s (tmp), MUTT_YES)) == MUTT_NO)
+      mutt_buffer_printf (tmp, _("Append message(s) to %s?"), s);
+      if ((rc = mutt_query_boolean (OPTCONFIRMAPPEND,
+                                    mutt_b2s (tmp), MUTT_YES)) == MUTT_NO)
 	ret = 1;
       else if (rc == -1)
 	ret = -1;
@@ -2082,7 +2087,8 @@ int mutt_save_confirm (const char *s, struct stat *st)
       {
         tmp = mutt_buffer_pool_get ();
 	mutt_buffer_printf (tmp, _("Create %s?"), s);
-	if ((rc = mutt_yesorno (mutt_b2s (tmp), MUTT_YES)) == MUTT_NO)
+	if ((rc = mutt_query_boolean (OPTCONFIRMCREATE,
+                                      mutt_b2s (tmp), MUTT_YES)) == MUTT_NO)
 	  ret = 1;
 	else if (rc == -1)
 	  ret = -1;

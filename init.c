@@ -104,6 +104,27 @@ int quadoption (int opt)
   return (QuadOptions[n] >> b) & 0x3;
 }
 
+static const char *option_type_name (int opt, int type)
+{
+  int i;
+
+  for (i = 0; MuttVars[i].option; i++)
+    if (MuttVars[i].type == type &&
+        MuttVars[i].data.l == opt)
+      return MuttVars[i].option;
+  return NULL;
+}
+
+static const char *quadoption_name (int opt)
+{
+  return option_type_name (opt, DT_QUAD);
+}
+
+static const char *boolean_name (int opt)
+{
+  return option_type_name (opt, DT_BOOL);
+}
+
 int query_quadoption (int opt, const char *prompt)
 {
   int v = quadoption (opt);
@@ -115,12 +136,26 @@ int query_quadoption (int opt, const char *prompt)
       return (v);
 
     default:
-      v = mutt_yesorno (prompt, (v == MUTT_ASKYES));
+      v = mutt_yesorno_with_help (prompt, (v == MUTT_ASKYES),
+                                  quadoption_name (opt));
       mutt_window_clearline (MuttMessageWindow, 0);
       return (v);
   }
 
   /* not reached */
+}
+
+/* This is slightly different from query_quadoption(), which only
+ * prompts when the quadoption is of type "ask-*".
+ *
+ * This function always prompts, but provides a help string listing
+ * the boolean name as a reference.  It should be used when displaying
+ * the mutt_yesorno() prompt depends on the setting of the boolean.
+ */
+int mutt_query_boolean (int opt, const char *prompt, int def)
+{
+  return mutt_yesorno_with_help (prompt, def,
+                                 boolean_name (opt));
 }
 
 /* given the variable ``s'', return the index into the rc_vars array which
@@ -242,7 +277,7 @@ int mutt_extract_token (BUFFER *dest, BUFFER *tok, int flags)
       pid_t	pid;
       char	*cmd;
       BUFFER	expn;
-      int	line = 0;
+      int	line = 0, rc;
 
       pc = tok->dptr;
       do
@@ -271,7 +306,6 @@ int mutt_extract_token (BUFFER *dest, BUFFER *tok, int flags)
 	FREE (&cmd);
 	return (-1);
       }
-      FREE (&cmd);
 
       tok->dptr = pc + 1;
 
@@ -279,7 +313,10 @@ int mutt_extract_token (BUFFER *dest, BUFFER *tok, int flags)
       mutt_buffer_init (&expn);
       expn.data = mutt_read_line (NULL, &expn.dsize, fp, &line, 0);
       safe_fclose (&fp);
-      mutt_wait_filter (pid);
+      rc = mutt_wait_filter (pid);
+      if (rc != 0)
+        dprint (1, (debugfile, "mutt_extract_token: backticks exited code %d for command: %s\n", rc, cmd));
+      FREE (&cmd);
 
       /* If this is inside a quoted string, directly add output to
        * the token (dest) */
@@ -1822,6 +1859,8 @@ static void mutt_set_default (struct option_t *p)
       REGEXP *pp = (REGEXP *) p->data.p;
       if (!p->init.p && pp->pattern)
 	p->init.p = safe_strdup (pp->pattern);
+      else if (p->init.p && (p->type & DT_L10N_STR))
+        p->init.p = safe_strdup (_(p->init.p));
       break;
     }
   }
@@ -2546,18 +2585,19 @@ static int parse_set (BUFFER *tmp, BUFFER *s, union pointer_long_t udata, BUFFER
 	  regmatch_t pmatch[1];
 	  int i;
 
-#define CUR_ENV Context->hdrs[i]->env
+          hash_destroy (&Context->subj_hash, NULL);
 	  for (i = 0; i < Context->msgcount; i++)
 	  {
-	    if (CUR_ENV && CUR_ENV->subject)
+	    ENVELOPE *cur_env = Context->hdrs[i]->env;
+
+	    if (cur_env && cur_env->subject)
 	    {
-	      CUR_ENV->real_subj =
-                (regexec (ReplyRegexp.rx, CUR_ENV->subject, 1, pmatch, 0)) ?
-                CUR_ENV->subject :
-                CUR_ENV->subject + pmatch[0].rm_eo;
+	      cur_env->real_subj =
+                (regexec (ReplyRegexp.rx, cur_env->subject, 1, pmatch, 0)) ?
+                cur_env->subject :
+                cur_env->subject + pmatch[0].rm_eo;
 	    }
 	  }
-#undef CUR_ENV
 	}
       }
     }
@@ -2758,6 +2798,9 @@ static int parse_set (BUFFER *tmp, BUFFER *s, union pointer_long_t udata, BUFFER
 	  break;
 	case DT_SORT_SIDEBAR:
 	  map = SortSidebarMethods;
+	  break;
+	case DT_SORT_THREAD_GROUPS:
+	  map = SortThreadGroupsMethods;
 	  break;
 	default:
 	  map = SortMethods;
@@ -3113,6 +3156,12 @@ static void candidate (char *dest, char *try, const char *src, int len)
   }
 }
 
+/* Returns:
+ * 2 if the file browser was used.
+ *   in this case, the caller needs to redraw.
+ * 1 if there is a completion
+ * 0 on no completions
+ */
 int mutt_command_complete (char *buffer, size_t len, int pos, int numtabs)
 {
   char *pt = buffer;
@@ -3219,7 +3268,7 @@ int mutt_command_complete (char *buffer, size_t len, int pos, int numtabs)
   }
   else if (!mutt_strncmp (buffer, "exec", 4))
   {
-    const struct binding_t *menu = km_get_table (CurrentMenu);
+    const struct menu_func_op_t *menu = km_get_table (CurrentMenu);
 
     if (!menu && CurrentMenu != MENU_PAGER)
       menu = OpGeneric;
@@ -3235,7 +3284,7 @@ int mutt_command_complete (char *buffer, size_t len, int pos, int numtabs)
       for (num = 0; menu[num].name; num++)
 	candidate (Completed, User_typed, menu[num].name, sizeof (Completed));
       /* try the generic menu */
-      if (Completed[0] == 0 && CurrentMenu != MENU_PAGER)
+      if (CurrentMenu != MENU_PAGER && CurrentMenu != MENU_GENERIC)
       {
 	menu = OpGeneric;
 	for (num = 0; menu[num].name; num++)
@@ -3263,6 +3312,47 @@ int mutt_command_complete (char *buffer, size_t len, int pos, int numtabs)
 	       Matches[(numtabs - 2) % Num_matched]);
 
     strncpy (pt, Completed, buffer + len - pt - spaces);
+  }
+  else if (!mutt_strncmp (buffer, "cd", 2))
+  {
+    pt = buffer + 2;
+    SKIPWS (pt);
+    if (numtabs == 1)
+    {
+      if (mutt_complete (pt, buffer + len - pt - spaces))
+        return 0;
+    }
+    else
+    {
+      BUFFER *selectbuf;
+      char keybuf[SHORT_STRING];
+
+      if (!km_expand_key (keybuf, sizeof(keybuf),
+                          km_find_func (MENU_FOLDER, OP_BROWSER_VIEW_FILE)) ||
+          keybuf[0] == '\0')
+      {
+        strcpy (keybuf, "<view-file>");  /* __STRCPY_CHECKED__ */
+      }
+      /* L10N:
+         When tab completing the :cd path argument, the folder browser
+         will be invoked upon the second tab.  This message will be
+         printed below the folder browser, to instruct the user how to
+         select a directory for completion.
+
+         %s will print the key bound to <view-file>, which is
+         '<Space>' by default.  If no keys are bound to <view-file>
+         then %s will print the function name: '<view-file>'.
+       */
+      mutt_message (_("Use '%s' to select a directory"), keybuf);
+
+      selectbuf = mutt_buffer_pool_get ();
+      mutt_buffer_strcpy (selectbuf, pt);
+      mutt_buffer_select_file (selectbuf, MUTT_SEL_DIRECTORY);
+      if (mutt_buffer_len (selectbuf))
+        strfcpy (pt, mutt_b2s (selectbuf), buffer + len - pt - spaces);
+      mutt_buffer_pool_release (&selectbuf);
+      return 2;
+    }
   }
   else
     return 0;
@@ -3396,6 +3486,9 @@ static int var_to_string (int idx, BUFFER *val)
         else
           map = SortMethods;
         break;
+      case DT_SORT_THREAD_GROUPS:
+        map = SortThreadGroupsMethods;
+        break;
       default:
         map = SortMethods;
         break;
@@ -3514,14 +3607,23 @@ const char *mutt_getnamebyvalue (int val, const struct mapping_t *map)
   return NULL;
 }
 
-int mutt_getvaluebyname (const char *name, const struct mapping_t *map)
+const struct mapping_t *mutt_get_mapentry_by_name (const char *name,
+                                                  const struct mapping_t *map)
 {
   int i;
 
   for (i = 0; map[i].name; i++)
     if (ascii_strcasecmp (map[i].name, name) == 0)
-      return (map[i].value);
-  return (-1);
+      return &map[i];
+  return NULL;
+}
+
+int mutt_getvaluebyname (const char *name, const struct mapping_t *map)
+{
+  const struct mapping_t *entry = mutt_get_mapentry_by_name (name, map);
+  if (entry)
+    return entry->value;
+  return -1;
 }
 
 #ifdef DEBUG

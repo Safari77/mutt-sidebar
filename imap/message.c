@@ -141,6 +141,10 @@ static void imap_alloc_uid_hash (IMAP_DATA *idata, unsigned int msn_count)
 
 /* Generates a more complicated sequence set after using the header cache,
  * in case there are missing MSNs in the middle.
+ *
+ * This can happen if during a sync/close, messages are deleted from
+ * the cache, but the server doesn't get the updates (via a dropped
+ * network connection, or just plain refusing the updates).
  */
 static unsigned int imap_fetch_msn_seqset (BUFFER *b, IMAP_DATA *idata, int evalhc,
                                            unsigned int msn_begin, unsigned int msn_end,
@@ -149,7 +153,7 @@ static unsigned int imap_fetch_msn_seqset (BUFFER *b, IMAP_DATA *idata, int eval
   unsigned int max_headers_per_fetch = UINT_MAX;
   int first_chunk = 1;
   int state = 0;  /* 1: single msn, 2: range of msn */
-  unsigned int msn, range_begin, range_end, msn_count = 0;
+  unsigned int msn, range_begin, range_end = 0, msn_count = 0;
 
   mutt_buffer_clear (b);
   if (msn_end < msn_begin)
@@ -1030,7 +1034,7 @@ static int read_headers_fetch_new (IMAP_DATA *idata, unsigned int msn_begin,
      * chunked FETCH commands).  We previously tried to be robust by
      * setting:
      *   msn_begin = idata->max_msn + 1;
-     * but with chunking (and the mythical header cache holes) this
+     * but with chunking and header cache holes this
      * may not be correct.  So here we must assume the msn values have
      * not been altered during or after the fetch.
      */
@@ -1311,10 +1315,10 @@ int imap_append_message (CONTEXT *ctx, MESSAGE *msg)
 {
   IMAP_DATA* idata;
   FILE *fp = NULL;
+  BUFFER *internaldate;
   char buf[LONG_STRING*2];
   char mbox[LONG_STRING];
   char mailbox[LONG_STRING];
-  char internaldate[IMAP_DATELEN];
   char imap_flags[SHORT_STRING];
   size_t len;
   progress_t progressbar;
@@ -1358,6 +1362,8 @@ int imap_append_message (CONTEXT *ctx, MESSAGE *msg)
                         MUTT_PROGRESS_SIZE, NetInc, len);
 
   imap_munge_mbox_name (idata, mbox, sizeof (mbox), mailbox);
+
+  internaldate = mutt_buffer_pool_get ();
   imap_make_date (internaldate, msg->received);
 
   imap_flags[0] = imap_flags[1] = 0;
@@ -1372,8 +1378,9 @@ int imap_append_message (CONTEXT *ctx, MESSAGE *msg)
 
   snprintf (buf, sizeof (buf), "APPEND %s (%s) \"%s\" {%lu}", mbox,
             imap_flags + 1,
-	    internaldate,
+	    mutt_b2s (internaldate),
 	    (unsigned long) len);
+  mutt_buffer_pool_release (&internaldate);
 
   imap_cmd_start (idata, buf);
 
@@ -1575,7 +1582,8 @@ int imap_copy_messages (CONTEXT* ctx, HEADER* h, const char* dest, int delete)
         break;
       dprint (3, (debugfile, "imap_copy_messages: server suggests TRYCREATE\n"));
       snprintf (prompt, sizeof (prompt), _("Create %s?"), mbox);
-      if (option (OPTCONFIRMCREATE) && mutt_yesorno (prompt, 1) < 1)
+      if (option (OPTCONFIRMCREATE) &&
+          mutt_query_boolean (OPTCONFIRMCREATE, prompt, 1) < 1)
       {
         mutt_clear_error ();
         goto out;

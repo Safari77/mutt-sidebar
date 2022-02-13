@@ -1179,7 +1179,7 @@ fill_buffer (FILE *f, LOFF_T *last_pos, LOFF_T offset, unsigned char **buf,
   if (*buf_ready == 0)
   {
     if (offset != *last_pos)
-      fseeko (f, offset, 0);
+      fseeko (f, offset, SEEK_SET);
 
     if ((*buf = (unsigned char *) mutt_read_line ((char *) *buf, blen, f,
                                                   NULL, MUTT_EOL)) == NULL) 
@@ -2545,7 +2545,6 @@ search_next:
 	{
 	  InHelp = 1;
 	  mutt_help (MENU_PAGER);
-	  pager_menu->redraw = REDRAW_FULL;
 	  InHelp = 0;
 	}
 	else
@@ -2554,7 +2553,6 @@ search_next:
 
       case OP_ERROR_HISTORY:
         mutt_error_history_display ();
-        pager_menu->redraw = REDRAW_FULL;
         break;
 
       case OP_PAGER_HIDE_QUOTED:
@@ -2573,33 +2571,65 @@ search_next:
 	{
 	  int dretval = 0;
 	  int new_topline = rd.topline;
+	  int num_quoted = 0;
 
-	  while ((new_topline < rd.lastLine ||
-		  (0 == (dretval = display_line (rd.fp, &rd.last_pos, &rd.lineInfo,
-			 new_topline, &rd.lastLine, &rd.maxLine, MUTT_TYPES | (flags & MUTT_PAGER_NOWRAP),
-                         &rd.QuoteList, &rd.q_level, &rd.force_redraw, &rd.SearchRE, rd.pager_window))))
-		 && rd.lineInfo[new_topline].type != MT_COLOR_QUOTED)
-	    new_topline++;
+          if (PagerSkipQuotedContext < 0)
+            PagerSkipQuotedContext = 0;
 
-	  if (dretval < 0)
-	  {
-	    mutt_error _("No more quoted text.");
-	    break;
+          /* Skip past previous "context" quoted lines */
+          if (PagerSkipQuotedContext > 0)
+          {
+	    while ((new_topline < rd.lastLine ||
+		    (0 == (dretval = display_line (rd.fp, &rd.last_pos, &rd.lineInfo,
+			   new_topline, &rd.lastLine, &rd.maxLine, MUTT_TYPES | (flags & MUTT_PAGER_NOWRAP),
+			   &rd.QuoteList, &rd.q_level, &rd.force_redraw, &rd.SearchRE, rd.pager_window))))
+		   && rd.lineInfo[new_topline].type == MT_COLOR_QUOTED)
+	    {
+	      new_topline++;
+	      num_quoted++;
+	    }
+
+	    if (dretval < 0)
+	    {
+	      mutt_error _("No more unquoted text after quoted text.");
+	      break;
+	    }
+          }
+
+          if (num_quoted <= PagerSkipQuotedContext)
+          {
+	    num_quoted = 0;
+	    while ((new_topline < rd.lastLine ||
+		    (0 == (dretval = display_line (rd.fp, &rd.last_pos, &rd.lineInfo,
+			   new_topline, &rd.lastLine, &rd.maxLine, MUTT_TYPES | (flags & MUTT_PAGER_NOWRAP),
+			   &rd.QuoteList, &rd.q_level, &rd.force_redraw, &rd.SearchRE, rd.pager_window))))
+		   && rd.lineInfo[new_topline].type != MT_COLOR_QUOTED)
+	      new_topline++;
+
+	    if (dretval < 0)
+	    {
+	      mutt_error _("No more quoted text.");
+	      break;
+	    }
+
+	    while ((new_topline < rd.lastLine ||
+		    (0 == (dretval = display_line (rd.fp, &rd.last_pos, &rd.lineInfo,
+			   new_topline, &rd.lastLine, &rd.maxLine, MUTT_TYPES | (flags & MUTT_PAGER_NOWRAP),
+			   &rd.QuoteList, &rd.q_level, &rd.force_redraw, &rd.SearchRE, rd.pager_window))))
+		   && rd.lineInfo[new_topline].type == MT_COLOR_QUOTED)
+	    {
+	      new_topline++;
+	      num_quoted++;
+	    }
+
+	    if (dretval < 0)
+	    {
+	      mutt_error _("No more unquoted text after quoted text.");
+	      break;
+	    }
 	  }
 
-	  while ((new_topline < rd.lastLine ||
-		  (0 == (dretval = display_line (rd.fp, &rd.last_pos, &rd.lineInfo,
-			 new_topline, &rd.lastLine, &rd.maxLine, MUTT_TYPES | (flags & MUTT_PAGER_NOWRAP),
-                         &rd.QuoteList, &rd.q_level, &rd.force_redraw, &rd.SearchRE, rd.pager_window))))
-		 && rd.lineInfo[new_topline].type == MT_COLOR_QUOTED)
-	    new_topline++;
-
-	  if (dretval < 0)
-	  {
-	    mutt_error _("No more unquoted text after quoted text.");
-	    break;
-	  }
-	  rd.topline = new_topline;
+	  rd.topline = new_topline - MIN (PagerSkipQuotedContext, num_quoted);
 	}
 	break;
 
@@ -2689,7 +2719,6 @@ search_next:
 			      extra->actx, extra->bdy);
         else
 	  mutt_resend_message (NULL, extra->ctx, extra->hdr);
-        pager_menu->redraw = REDRAW_FULL;
         break;
 
       case OP_CHECK_TRADITIONAL:
@@ -2712,7 +2741,6 @@ search_next:
 	else
 	  mutt_send_message (SENDTOSENDER | SENDBACKGROUNDEDIT,
                              NULL, NULL, extra->ctx, extra->hdr);
-	pager_menu->redraw = REDRAW_FULL;
 	break;
 
       case OP_CREATE_ALIAS:
@@ -2862,7 +2890,6 @@ search_next:
         CHECK_ATTACH;
 	mutt_send_message (SENDBACKGROUNDEDIT | SENDCHECKPOSTPONED, NULL, NULL,
                            extra->ctx, NULL);
-	pager_menu->redraw = REDRAW_FULL;
 	break;
 
       case OP_REPLY:
@@ -2885,7 +2912,6 @@ search_next:
 			     extra->bdy, replyflags);
 	else
 	  mutt_send_message (replyflags, NULL, NULL, extra->ctx, extra->hdr);
-	pager_menu->redraw = REDRAW_FULL;
 	break;
       }
 
@@ -2899,7 +2925,6 @@ search_next:
         CHECK_ATTACH;
 	mutt_send_message (SENDPOSTPONED | SENDBACKGROUNDEDIT,
                            NULL, NULL, extra->ctx, NULL);
-	pager_menu->redraw = REDRAW_FULL;
 	break;
 
       case OP_FORWARD_MESSAGE:
@@ -2911,7 +2936,6 @@ search_next:
         else
 	  mutt_send_message (SENDFORWARD | SENDBACKGROUNDEDIT,
                              NULL, NULL, extra->ctx, extra->hdr);
-	pager_menu->redraw = REDRAW_FULL;
 	break;
 
       case OP_DECRYPT_SAVE:
@@ -3060,7 +3084,6 @@ search_next:
 	mutt_view_attachments (extra->hdr);
 	if (extra->hdr->attach_del)
 	  Context->changed = 1;
-	pager_menu->redraw = REDRAW_FULL;
 	break;
 
       case OP_EDIT_LABEL:
@@ -3087,7 +3110,6 @@ search_next:
 	CHECK_MODE(IsHeader(extra));
         CHECK_ATTACH;
 	mutt_send_message (SENDKEY, NULL, NULL, extra->ctx, NULL);
-	pager_menu->redraw = REDRAW_FULL;
 	break;
 
 

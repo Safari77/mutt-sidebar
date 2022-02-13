@@ -71,6 +71,27 @@ int imap_expand_path (BUFFER* path)
   return rc;
 }
 
+int imap_buffer_remove_path_password (BUFFER *dest, const char *src)
+{
+  IMAP_MBOX mx;
+  ciss_url_t url;
+  int rc;
+
+  mutt_buffer_clear (dest);
+
+  if (imap_parse_path (src, &mx) < 0)
+    return -1;
+
+  mutt_account_tourl (&mx.account, &url);
+  url.path = mx.mbox;
+
+  /* flags = 0 will strip the password, if present */
+  rc = url_ciss_tobuffer (&url, dest, 0);
+  FREE (&mx.mbox);
+
+  return rc;
+}
+
 #ifdef USE_HCACHE
 
 /* Generates a seqseq of the UIDs in msn_index to persist in the header cache.
@@ -356,6 +377,7 @@ int imap_parse_path (const char* path, IMAP_MBOX* mx)
       strfcpy (mx->account.user, tmp, sizeof (mx->account.user));
       strfcpy (tmp, c+1, sizeof (tmp));
       mx->account.flags |= MUTT_ACCT_USER;
+      mx->account.flags |= MUTT_ACCT_USER_FROM_URL;
     }
 
     if ((n = sscanf (tmp, "%127[^:/]%127s", mx->account.host, tmp)) < 1)
@@ -690,23 +712,28 @@ time_t imap_parse_date (char *s)
   return (mutt_mktime (&t, 0) + tz);
 }
 
-/* format date in IMAP style: DD-MMM-YYYY HH:MM:SS +ZZzz.
- * Caller should provide a buffer of IMAP_DATELEN bytes */
-void imap_make_date (char *buf, time_t timestamp)
+/* format date in IMAP style: DD-MMM-YYYY HH:MM:SS +ZZzz. */
+void imap_make_date (BUFFER *buf, time_t timestamp)
 {
   struct tm* tm = localtime (&timestamp);
   time_t tz = mutt_local_tz (timestamp);
 
   tz /= 60;
 
-  snprintf (buf, IMAP_DATELEN, "%02d-%s-%d %02d:%02d:%02d %+03d%02d",
-            tm->tm_mday, Months[tm->tm_mon], tm->tm_year + 1900,
-            tm->tm_hour, tm->tm_min, tm->tm_sec,
-            (int) tz / 60, (int) abs ((int) tz) % 60);
+  mutt_buffer_printf (buf, "%02d-%s-%d %02d:%02d:%02d %+03d%02d",
+                      tm->tm_mday, Months[tm->tm_mon], tm->tm_year + 1900,
+                      tm->tm_hour, tm->tm_min, tm->tm_sec,
+                      (int) tz / 60, (int) abs ((int) tz) % 60);
 }
 
-/* imap_qualify_path: make an absolute IMAP folder target, given IMAP_MBOX
- *   and relative path. */
+/* imap_qualify_path:
+ *
+ * Make an absolute IMAP folder target, given IMAP_MBOX and relative
+ * path.
+ *
+ * Note this will include the password in the URL, if it was present in the
+ * account connection URL.
+ */
 void imap_qualify_path (char *dest, size_t len, IMAP_MBOX *mx, char* path)
 {
   ciss_url_t url;
@@ -714,7 +741,7 @@ void imap_qualify_path (char *dest, size_t len, IMAP_MBOX *mx, char* path)
   mutt_account_tourl (&mx->account, &url);
   url.path = path;
 
-  url_ciss_tostring (&url, dest, len, 0);
+  url_ciss_tostring (&url, dest, len, U_DECODE_PASSWD);
 }
 
 void imap_buffer_qualify_path (BUFFER *dest, IMAP_MBOX *mx, char* path)
@@ -724,7 +751,7 @@ void imap_buffer_qualify_path (BUFFER *dest, IMAP_MBOX *mx, char* path)
   mutt_account_tourl (&mx->account, &url);
   url.path = path;
 
-  url_ciss_tobuffer (&url, dest, 0);
+  url_ciss_tobuffer (&url, dest, U_DECODE_PASSWD);
 }
 
 

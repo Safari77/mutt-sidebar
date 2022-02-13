@@ -68,6 +68,9 @@
 #include <assert.h>
 #endif
 
+/* For execvp environment setting in send_msg() */
+extern char **environ;
+
 extern char RFC822Specials[];
 
 const char MimeSpecials[] = "@.,;:<>[]\\\"()?/= \t";
@@ -1102,7 +1105,7 @@ void mutt_message_to_7bit (BODY *a, FILE *fp)
     goto cleanup;
   }
 
-  fseeko (fpin, a->offset, 0);
+  fseeko (fpin, a->offset, SEEK_SET);
   a->parts = mutt_parse_messageRFC822 (fpin, a);
 
   transform_to_7bit (a->parts, fpin);
@@ -1595,6 +1598,9 @@ BODY *mutt_make_file_attach (const char *path)
 {
   BODY *att;
   CONTENT *info;
+
+  if (!(path && *path))
+    return NULL;
 
   att = mutt_new_body ();
   att->filename = safe_strdup (path);
@@ -2588,8 +2594,10 @@ send_msg (const char *path, char **args, const char *msg, char **tempfile)
 	  _exit (S_ERR);
       }
 
-      /* execvpe is a glibc extension */
-      /* execvpe (path, args, mutt_envlist ()); */
+      mutt_reset_child_signals ();
+
+      /* execvpe is a glibc extension, so just manually set environ */
+      environ = mutt_envlist ();
       execvp (path, args);
       _exit (S_ERR);
     }
@@ -2794,6 +2802,8 @@ mutt_invoke_sendmail (ADDRESS *from,	/* the sender */
 
   args[argslen++] = NULL;
 
+  i = send_msg (path, args, msg, option(OPTNOCURSES) ? NULL : &childout);
+
   /* Some user's $sendmail command uses gpg for password decryption,
    * and is set up to prompt using ncurses pinentry.  If we
    * mutt_endwin() it leaves other users staring at a blank screen.
@@ -2801,7 +2811,7 @@ mutt_invoke_sendmail (ADDRESS *from,	/* the sender */
   if (!option (OPTNOCURSES))
     mutt_need_hard_redraw ();
 
-  if ((i = send_msg (path, args, msg, option(OPTNOCURSES) ? NULL : &childout)) != (EX_OK & 0xff))
+  if (i != (EX_OK & 0xff))
   {
     if (i != S_BKG)
     {
@@ -2917,7 +2927,7 @@ static int _mutt_bounce_message (FILE *fp, HEADER *h, ADDRESS *to, const char *r
     if (!option (OPTBOUNCEDELIVERED))
       ch_flags |= CH_WEED_DELIVERED;
 
-    fseeko (fp, h->offset, 0);
+    fseeko (fp, h->offset, SEEK_SET);
     fprintf (f, "Resent-From: %s\n", resent_from);
 
     date = mutt_buffer_pool_get ();
@@ -3039,6 +3049,35 @@ ADDRESS *mutt_remove_duplicates (ADDRESS *addr)
       dprint (2, (debugfile, "mutt_remove_duplicates: Removing %s\n",
 		  addr->mailbox));
 
+      *last = addr->next;
+
+      addr->next = NULL;
+      rfc822_free_address(&addr);
+
+      addr = *last;
+    }
+    else
+    {
+      last = &addr->next;
+      addr = addr->next;
+    }
+  }
+
+  return (top);
+}
+
+/* Given a list of addresses, remove group label and end delimiter
+ * entries.  This is useful when generating an encryption key list,
+ * as we don't want to scan the label and empty delimiter entries. */
+ADDRESS *mutt_remove_adrlist_group_delimiters (ADDRESS *addr)
+{
+  ADDRESS *top = addr;
+  ADDRESS **last = &top;
+
+  while (addr)
+  {
+    if (addr->group || !addr->mailbox)
+    {
       *last = addr->next;
 
       addr->next = NULL;
@@ -3228,10 +3267,10 @@ int mutt_write_fcc (const char *path, SEND_CONTEXT *sctx, const char *msgid, int
      * this will happen, and it can cause problems parsing the mailbox
      * later.
      */
-    fseek (tempfp, -1, 2);
+    fseek (tempfp, -1, SEEK_END);
     if (fgetc (tempfp) != '\n')
     {
-      fseek (tempfp, 0, 2);
+      fseek (tempfp, 0, SEEK_END);
       fputc ('\n', tempfp);
     }
 

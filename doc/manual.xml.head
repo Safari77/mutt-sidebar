@@ -220,7 +220,7 @@ denote that the argument may be repeated arbitrary times.
 <title>Copyright</title>
 
 <para>
-Mutt is Copyright &copy; 1996-2021 Michael R. Elkins
+Mutt is Copyright &copy; 1996-2022 Michael R. Elkins
 <email>me@mutt.org</email> and others.
 </para>
 
@@ -1901,10 +1901,13 @@ and <quote>f</quote> respectively.
 
 <para>
 Forwarding can be done by including the original message in the new
-message's body (surrounded by indicating lines) or including it as a
-MIME attachment, depending on the value of the <link
-linkend="mime-forward">$mime_forward</link> variable.  Decoding of
-attachments, like in the pager, can be controlled by the <link
+message's body (surrounded by indicating lines: see <link
+linkend="forward-attribution-intro">$forward_attribution_intro</link>
+and <link
+linkend="forward-attribution-trailer">$forward_attribution_trailer</link>)
+or including it as a MIME attachment, depending on the value of the
+<link linkend="mime-forward">$mime_forward</link> variable.  Decoding
+of attachments, like in the pager, can be controlled by the <link
 linkend="forward-decode">$forward_decode</link> and <link
 linkend="mime-forward-decode">$mime_forward_decode</link> variables,
 respectively.  The desired forwarding format may depend on the content,
@@ -1927,7 +1930,9 @@ linkend="forward-attachments">$forward_attachments</link>.
 <para>
 The inclusion of headers is controlled by the current setting of the
 <link linkend="weed">$weed</link> variable, unless <link
-linkend="mime-forward">$mime_forward</link> is set.
+linkend="mime-forward">$mime_forward</link> is set.  The subject of
+the email is controlled by <link
+linkend="forward-format">$forward_format</link>.
 </para>
 
 <para>
@@ -2564,7 +2569,7 @@ a comma denoting multiple addresses.
 
 <para>
 In the alias menu, you can select as many aliases as you want with the
-<literal>select-entry</literal> key (default: &lt;Return&gt;), and use
+<literal>tag-entry</literal> key (default: &lt;Space&gt; or t), and use
 the <emphasis>exit</emphasis> key (default: q) to return to the address
 prompt.
 </para>
@@ -2767,6 +2772,7 @@ addition, <emphasis>key</emphasis> may be a symbolic name as shown in
 <row><entry>&lt;insert&gt;</entry><entry>Insert</entry></row>
 <row><entry>&lt;enter&gt;</entry><entry>Enter</entry></row>
 <row><entry>&lt;return&gt;</entry><entry>Return</entry></row>
+<row><entry>&lt;keypadenter&gt;</entry><entry>Enter key on numeric keypad</entry></row>
 <row><entry>&lt;home&gt;</entry><entry>Home</entry></row>
 <row><entry>&lt;end&gt;</entry><entry>End</entry></row>
 <row><entry>&lt;space&gt;</entry><entry>Space bar</entry></row>
@@ -2831,6 +2837,32 @@ specified key sequence.
     (e.g, by placing that line in your .bashrc, or in a Mutt wrapper
     script/function) you can use the key sequence in your Mutt
     bindings.
+  </para>
+</sect2>
+
+<sect2 id="crlf">
+  <title>Enter versus Return</title>
+
+  <para>
+    Prior to version 2.2, Mutt used a default ncurses mode
+    (<quote><literal>nl()</literal></quote>).  This mode maps keyboard
+    input of either <literal>&lt;Enter&gt;</literal> or
+    <literal>&lt;Return&gt;</literal> to the same value, which Mutt
+    interpreted as <literal>&lt;Return&gt;</literal> internally.
+  </para>
+  <para>
+    However, starting in version 2.2, this mode is turned off,
+    allowing <literal>&lt;Return&gt;</literal> and
+    <literal>&lt;Enter&gt;</literal> to be mapped separately, if
+    desired.  The default keyboard mappings set both, but you can
+    override this or create new bindings with one or the other (or
+    both).
+  </para>
+  <para>
+    Note that in terminal application, such as Mutt,
+    <literal>&lt;Enter&gt;</literal> is the same as <quote>\n</quote>
+    and <literal>^J</literal>; while <literal>&lt;Return&gt;</literal>
+    is the same as <quote>\r</quote> and <literal>^M</literal>.
   </para>
 </sect2>
 
@@ -7182,9 +7214,9 @@ feature.
 If <link linkend="mail-check-stats">$mail_check_stats</link> is set,
 Mutt will periodically calculate the unread, flagged, and total
 message counts for each mailbox watched by the
-<command>mailboxes</command> command.  This calculation takes place at
-the same time as new mail polling, but is controlled by a separate
-timer: <link
+<command>mailboxes</command> command.  (Note: IMAP mailboxes only support
+unread and total counts).  This calculation takes place at the same
+time as new mail polling, but is controlled by a separate timer: <link
 linkend="mail-check-stats-interval">$mail_check_stats_interval</link>.
 </para>
 
@@ -8970,7 +9002,10 @@ linkend="auto-view"><command>auto_view</command></link>, and use that.
 </listitem>
 <listitem>
 <para>
-Failing that, Mutt will look for any text type.
+Failing that, Mutt will look first for
+<literal>text/enriched</literal>, followed by
+<literal>text/plain</literal>, and finally
+<literal>text/html</literal>.
 </para>
 </listitem>
 <listitem>

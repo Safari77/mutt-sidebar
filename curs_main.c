@@ -325,16 +325,34 @@ static int ci_first_message (void)
     if (old != -1)
       return (old);
 
-    /* If Sort is reverse and not threaded, the latest message is first.
-     * If Sort is threaded, the latest message is first iff exactly one
-     * of Sort and SortAux are reverse.
+    /* If Sort is threaded, the latest message is first iff exactly one
+     * of Sort and the top-level sorting method are reverse.
      */
-    if (((Sort & SORT_REVERSE) && (Sort & SORT_MASK) != SORT_THREADS) ||
-	((Sort & SORT_MASK) == SORT_THREADS &&
-	 ((Sort ^ SortAux) & SORT_REVERSE)))
-      return 0;
+    if ((Sort & SORT_MASK) == SORT_THREADS)
+    {
+      if ((SortThreadGroups & SORT_MASK) == SORT_AUX)
+      {
+        if ((Sort ^ SortAux) & SORT_REVERSE)
+          return 0;
+        else
+          return (Context->vcount ? Context->vcount - 1 : 0);
+      }
+      else
+      {
+        if ((Sort ^ SortThreadGroups) & SORT_REVERSE)
+          return 0;
+        else
+          return (Context->vcount ? Context->vcount - 1 : 0);
+      }
+    }
+    /* If Sort is reverse and not threaded, the latest message is first. */
     else
-      return (Context->vcount ? Context->vcount - 1 : 0);
+    {
+      if (Sort & SORT_REVERSE)
+        return 0;
+      else
+        return (Context->vcount ? Context->vcount - 1 : 0);
+    }
   }
   return 0;
 }
@@ -1073,8 +1091,9 @@ int mutt_index_menu (void)
                  Prompt when trying to quit Mutt while there are backgrounded
                  compose sessions in process.
               */
-              mutt_yesorno (_("There are $background_edit sessions. Really quit Mutt?"),
-                            MUTT_NO) != MUTT_YES)
+              mutt_query_boolean (OPTBACKGROUNDCONFIRMQUIT,
+                  _("There are $background_edit sessions. Really quit Mutt?"),
+                  MUTT_NO) != MUTT_YES)
           {
             break;
           }
@@ -1448,6 +1467,7 @@ int mutt_index_menu (void)
         break;
       }
 
+      case OP_GENERIC_SELECT_ENTRY:
       case OP_DISPLAY_MESSAGE:
       case OP_DISPLAY_HEADERS: /* don't weed the headers */
 
@@ -1501,8 +1521,9 @@ int mutt_index_menu (void)
 	{
           if (mutt_background_has_backgrounded () &&
               option (OPTBACKGROUNDCONFIRMQUIT) &&
-              mutt_yesorno (_("There are $background_edit sessions. Really quit Mutt?"),
-                            MUTT_NO) != MUTT_YES)
+              mutt_query_boolean (OPTBACKGROUNDCONFIRMQUIT,
+                  _("There are $background_edit sessions. Really quit Mutt?"),
+                  MUTT_NO) != MUTT_YES)
           {
             break;
           }
@@ -2637,9 +2658,10 @@ int mutt_index_menu (void)
         break;
 #endif
 
-      default:
+      case OP_NULL:
 	if (!in_pager)
 	  km_error_key (MENU_MAIN);
+        break;
     }
 
     if (in_pager)

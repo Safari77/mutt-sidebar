@@ -640,9 +640,13 @@ static int examine_mailboxes (MUTTMENU *menu, struct browser_state *state)
       mutt_buffer_strcpy (mailbox, tmp->label);
     else
     {
-      mutt_buffer_strcpy (mailbox, mutt_b2s (tmp->pathbuf));
       if (option (OPTBROWSERABBRMAILBOXES))
+      {
+        mutt_buffer_strcpy (mailbox, mutt_b2s (tmp->pathbuf));
         mutt_buffer_pretty_mailbox (mailbox);
+      }
+      else
+        mutt_buffer_remove_path_password (mailbox, mutt_b2s (tmp->pathbuf));
     }
 
 #ifdef USE_IMAP
@@ -1001,7 +1005,10 @@ void _mutt_buffer_select_file (BUFFER *f, int flags, char ***files, int *numfile
 	      {
 		char *p = NULL;
                 if (lastdirlen > 1)
-                  p = strrchr (mutt_b2s (LastDir) + 1, '/');
+                {
+                  /* "mutt_b2s (LastDir) + 1" triggers a compiler warning */
+                  p = strrchr (LastDir->data + 1, '/');
+                }
 
 		if (p)
                 {
@@ -1116,7 +1123,13 @@ void _mutt_buffer_select_file (BUFFER *f, int flags, char ***files, int *numfile
 
       case OP_BROWSER_TELL:
         if (state.entrylen)
-	  mutt_message("%s", state.entry[menu->current].full_path);
+        {
+          BUFFER *clean = mutt_buffer_pool_get ();
+          mutt_buffer_remove_path_password (clean,
+                                            state.entry[menu->current].full_path);
+	  mutt_message("%s", mutt_b2s (clean));
+          mutt_buffer_pool_release (&clean);
+        }
         break;
 
 #ifdef USE_IMAP
@@ -1448,8 +1461,17 @@ void _mutt_buffer_select_file (BUFFER *f, int flags, char ***files, int *numfile
               (S_ISLNK (state.entry[menu->current].mode) &&
                link_is_dir (state.entry[menu->current].full_path)))
           {
-            mutt_error _("Can't view a directory");
-            break;
+            if (flags & MUTT_SEL_DIRECTORY)
+            {
+              mutt_buffer_strcpy (f, state.entry[menu->current].full_path);
+              destroy_state (&state);
+              goto bail;
+            }
+            else
+            {
+              mutt_error _("Can't view a directory");
+              break;
+            }
           }
           else
           {

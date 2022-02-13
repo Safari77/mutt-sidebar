@@ -651,7 +651,12 @@ CONTEXT *mx_open_mailbox (const char *path, int flags, CONTEXT *pctx)
   set_option (OPTFORCEREFRESH);
 
   if (!ctx->quiet)
-    mutt_message (_("Reading %s..."), ctx->path);
+  {
+    BUFFER *clean = mutt_buffer_pool_get ();
+    mutt_buffer_remove_path_password (clean, ctx->path);
+    mutt_message (_("Reading %s..."), mutt_b2s (clean));
+    mutt_buffer_pool_release (&clean);
+  }
 
   rc = ctx->mx_ops->open(ctx);
 
@@ -744,22 +749,28 @@ void mx_fastclose_mailbox (CONTEXT *ctx)
 static int sync_mailbox (CONTEXT *ctx, int *index_hint)
 {
   int rc;
+  BUFFER *clean;
 
   if (!ctx->mx_ops || !ctx->mx_ops->sync)
     return -1;
 
+  clean = mutt_buffer_pool_get ();
+  mutt_buffer_remove_path_password (clean, ctx->path);
+
   if (!ctx->quiet)
   {
     /* L10N: Displayed before/as a mailbox is being synced */
-    mutt_message (_("Writing %s..."), ctx->path);
+    mutt_message (_("Writing %s..."), mutt_b2s (clean));
   }
 
   rc = ctx->mx_ops->sync (ctx, index_hint);
   if (rc != 0 && !ctx->quiet)
   {
     /* L10N: Displayed if a mailbox sync fails */
-    mutt_error (_("Unable to write %s!"), ctx->path);
+    mutt_error (_("Unable to write %s!"), mutt_b2s (clean));
   }
+
+  mutt_buffer_pool_release (&clean);
 
   return rc;
 }
@@ -1066,7 +1077,8 @@ int mx_close_mailbox (CONTEXT *ctx, int *index_hint)
     mx_unlink_empty (ctx->path);
 
 #ifdef USE_SIDEBAR
-  if (purge && ctx->deleted)
+  if (purge && ctx->deleted &&
+      !(ctx->magic == MUTT_MAILDIR && option (OPTMAILDIRTRASH)))
   {
     int orig_msgcount = ctx->msgcount;
 
@@ -1104,6 +1116,7 @@ void mx_update_tables(CONTEXT *ctx, int committing)
   ctx->vsize = 0;
   ctx->tagged = 0;
   ctx->deleted = 0;
+  ctx->trashed = 0;
   ctx->new = 0;
   ctx->unread = 0;
   ctx->changed = 0;
@@ -1142,6 +1155,8 @@ void mx_update_tables(CONTEXT *ctx, int committing)
       {
 	if (ctx->hdrs[j]->deleted)
 	  ctx->deleted++;
+        if (ctx->hdrs[j]->trash)
+          ctx->trashed++;
       }
 
       if (ctx->hdrs[j]->tagged)
@@ -1221,7 +1236,7 @@ int mx_sync_mailbox (CONTEXT *ctx, int *index_hint)
     return (0);
   }
 
-  if (ctx->deleted)
+  if (ctx->deleted && !(ctx->magic == MUTT_MAILDIR && option (OPTMAILDIRTRASH)))
   {
     char buf[SHORT_STRING];
 
@@ -1364,7 +1379,8 @@ MESSAGE *mx_open_new_message (CONTEXT *dest, HEADER *hdr, int flags)
 	  p = hdr->env->from;
       }
 
-      fprintf (msg->fp, "From %s %s", p ? p->mailbox : NONULL(Username), ctime (&msg->received));
+      fprintf (msg->fp, "From %s %s", p ? p->mailbox : NONULL(Username),
+               mutt_ctime (&msg->received));
     }
   }
   else
@@ -1534,6 +1550,8 @@ void mx_update_context (CONTEXT *ctx, int new_messages)
       ctx->flagged++;
     if (h->deleted)
       ctx->deleted++;
+    if (h->trash)
+      ctx->trashed++;
     if (!h->read)
     {
       ctx->unread++;

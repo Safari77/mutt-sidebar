@@ -38,8 +38,12 @@
 #include "sidebar.h"
 #endif
 
-#ifdef USE_SASL
+#ifdef USE_SASL_CYRUS
 #include "mutt_sasl.h"
+#endif
+
+#ifdef USE_SASL_GNU
+#include "mutt_sasl_gnu.h"
 #endif
 
 #ifdef USE_IMAP
@@ -82,7 +86,7 @@ To report a bug, please contact the Mutt maintainers via gitlab:\n\
     https://gitlab.com/muttmua/mutt/issues\n");
 
 static const char *Notice = N_("\
-Copyright (C) 1996-2021 Michael R. Elkins and others.\n\
+Copyright (C) 1996-2022 Michael R. Elkins and others.\n\
 Mutt comes with ABSOLUTELY NO WARRANTY; for details type `mutt -vv'.\n\
 Mutt is free software, and you are welcome to redistribute it\n\
 under certain conditions; type `mutt -vv' for details.\n");
@@ -96,7 +100,7 @@ Copyright (C) 1999-2017 Brendan Cully <brendan@kublai.com>\n\
 Copyright (C) 1999-2002 Tommi Komulainen <Tommi.Komulainen@iki.fi>\n\
 Copyright (C) 2000-2004 Edmund Grimley Evans <edmundo@rano.org>\n\
 Copyright (C) 2006-2009 Rocco Rutte <pdmef@gmx.net>\n\
-Copyright (C) 2014-2021 Kevin J. McCarthy <kevin@8t8.us>\n";
+Copyright (C) 2014-2022 Kevin J. McCarthy <kevin@8t8.us>\n";
 
 static const char *Thanks = N_("\
 Many others not mentioned here contributed code, fixes,\n\
@@ -174,6 +178,10 @@ options:\n\
   -Z\t\topen the first folder with new message, exit immediately if none\n\
   -h\t\tthis help message");
 
+  fflush (stdout);
+
+  if (ferror (stdout))
+    exit (1);
   exit (0);
 }
 
@@ -335,10 +343,15 @@ static void show_version (void)
     "-USE_SSL_GNUTLS  "
 #endif
 
-#ifdef USE_SASL
+#ifdef USE_SASL_CYRUS
     "+USE_SASL  "
 #else
     "-USE_SASL  "
+#endif
+#ifdef USE_SASL_GNU
+    "+USE_GSASL  "
+#else
+    "-USE_GSASL  "
 #endif
 #ifdef USE_GSS
     "+USE_GSS  "
@@ -566,6 +579,10 @@ static void show_version (void)
 
   mutt_print_patchlist();
 
+  fflush (stdout);
+
+  if (ferror (stdout))
+    exit (1);
   exit (0);
 }
 
@@ -596,6 +613,7 @@ static void start_curses (void)
   keypad (stdscr, TRUE);
   cbreak ();
   noecho ();
+  nonl ();
 #if HAVE_TYPEAHEAD
   typeahead (-1);       /* simulate smooth scrolling */
 #endif
@@ -644,7 +662,7 @@ int main (int argc, char **argv, char **environ)
   if (getegid() != getgid())
   {
     fprintf(stderr, "%s: I don't want to run with privileges!\n",
-	    argv[0]);
+	    argc ? argv[0] : "mutt");
     exit(1);
   }
 
@@ -837,6 +855,9 @@ int main (int argc, char **argv, char **environ)
       puts (_(Obtaining));
       puts (_(ReachingUs));
       mutt_buffer_free (&folder);
+      fflush (stdout);
+      if (ferror (stdout))
+        exit (1);
       exit (0);
   }
 
@@ -846,6 +867,10 @@ int main (int argc, char **argv, char **environ)
     set_option (OPTNOCURSES);
     sendflags = SENDBATCH;
   }
+
+  /* Check to make sure stdout is available in curses mode. */
+  if (!option (OPTNOCURSES) && !isatty (1))
+    exit (1);
 
   /* Always create the mutt_windows because batch mode has some shared code
    * paths that end up referencing them. */
@@ -1006,7 +1031,11 @@ int main (int argc, char **argv, char **environ)
     }
 
     if (subject)
+    {
       msg->env->subject = safe_strdup (subject);
+      /* prevent header injection */
+      mutt_filter_commandline_header_value (msg->env->subject);
+    }
 
     if (draftFile)
     {
@@ -1378,8 +1407,11 @@ cleanup_and_exit:
 #ifdef USE_IMAP
   imap_logout_all ();
 #endif
-#ifdef USE_SASL
+#ifdef USE_SASL_CYRUS
   mutt_sasl_done ();
+#endif
+#ifdef USE_SASL_GNU
+  mutt_gsasl_done ();
 #endif
 #ifdef USE_AUTOCRYPT
   mutt_autocrypt_cleanup ();

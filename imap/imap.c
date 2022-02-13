@@ -1051,7 +1051,8 @@ static int imap_open_mailbox_append (CONTEXT *ctx, int flags)
     return -1;
 
   snprintf (buf, sizeof (buf), _("Create %s?"), mailbox);
-  if (option (OPTCONFIRMCREATE) && mutt_yesorno (buf, 1) < 1)
+  if (option (OPTCONFIRMCREATE) &&
+      mutt_query_boolean (OPTCONFIRMCREATE, buf, 1) < 1)
     return -1;
 
   if (imap_create_mailbox (idata, mailbox) < 0)
@@ -1136,11 +1137,7 @@ static int compare_uid (const void *a, const void *b)
   HEADER **pa = (HEADER **) a;
   HEADER **pb = (HEADER **) b;
 
-  if (HEADER_DATA(*pa)->uid < HEADER_DATA(*pb)->uid)
-    return -1;
-  if (HEADER_DATA(*pa)->uid > HEADER_DATA(*pb)->uid)
-    return 1;
-  return 0;
+  return mutt_numeric_cmp (HEADER_DATA(*pa)->uid, HEADER_DATA(*pb)->uid);
 }
 
 /* Note: headers must be in SORT_UID. See imap_exec_msgset for args.
@@ -1691,7 +1688,7 @@ int imap_sync_mailbox (CONTEXT* ctx, int expunge, int* index_hint)
 
   if (expunge && ctx->closing)
   {
-    imap_exec (idata, "CLOSE", IMAP_CMD_QUEUE);
+    imap_exec (idata, "CLOSE", 0);
     idata->state = IMAP_AUTHENTICATED;
   }
 
@@ -1736,7 +1733,7 @@ int imap_close_mailbox (CONTEXT* ctx)
       /* mx_close_mailbox won't sync if there are no deleted messages
        * and the mailbox is unchanged, so we may have to close here */
       if (!ctx->deleted)
-        imap_exec (idata, "CLOSE", IMAP_CMD_QUEUE);
+        imap_exec (idata, "CLOSE", 0);
       idata->state = IMAP_AUTHENTICATED;
     }
 
@@ -2597,7 +2594,8 @@ int imap_fast_trash (CONTEXT* ctx, char* dest)
         break;
       dprint (3, (debugfile, "imap_fast_trash: server suggests TRYCREATE\n"));
       snprintf (prompt, sizeof (prompt), _("Create %s?"), mbox);
-      if (option (OPTCONFIRMCREATE) && mutt_yesorno (prompt, 1) < 1)
+      if (option (OPTCONFIRMCREATE) &&
+          mutt_query_boolean (OPTCONFIRMCREATE, prompt, 1) < 1)
       {
         mutt_clear_error ();
         goto out;

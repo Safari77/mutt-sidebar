@@ -43,12 +43,19 @@ void mutt_check_rescore (CONTEXT *ctx)
 
   if (option (OPTNEEDRESCORE) && option (OPTSCORE))
   {
-    if ((Sort & SORT_MASK) == SORT_SCORE ||
-	(SortAux & SORT_MASK) == SORT_SCORE)
+    if ((Sort & SORT_MASK) == SORT_THREADS)
+    {
+      if ((SortThreadGroups & SORT_MASK) == SORT_SCORE ||
+          (SortAux & SORT_MASK) == SORT_SCORE)
+      {
+        set_option (OPTNEEDRESORT);
+	set_option (OPTSORTSUBTHREADS);
+      }
+    }
+    else if ((Sort & SORT_MASK) == SORT_SCORE ||
+             (SortAux & SORT_MASK) == SORT_SCORE)
     {
       set_option (OPTNEEDRESORT);
-      if ((Sort & SORT_MASK) == SORT_THREADS)
-	set_option (OPTSORTSUBTHREADS);
     }
 
     /* must redraw the index since the user might have %N in it */
@@ -151,11 +158,17 @@ void mutt_score_message (CONTEXT *ctx, HEADER *hdr, int upd_ctx)
     hdr->score = 0;
 
   if (hdr->score <= ScoreThresholdDelete)
-    _mutt_set_flag (ctx, hdr, MUTT_DELETE, 1, upd_ctx);
+    _mutt_set_flag (ctx, hdr, MUTT_DELETE, 1,
+                    (upd_ctx ? MUTT_SET_FLAG_UPDATE_CONTEXT : 0) |
+                    MUTT_SET_FLAG_UPDATE_COLOR);
   if (hdr->score <= ScoreThresholdRead)
-    _mutt_set_flag (ctx, hdr, MUTT_READ, 1, upd_ctx);
+    _mutt_set_flag (ctx, hdr, MUTT_READ, 1,
+                    (upd_ctx ? MUTT_SET_FLAG_UPDATE_CONTEXT : 0) |
+                    MUTT_SET_FLAG_UPDATE_COLOR);
   if (hdr->score >= ScoreThresholdFlag)
-    _mutt_set_flag (ctx, hdr, MUTT_FLAG, 1, upd_ctx);
+    _mutt_set_flag (ctx, hdr, MUTT_FLAG, 1,
+                    (upd_ctx ? MUTT_SET_FLAG_UPDATE_CONTEXT : 0) |
+                    MUTT_SET_FLAG_UPDATE_COLOR);
 }
 
 int mutt_parse_unscore (BUFFER *buf, BUFFER *s, union pointer_long_t udata, BUFFER *err)

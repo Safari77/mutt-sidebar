@@ -515,7 +515,7 @@ int mutt_is_malformed_multipart_pgp_encrypted (BODY *b)
 }
 
 
-int mutt_is_application_pgp (BODY *m)
+int mutt_is_application_pgp (const BODY *m)
 {
   int t = 0;
   char *p;
@@ -710,7 +710,7 @@ int crypt_write_signed(BODY *a, STATE *s, const char *tempfile)
     return -1;
   }
 
-  fseeko (s->fpin, a->hdr_offset, 0);
+  fseeko (s->fpin, a->hdr_offset, SEEK_SET);
   bytes = a->length + a->offset - a->hdr_offset;
   hadcr = 0;
   while (bytes > 0)
@@ -941,6 +941,7 @@ int crypt_get_keys (HEADER *msg, char **keylist, int oppenc_mode)
   if (fqdn)
     rfc822_qualify (adrlist, fqdn);
   adrlist = mutt_remove_duplicates (adrlist);
+  adrlist = mutt_remove_adrlist_group_delimiters (adrlist);
 
   if (oppenc_mode || (msg->security & ENCRYPT))
   {

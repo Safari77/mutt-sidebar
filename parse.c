@@ -1612,7 +1612,7 @@ ENVELOPE *mutt_read_rfc822_header (FILE *f, HEADER *hdr, short user_hdrs,
 	continue;
       }
 
-      fseeko (f, loc, 0);
+      fseeko (f, loc, SEEK_SET);
       break; /* end of header */
     }
 
@@ -1914,4 +1914,33 @@ int mutt_count_body_parts (CONTEXT *ctx, HEADER *hdr)
     mutt_free_body (&hdr->content->parts);
 
   return hdr->attach_total;
+}
+
+void mutt_filter_commandline_header_tag (char *header)
+{
+  if (!header)
+    return;
+
+  while (*header)
+  {
+    if (*header < 33 || *header > 126 || *header == ':')
+      *header = '?';
+    header++;
+  }
+}
+
+/* It might be preferable to use mutt_filter_unprintable() instead.
+ * This filter is being lax, but preventing a header injection via
+ * an embedded newline. */
+void mutt_filter_commandline_header_value (char *header)
+{
+  if (!header)
+    return;
+
+  while (*header)
+  {
+    if (*header == '\n' || *header == '\r')
+      *header = ' ';
+    header++;
+  }
 }

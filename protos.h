@@ -79,12 +79,14 @@ FILE *mutt_open_read (const char *, pid_t *);
 void set_quadoption (int, int);
 int query_quadoption (int, const char *);
 int quadoption (int);
+int mutt_query_boolean (int opt, const char *prompt, int def);
 
 char* mutt_extract_message_id (const char *, const char **, int);
 
 ADDRESS *mutt_get_address (ENVELOPE *, char **);
 ADDRESS *mutt_lookup_alias (const char *s);
 ADDRESS *mutt_remove_duplicates (ADDRESS *);
+ADDRESS *mutt_remove_adrlist_group_delimiters (ADDRESS *);
 ADDRESS *mutt_expand_aliases (ADDRESS *);
 ADDRESS *mutt_parse_adrlist (ADDRESS *, const char *);
 
@@ -117,6 +119,7 @@ time_t mutt_mktime (struct tm *, int);
 time_t mutt_parse_date (const char *, HEADER *);
 time_t mutt_add_timeout (time_t, long);
 int is_from (const char *, char *, size_t, time_t *);
+const char *mutt_ctime (const time_t *t);
 void mutt_touch_atime (int);
 int mutt_timespec_compare (struct timespec *a, struct timespec *b);
 void mutt_get_stat_timespec (struct timespec *dest, struct stat *sb, mutt_stat_type type);
@@ -145,6 +148,7 @@ void mutt_buffer_expand_path_norel (BUFFER *);
 void _mutt_buffer_expand_path (BUFFER *, int, int);
 void mutt_buffer_expand_multi_path (BUFFER *src, const char *delimiter);
 void mutt_buffer_expand_multi_path_norel (BUFFER *src, const char *delimiter);
+void mutt_buffer_remove_path_password (BUFFER *dest, const char *src);
 char *mutt_find_hook (int, const char *);
 char *mutt_gecos_name (char *, size_t, struct passwd *);
 char *mutt_gen_msgid (void);
@@ -187,7 +191,7 @@ void mutt_clear_error (void);
 void mutt_clear_pager_position (void);
 void mutt_commands_cleanup (void);
 void mutt_create_alias (ENVELOPE *, ADDRESS *);
-void mutt_decode_attachment (BODY *, STATE *);
+void mutt_decode_attachment (const BODY *, STATE *);
 void mutt_decode_base64 (STATE *s, LOFF_T len, int istext, iconv_t cd);
 void mutt_default_save (char *, size_t, HEADER *);
 void mutt_display_address (ENVELOPE *);
@@ -269,8 +273,9 @@ void _mutt_select_file (char *, size_t, int, char ***, int *);
 #define mutt_buffer_select_file(A,B) _mutt_buffer_select_file(A,B,NULL,NULL)
 void _mutt_buffer_select_file (BUFFER *, int, char ***, int *);
 void mutt_message_hook (CONTEXT *, HEADER *, int);
+void mutt_reset_child_signals (void);
 void _mutt_set_flag (CONTEXT *, HEADER *, int, int, int);
-#define mutt_set_flag(a,b,c,d) _mutt_set_flag(a,b,c,d,1)
+#define mutt_set_flag(a,b,c,d) _mutt_set_flag(a,b,c,d,MUTT_SET_FLAG_UPDATE_CONTEXT|MUTT_SET_FLAG_UPDATE_COLOR)
 void mutt_shell_escape (void);
 void mutt_show_error (void);
 void mutt_signal_init (void);
@@ -334,6 +339,8 @@ int mutt_get_field_unbuffered (char *, char *, size_t, int);
 #define mutt_get_password(A,B,C) mutt_get_field_unbuffered(A,B,C,MUTT_PASS)
 int mutt_get_postponed (CONTEXT *, SEND_CONTEXT *);
 int mutt_get_tmp_attachment (BODY *);
+void mutt_filter_commandline_header_tag (char *);
+void mutt_filter_commandline_header_value (char *);
 int mutt_index_menu (void);
 int mutt_invoke_sendmail (ADDRESS *, ADDRESS *, ADDRESS *, ADDRESS *, const char *, int);
 int mutt_is_mail_list (ADDRESS *);
@@ -342,7 +349,7 @@ int mutt_is_list_cc (int, ADDRESS *, ADDRESS *);
 int mutt_is_list_recipient (int, ADDRESS *, ADDRESS *);
 int mutt_is_quote_line (char *, regmatch_t *);
 int mutt_is_subscribed_list (ADDRESS *);
-int mutt_is_text_part (BODY *);
+int mutt_is_text_part (const BODY *);
 int mutt_is_valid_mailbox (const char *);
 int mutt_link_threads (HEADER *, HEADER *, CONTEXT *);
 int mutt_lookup_mime_type (BODY *, const char *);
@@ -378,7 +385,7 @@ int mutt_pipe_attachment (FILE *, BODY *, const char *, const char *);
 int mutt_print_attachment (FILE *, BODY *);
 int mutt_query_complete (char *, size_t);
 int mutt_query_variables (LIST *queries);
-int mutt_save_attachment (FILE *, BODY *, const char *, int, HEADER *);
+int mutt_save_attachment (FILE *, BODY *, const char *, int, HEADER *, int);
 int _mutt_save_message (HEADER *, CONTEXT *, int, int, int);
 int mutt_save_message (HEADER *, int, int, int);
 int mutt_search_command (int, int);
@@ -403,6 +410,7 @@ int mutt_write_one_header (FILE *fp, const char *tag, const char *value, const c
 int mutt_write_rfc822_header (FILE *, ENVELOPE *, BODY *, char *, mutt_write_header_mode, int, int);
 void mutt_write_references (LIST *, FILE *, int);
 int mutt_yesorno (const char *, int);
+int mutt_yesorno_with_help (const char *, int, const char *);
 void mutt_set_header_color(CONTEXT *, HEADER *);
 void mutt_sleep (short);
 int mutt_save_confirm (const char  *, struct stat *);

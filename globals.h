@@ -232,6 +232,7 @@ WHERE short HistSize;
 WHERE short MenuContext;
 WHERE short PagerContext;
 WHERE short PagerIndexLines;
+WHERE short PagerSkipQuotedContext;
 WHERE short ReadInc;
 WHERE short ReflowWrap;
 WHERE short SaveHist;
