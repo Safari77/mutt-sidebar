@@ -80,7 +80,6 @@ typedef struct
 {
   SSL_CTX *ctx;
   SSL *ssl;
-  X509 *cert;
   unsigned char isopen;
 }
 sslsockdata;
@@ -183,6 +182,28 @@ static int ssl_set_verify_partial (SSL_CTX *ctx)
   return rv;
 }
 
+/* Reset the min/max proto version allowed so that enabling old
+ * (insecure) protocols inside Mutt will actually use them.
+ *
+ * SSL_CTX_set_min/max_proto_version were added in OpenSSL 1.1 and
+ * LibreSSL 2.6.1.
+ */
+static void reset_allowed_proto_version_range (sslsockdata *ssldata)
+{
+#if (!defined(LIBRESSL_VERSION_NUMBER) &&       \
+     defined(OPENSSL_VERSION_NUMBER) &&         \
+     OPENSSL_VERSION_NUMBER >= 0x10100000L)     \
+  ||                                            \
+  (defined(LIBRESSL_VERSION_NUMBER) &&          \
+   LIBRESSL_VERSION_NUMBER >= 0x2060100fL)
+
+  /* 0 is magic for lowest/highest possible value in these calls */
+  SSL_CTX_set_min_proto_version (ssldata->ctx, 0);
+  SSL_CTX_set_max_proto_version (ssldata->ctx, 0);
+
+#endif
+}
+
 /* mutt_ssl_starttls: Negotiate TLS over an already opened connection.
  *   TODO: Merge this code better with ssl_socket_open. */
 int mutt_ssl_starttls (CONNECTION* conn)
@@ -219,6 +240,9 @@ int mutt_ssl_starttls (CONNECTION* conn)
     dprint (1, (debugfile, "mutt_ssl_starttls: Error allocating SSL_CTX\n"));
     goto bail_ssldata;
   }
+
+  reset_allowed_proto_version_range (ssldata);
+
 #ifdef SSL_OP_NO_TLSv1_3
   if (!option(OPTTLSV1_3))
     ssl_options |= SSL_OP_NO_TLSv1_3;
@@ -498,6 +522,8 @@ static int ssl_socket_open (CONNECTION * conn)
     return -1;
   }
 
+  reset_allowed_proto_version_range (data);
+
   /* disable SSL protocols as needed */
   if (!option(OPTTLSV1))
   {
@@ -665,11 +691,6 @@ static int ssl_socket_close (CONNECTION * conn)
     if (data->isopen)
       SSL_shutdown (data->ssl);
 
-    /* hold onto this for the life of mutt, in case we want to reconnect.
-     * The purist in me wants a mutt_exit hook. */
-#if 0
-    X509_free (data->cert);
-#endif
     SSL_free (data->ssl);
     SSL_CTX_free (data->ctx);
     FREE (&conn->sockdata);
