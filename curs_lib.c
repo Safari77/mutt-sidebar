@@ -305,12 +305,6 @@ void mutt_edit_file (const char *editor, const char *data)
     mutt_error (_("Error running \"%s\"!"), mutt_b2s (cmd));
     mutt_sleep (2);
   }
-#if defined (USE_SLANG_CURSES) || defined (HAVE_RESIZETERM)
-  /* the terminal may have been resized while the editor owned it */
-  mutt_resize_screen ();
-#endif
-  keypad (stdscr, TRUE);
-  clearok (stdscr, TRUE);
 
   mutt_buffer_pool_release (&cmd);
 }
@@ -602,7 +596,7 @@ static void error_history_dump (FILE *f)
   } while (cur != ErrorHistory.last);
 }
 
-void mutt_error_history_display ()
+void mutt_error_history_display (void)
 {
   static int in_process = 0;
   BUFFER *t = NULL;
@@ -796,7 +790,7 @@ out:
     mutt_clear_error ();
 }
 
-void mutt_init_windows ()
+void mutt_init_windows (void)
 {
   MuttHelpWindow = safe_calloc (sizeof (mutt_window_t), 1);
   MuttIndexWindow = safe_calloc (sizeof (mutt_window_t), 1);
@@ -807,7 +801,7 @@ void mutt_init_windows ()
 #endif
 }
 
-void mutt_free_windows ()
+void mutt_free_windows (void)
 {
   FREE (&MuttHelpWindow);
   FREE (&MuttIndexWindow);
@@ -995,6 +989,7 @@ void mutt_endwin (const char *msg)
      */
     mutt_refresh();
     endwin ();
+    SigWinch = 1;
   }
 
   if (msg && *msg)
