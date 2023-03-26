@@ -220,7 +220,7 @@ denote that the argument may be repeated arbitrary times.
 <title>Copyright</title>
 
 <para>
-Mutt is Copyright &copy; 1996-2022 Michael R. Elkins
+Mutt is Copyright &copy; 1996-2023 Michael R. Elkins
 <email>me@mutt.org</email> and others.
 </para>
 
@@ -2742,9 +2742,11 @@ well as <emphasis>\C</emphasis> is ignored, so that
 <emphasis>\cA</emphasis> and <emphasis>\ca</emphasis> are all
 equivalent.  An alternative form is to specify the key as a three digit
 octal number prefixed with a <quote>\</quote> (for example
-<emphasis>\177</emphasis> is equivalent to <emphasis>\c?</emphasis>). In
-addition, <emphasis>key</emphasis> may be a symbolic name as shown in
-<xref linkend="tab-key-names"/>.
+<emphasis>\177</emphasis> is equivalent to <emphasis>\c?</emphasis>).
+You can also use the form <emphasis>&lt;177&gt;</emphasis>, which
+allows octal numbers with an arbitrary number of digits.  In addition,
+<emphasis>key</emphasis> may be a symbolic name as shown in <xref
+linkend="tab-key-names"/>.
 </para>
 
 <table id="tab-key-names">
@@ -7503,8 +7505,7 @@ macro index ,a "&lt;save-message&gt;=archive&lt;enter&gt;&lt;enter-command&gt;ec
 
   <para>
     In batch mode, Mutt performs less steps than interactive mode.
-    Encryption and Signing are not supported.  Fcc'ing to an IMAP
-    mailbox is not supported.
+    Encryption and Signing are not supported.
   </para>
 
   <itemizedlist>
@@ -7844,6 +7845,25 @@ echo (if "" one two)
 set spoolfile = "/var/mail/user"
 echo (if (equal $spoolfile "/var/mail/user") yes no)
   ==> "yes"
+</screen>
+      <para>
+        Note that boolean configuration variables evaluate to the strings
+        &quot;yes&quot; or &quot;no&quot;.  You can see the value of other
+        kinds of configuration variables using the
+        <link linkend="echo">echo</link> command.
+      </para>
+<screen>
+unset allow_ansi
+echo $allow_ansi
+  ===> "no"
+
+# the correct way to test a boolean:
+echo (if (equal $allow_ansi "yes") "set" "unset")
+  ===> "unset"
+
+# the incorrect way to test a boolean:
+echo (if $allow_ansi "set" "unset")
+  ===> "set"
 </screen>
     </sect3>
   </sect2>
