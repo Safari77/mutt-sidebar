@@ -1829,6 +1829,19 @@ struct option_t MuttVars[] = {
   ** strange behavior, such as duplicate or missing messages please
   ** file a bug report to let us know.
   */
+  { "imap_reconnect_sleep", DT_NUM,  R_NONE, {.p=&ImapReconnectSleep}, {.l=5} },
+  /*
+  ** .pp
+  ** When mutt fails to reconnect to a lost IMAP server connection, it
+  ** will sleep this many seconds before trying again.
+  */
+  { "imap_reconnect_tries", DT_NUM,  R_NONE, {.p=&ImapReconnectTries}, {.l=3} },
+  /*
+  ** .pp
+  ** When mutt loses its connection with the IMAP server, it will try
+  ** to reconnect this many times before giving up and closing the
+  ** connection.
+  */
   { "imap_servernoise",		DT_BOOL, R_NONE, {.l=OPTIMAPSERVERNOISE}, {.l=1} },
   /*
   ** .pp
@@ -4135,6 +4148,22 @@ struct option_t MuttVars[] = {
   ** Also see $$write_bcc.
   */
 #endif /* USE_SMTP */
+#ifdef USE_SOCKET
+  { "socket_receive_timeout",  DT_NUM, R_NONE, {.p=&SocketReceiveTimeout}, {.l=0} },
+  /*
+  ** .pp
+  ** Causes Mutt to timeout any socket read operation (e.g. SSL_read) after
+  ** this many seconds.  A zero (default) or negative value causes Mutt to wait
+  ** indefinitely for the read to complete.
+  */
+  { "socket_send_timeout",  DT_NUM, R_NONE, {.p=&SocketSendTimeout}, {.l=0} },
+  /*
+  ** .pp
+  ** Causes Mutt to timeout any socket write operation (e.g. SSL_write) after
+  ** this many seconds.  A zero (default) or negative value causes Mutt to wait
+  ** indefinitely for the write to complete.
+  */
+#endif /* USE_SOCKET */
   { "sort",		DT_SORT, R_INDEX|R_RESORT, {.p=&Sort}, {.l=SORT_DATE} },
   /*
   ** .pp
@@ -4282,10 +4311,13 @@ struct option_t MuttVars[] = {
   { "spoolfile",	DT_PATH, R_NONE, {.p=&Spoolfile}, {.p=0} },
   /*
   ** .pp
-  ** If your spool mailbox is in a non-default place where Mutt cannot find
-  ** it, you can specify its location with this variable.  Mutt will
+  ** If your default mailbox or spool file is in a non-default place where Mutt
+  ** cannot find it, you can specify its location with this variable. Mutt will
   ** initially set this variable to the value of the environment
   ** variable \fC$$$MAIL\fP or \fC$$$MAILDIR\fP if either is defined.
+  ** .pp
+  ** Note: Despite the name, this can refer to a local or remote mailbox, e.g.,
+  ** "+INBOX".
   */
 #if defined(USE_SSL)
 # ifdef USE_SSL_GNUTLS

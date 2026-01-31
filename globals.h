@@ -103,6 +103,8 @@ WHERE char *MsgFmt;
 WHERE char *Preconnect;
 WHERE char *Tunnel;
 WHERE short NetInc;
+WHERE short SocketReceiveTimeout;
+WHERE short SocketSendTimeout;
 #endif /* USE_SOCKET */
 
 #ifdef MIXMASTER
@@ -258,6 +260,8 @@ WHERE long  ImapFetchChunkSize;
 WHERE short ImapKeepalive;
 WHERE short ImapPipelineDepth;
 WHERE short ImapPollTimeout;
+WHERE short ImapReconnectSleep;
+WHERE short ImapReconnectTries;
 #endif
 
 /* flags for received signals */
