@@ -12,3 +12,4 @@ Advanced search information:
 Example search pattern at gmail imaps ("All Mail" folder):
   =/ "larger:100M from:hillary"
 
+This repo is not updated anymore, move to use https://github.com/Safari77/mutt
